@@ -6,6 +6,8 @@ local store  = require 'server.notes.store'
 local player = require 'bridge.server.player'
 ---@type table AirShare core (server.share.core): nearby/phone-open share request handshake.
 local share  = require 'server.share.core'
+---@type table Shared server helpers (server.util): the per-character save budget.
+local util   = require 'server.util'
 
 ---@type table Notes config (configs/notes.lua): per-player note count + content caps.
 local N = config.Notes
@@ -18,6 +20,16 @@ local actions = {}
 ---@type integer Upper bound (bytes) for each encoded sketches/images JSON column, just under the
 ---MEDIUMTEXT limit (16,777,215).
 local MAX_MEDIA_JSON = 16000000
+---@type integer Per-sketch ceiling. A sketch is a phone-screen PNG data URL; even a canvas
+---scribbled edge to edge lands near 350 KB, so a megabyte only rejects a fabricated entry.
+local MAX_SKETCH_BYTES = 1024 * 1024
+---@type integer Per-image ceiling. An image entry is a hosted URL, not inline data, and matches
+---the 512-char url column Photos stores.
+local MAX_IMAGE_BYTES = 512
+---@type integer, integer Rolling save budget per character. The editor autosaves 350ms after a
+---pause in typing, so even a hunt-and-peck typist tops out near 170 writes a minute; 300 sits
+---clear of that yet cuts a scripted flood by three orders of magnitude.
+local SAVE_WINDOW, SAVE_MAX = 60000, 300
 
 ---The acting player's citizenid, resolved from src via the player bridge.
 ---@param src integer player server id
@@ -25,16 +37,18 @@ local MAX_MEDIA_JSON = 16000000
 local function cidOf(src) return player.getIdentifier(src) end
 
 ---Keeps only well-formed, non-empty strings from a client-supplied array, capped at `limit`
----entries. A non-table yields an empty list.
+---entries of at most `maxLen` bytes each. An over-length entry is skipped rather than truncated,
+---so a half-written data URL never reaches the column. A non-table yields an empty list.
 ---@param arr any client-supplied array
 ---@param limit integer max entries to keep
+---@param maxLen integer max bytes per entry
 ---@return string[] out sanitized list
-local function sanitizeList(arr, limit)
+local function sanitizeList(arr, limit, maxLen)
     if type(arr) ~= 'table' then return {} end
     local out = {}
     for i = 1, #arr do
         local s = arr[i]
-        if type(s) == 'string' and s ~= '' then
+        if type(s) == 'string' and s ~= '' and #s <= maxLen then
             out[#out + 1] = s
             if #out >= limit then break end
         end
@@ -87,6 +101,10 @@ function actions.save(src, payload)
     local id = payload.id
     if type(id) ~= 'string' or id == '' or #id > 40 then return { success = false, message = 'Bad note id' } end
 
+    if not util.rateLimit(cid, 'notes:save', SAVE_WINDOW, SAVE_MAX) then
+        return { success = false, message = 'Slow down a moment' }
+    end
+
     if not store.exists(cid, id) and store.countFor(cid) >= N.MaxNotesPerPlayer then
         return { success = false, message = 'Note limit reached' }
     end
@@ -94,8 +112,8 @@ function actions.save(src, payload)
     local body = type(payload.body) == 'string' and payload.body or ''
     if #body > N.MaxBodyLength then body = body:sub(1, N.MaxBodyLength) end
 
-    local sketches     = sanitizeList(payload.sketches, N.MaxSketches)
-    local images       = sanitizeList(payload.images, N.MaxImages)
+    local sketches     = sanitizeList(payload.sketches, N.MaxSketches, MAX_SKETCH_BYTES)
+    local images       = sanitizeList(payload.images, N.MaxImages, MAX_IMAGE_BYTES)
     local sketchesJson = json.encode(sketches)
     local imagesJson   = json.encode(images)
     if #sketchesJson > MAX_MEDIA_JSON or #imagesJson > MAX_MEDIA_JSON then
@@ -137,8 +155,8 @@ function actions.requestShare(src, target, payload)
     local body = type(payload.body) == 'string' and payload.body or ''
     if #body > N.MaxBodyLength then body = body:sub(1, N.MaxBodyLength) end
 
-    local sketches = sanitizeList(payload.sketches, N.MaxSketches)
-    local images   = sanitizeList(payload.images, N.MaxImages)
+    local sketches = sanitizeList(payload.sketches, N.MaxSketches, MAX_SKETCH_BYTES)
+    local images   = sanitizeList(payload.images, N.MaxImages, MAX_IMAGE_BYTES)
     if body:gsub('%s', '') == '' and #sketches == 0 and #images == 0 then
         return { success = false, message = 'Nothing to share' }
     end
@@ -160,8 +178,8 @@ function actions.deliverShare(targetSrc, payload)
 
     local body     = type(payload.body) == 'string' and payload.body or ''
     if #body > N.MaxBodyLength then body = body:sub(1, N.MaxBodyLength) end
-    local sketches = sanitizeList(payload.sketches, N.MaxSketches)
-    local images   = sanitizeList(payload.images, N.MaxImages)
+    local sketches = sanitizeList(payload.sketches, N.MaxSketches, MAX_SKETCH_BYTES)
+    local images   = sanitizeList(payload.images, N.MaxImages, MAX_IMAGE_BYTES)
     if body == '' and #sketches == 0 and #images == 0 then return false end
 
     local sketchesJson = json.encode(sketches)

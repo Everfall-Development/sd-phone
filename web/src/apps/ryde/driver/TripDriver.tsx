@@ -204,7 +204,7 @@ export function TripDriver() {
             {confirmCall && r.riderNumber && (
                 <AlertDialog
                     title={t('common.callSubject', 'Call {subject}', { subject: r.riderName ?? t('ryde.yourRider', 'your rider') })}
-                    message={t('ryde.callRiderConfirm', 'Are you sure you want to call {name}?', { name: r.riderName ?? t('ryde.yourRider', 'your rider') })}
+                    message={t('ryde.callRiderConfirm', 'Call {name}?', { name: r.riderName ?? t('ryde.yourRider', 'your rider') })}
                     cancelLabel={t('ryde.cancel', 'Cancel')}
                     confirmLabel={t('ryde.call', 'Call')}
                     onCancel={() => setConfirmCall(false)}

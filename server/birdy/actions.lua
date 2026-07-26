@@ -16,6 +16,8 @@ local banking = require 'server.banking.actions'
 local badges = require 'server.badges.init'
 ---@type table Admin mute registry (server.admin.moderation): scope guards for posting/DMing.
 local moderation = require 'server.admin.moderation'
+---@type table Watcher registry (server.watchers): shared with server.birdy.init.
+local watchers = require('server.watchers').of('birdy')
 
 ---@type table Birdy config (config.Birdy): field bounds + feed/notification limits.
 local birdyCfg = config.Birdy
@@ -25,6 +27,44 @@ local actions = {}
 
 local util = require 'server.util'
 local ok, fail = util.ok, util.fail
+
+---@type table<string, boolean> Allowed DM reaction emoji, mirroring the four the composer offers
+---(web/src/shared/chat/MessageBubble.tsx). Bounds the reactions blob to four keys.
+local REACTION_SET = { ['❤️'] = true, ['👍'] = true, ['👎'] = true, ['😂'] = true }
+
+---@type integer How long a like/repost/follow notification suppresses an identical repeat (secs).
+local NOTIF_DEDUPE = 3600
+
+---@type table<string, integer[]> Per-citizenid write budgets as { minimum gap ms, accepted calls
+---per day }. Both sit far above real play; they exist so a scripted client cannot mint rows,
+---notifications or broadcasts faster than a person can tap.
+local WRITE_BUDGET = {
+    register = { 1500, 60 },
+    create   = { 2000, 200 },
+    reply    = { 1000, 500 },
+    like     = { 250, 3000 },
+    repost   = { 250, 3000 },
+    follow   = { 400, 500 },
+    dm       = { 400, 1000 },
+    react    = { 250, 2000 },
+}
+
+---@type integer Rolling window the per-day half of WRITE_BUDGET is measured over (ms).
+local BUDGET_WINDOW = 86400000
+
+---Applies the caller's write budget for `key`. nil means the call may proceed; anything else is
+---the envelope to hand straight back to the client.
+---@param cid string citizenid of the acting player
+---@param key string WRITE_BUDGET key
+---@return table|nil refusal
+local function throttle(cid, key)
+    local budget = WRITE_BUDGET[key]
+    if not util.cooldown(cid, 'birdy:' .. key, budget[1]) then return fail('Slow down') end
+    if not util.rateLimit(cid, 'birdy:' .. key, BUDGET_WINDOW, budget[2]) then
+        return fail('Daily limit reached')
+    end
+    return nil
+end
 
 ---Trims surrounding whitespace. Returns nil for non-strings.
 ---@param s any
@@ -178,6 +218,7 @@ end
 function actions.register(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return fail('Player not found') end
+    local slow = throttle(cid, 'register'); if slow then return slow end
     payload = tbl(payload)
 
     local name = trimmed(payload.name)
@@ -491,6 +532,7 @@ end
 function actions.create(source, payload)
     local prof = viewer(source); if not prof then return fail('Player not found') end
     local muted = moderation.guard(prof.citizenid, 'birdy'); if muted then return muted end
+    local slow = throttle(prof.citizenid, 'create'); if slow then return slow end
     payload = tbl(payload)
     local body = trimmed(payload and payload.body) or ''
     local images = sanitizeImages(payload and payload.images)
@@ -499,7 +541,6 @@ function actions.create(source, payload)
 
     local id = store.newId()
     if not store.insertPost(id, prof.citizenid, body, nil, images) then return fail('Failed to post') end
-    store.invalidateTrending()
 
     -- First-party hook: one server-local event per created post; the payload carries a citizenid.
     TriggerEvent('sd-phone:server:birdy:post', {
@@ -508,8 +549,9 @@ function actions.create(source, payload)
         body = body, images = images,
     })
 
-    -- The TriggerEvent above is server-local; this is what reaches players.
-    TriggerClientEvent('sd-phone:client:birdy:feedChanged', -1, {})
+    -- The TriggerEvent above is server-local; this is what reaches players. Scoped to the phones
+    -- with Birdy in the foreground: every other player only refetched to discard the result.
+    watchers.push('sd-phone:client:birdy:feedChanged', {})
 
     local preview   = body ~= '' and body:sub(1, 80) or 'shared a photo'
     local followers = store.followerCids(prof.citizenid)
@@ -530,7 +572,7 @@ function actions.create(source, payload)
         if src then
             TriggerClientEvent('sd-phone:client:birdy:notification', src, {})
             TriggerClientEvent('sd-phone:client:notify', src, {
-                app = 'birdy', appId = 'birdy', title = 'Birdy',
+                app = 'birdy', appId = 'birdy', title = 'Squawk',
                 body = ('%s posted: %s'):format(prof.displayName, preview),
                 time = 'now', quietInApp = true,
             })
@@ -550,6 +592,7 @@ end
 function actions.reply(source, payload)
     local prof = viewer(source); if not prof then return fail('Player not found') end
     local muted = moderation.guard(prof.citizenid, 'birdy'); if muted then return muted end
+    local slow = throttle(prof.citizenid, 'reply'); if slow then return slow end
     payload = tbl(payload)
     local parentId = payload and payload.parentId
     local body = trimmed(payload and payload.body) or ''
@@ -563,7 +606,6 @@ function actions.reply(source, payload)
 
     local id = store.newId()
     if not store.insertPost(id, prof.citizenid, body, parentId, images) then return fail('Failed to reply') end
-    store.invalidateTrending()
 
     local notifyCid = nil
     if parentAuthor ~= prof.citizenid then
@@ -584,6 +626,7 @@ function actions.toggleLike(source, payload)
     payload = tbl(payload)
     local id = payload and payload.id
     if type(id) ~= 'string' or id == '' then return fail('Missing post') end
+    local slow = throttle(prof.citizenid, 'like'); if slow then return slow end
 
     local author = store.getPostAuthor(id)
     if not author then return fail('Post not found') end
@@ -597,8 +640,11 @@ function actions.toggleLike(source, payload)
         nowLiked = true
     end
 
+    -- Un-liking does not delete the notification, so re-liking would otherwise mint a permanent
+    -- duplicate on every flip.
     local notifyCid = nil
-    if nowLiked and author ~= prof.citizenid then
+    if nowLiked and author ~= prof.citizenid
+        and not store.recentNotification(author, 'like', prof.citizenid, id, NOTIF_DEDUPE) then
         store.insertNotification(store.newId(), author, 'like', prof.citizenid, id)
         notifyCid = author
     end
@@ -616,6 +662,7 @@ function actions.toggleRepost(source, payload)
     payload = tbl(payload)
     local id = payload and payload.id
     if type(id) ~= 'string' or id == '' then return fail('Missing post') end
+    local slow = throttle(prof.citizenid, 'repost'); if slow then return slow end
 
     local author = store.getPostAuthor(id)
     if not author then return fail('Post not found') end
@@ -629,8 +676,11 @@ function actions.toggleRepost(source, payload)
         nowReposted = true
     end
 
+    -- Un-reposting does not delete the notification, so re-reposting would otherwise mint a
+    -- permanent duplicate on every flip.
     local notifyCid = nil
-    if nowReposted and author ~= prof.citizenid then
+    if nowReposted and author ~= prof.citizenid
+        and not store.recentNotification(author, 'repost', prof.citizenid, id, NOTIF_DEDUPE) then
         store.insertNotification(store.newId(), author, 'repost', prof.citizenid, id)
         notifyCid = author
     end
@@ -693,6 +743,7 @@ function actions.toggleFollow(source, payload)
     end
     if type(target) ~= 'string' or target == '' or #target > 64 then return fail('Missing account') end
     if target == prof.citizenid then return fail('You cannot follow yourself') end
+    local slow = throttle(prof.citizenid, 'follow'); if slow then return slow end
 
     local notifyCid = nil
     local nowFollowing
@@ -702,8 +753,12 @@ function actions.toggleFollow(source, payload)
     else
         store.addFollow(prof.citizenid, target)
         nowFollowing = true
-        store.insertNotification(store.newId(), target, 'follow', prof.citizenid, nil)
-        notifyCid = target
+        -- Unfollowing does not delete the notification, so re-following would otherwise mint a
+        -- permanent duplicate on every flip.
+        if not store.recentNotification(target, 'follow', prof.citizenid, nil, NOTIF_DEDUPE) then
+            store.insertNotification(store.newId(), target, 'follow', prof.citizenid, nil)
+            notifyCid = target
+        end
     end
 
     return ok({ following = nowFollowing, notifyCid = notifyCid })
@@ -958,6 +1013,7 @@ end
 function actions.dmSend(source, payload)
     local prof = viewer(source); if not prof then return fail('Player not found') end
     local muted = moderation.guard(prof.citizenid, 'birdy'); if muted then return muted end
+    local slow = throttle(prof.citizenid, 'dm'); if slow then return slow end
     payload = tbl(payload)
     local toCid = payload.toCid
     -- Discovery surfaces only expose handles, so accept one and resolve it here.
@@ -967,6 +1023,9 @@ function actions.dmSend(source, payload)
     end
     if type(toCid) ~= 'string' or toCid == '' or #toCid > 64 then return fail('Missing recipient') end
     if toCid == prof.citizenid then return fail('You cannot message yourself') end
+    -- Without this a DM addressed to a made-up citizenid is stored forever: no owner can open it,
+    -- and no account-delete or wipe path reaches it.
+    if not store.getProfile(toCid) then return fail('Account not found') end
 
     local kind = VALID_DM_KINDS[payload.kind] and payload.kind or 'text'
     local body = (trimmed(payload.body) or ''):sub(1, birdyCfg.MaxDmLength)
@@ -1003,12 +1062,13 @@ end
 function actions.dmReact(source, payload)
     local prof = viewer(source); if not prof then return fail('Player not found') end
     payload = tbl(payload)
+    local slow = throttle(prof.citizenid, 'react'); if slow then return slow end
     local row = type(payload.id) == 'string' and store.getDm(payload.id) or nil
     if not row then return fail('Message not found') end
     if row.from_cid ~= prof.citizenid and row.to_cid ~= prof.citizenid then return fail('Message not found') end
 
     local emoji = tostring(payload.emoji or '')
-    if emoji == '' or #emoji > 16 then return fail('Invalid reaction') end
+    if not REACTION_SET[emoji] then return fail('Invalid reaction') end
 
     local reactions = store.decodeJson(row.reactions)
     local users = reactions[emoji] or {}

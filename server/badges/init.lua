@@ -16,6 +16,8 @@ local photogramStore = require 'server.photogram.store'
 local vibezStore     = require 'server.vibez.store'
 ---@type table Birdy persistence layer (server.birdy.store): unseen-notification counts.
 local birdyStore     = require 'server.birdy.store'
+---@type table Shared server helpers (server.util): the disconnect sweep hook.
+local util           = require 'server.util'
 
 ---@type table Badges module; the table returned at end of file.
 local badges = {}
@@ -53,6 +55,14 @@ local counters = {
     birdy     = function(cid) return birdyStore.unseenNotificationCount(cid) end,
 }
 
+---@type integer How long a computed snapshot stays reusable for the client-facing fetch (ms).
+---Shorter than any human can re-open the phone, so nobody ever sees a stale count.
+local SNAPSHOT_TTL = 2000
+
+---@type table<string, { at: number, snap: table }> Last snapshot per citizenid. Written through by
+---every push so a served snapshot can never disagree with a number already on the phone.
+local memo = {}
+
 ---Per-app unread counts for one character, keyed by home-screen app id, computed straight from
 ---the database on every call.
 ---@param cid string framework per-character id
@@ -60,8 +70,44 @@ local counters = {
 function badges.snapshot(cid)
     local out = {}
     for app, count in pairs(counters) do out[app] = count(cid) end
+    memo[cid] = { at = GetGameTimer(), snap = out }
     return out
 end
+
+---The last snapshot when it is younger than SNAPSHOT_TTL, otherwise a fresh one. Only the
+---client-driven fetch takes this path; a server-side push always recomputes.
+---@param cid string framework per-character id
+---@return table counts
+local function memoized(cid)
+    local hit = memo[cid]
+    if hit then
+        local age = GetGameTimer() - hit.at
+        if age >= 0 and age < SNAPSHOT_TTL then return hit.snap end
+    end
+    return badges.snapshot(cid)
+end
+
+-- Best effort: a character who logs out keeps no entry, and one that outlives its player is
+-- recomputed on the next fetch anyway.
+util.onCleanup(function(_, cid)
+    if type(cid) == 'string' then memo[cid] = nil end
+end)
+
+---@type integer How often the memo drops entries the TTL already made unusable (ms).
+local SWEEP_MS = 5 * 60 * 1000
+
+-- Backstop for the sweep above, whose citizenid is best effort at disconnect. An entry past the
+-- TTL is already ignored by memoized(), so dropping it here changes nothing a caller can see.
+CreateThread(function()
+    while true do
+        Wait(SWEEP_MS)
+        local now = GetGameTimer()
+        for cid, hit in pairs(memo) do
+            local age = now - hit.at
+            if age < 0 or age >= SNAPSHOT_TTL then memo[cid] = nil end
+        end
+    end
+end)
 
 ---Recomputes a player's badge counts from the DB and pushes the exact numbers to their phone.
 ---A no-op when the source has no resolvable citizenid.
@@ -84,15 +130,21 @@ function badges.pushApp(source, app)
     if not count then return end
     local cid = player.getIdentifier(source)
     if not cid then return end
-    TriggerClientEvent('sd-phone:client:badgePatch', source, { [app] = count(cid) })
+    local n = count(cid)
+    -- Patch the memo in place rather than ageing it: the fetch must agree with what was pushed,
+    -- but one app's recount says nothing about the other six.
+    local hit = memo[cid]
+    if hit then hit.snap[app] = n end
+    TriggerClientEvent('sd-phone:client:badgePatch', source, { [app] = n })
 end
 
 ---Fetched once by the React app on phone open. An unresolvable caller gets all-zero counts.
----Read-only.
+---Read-only, and memoised: the full snapshot is ten store reads, one of them an unindexed mail
+---scan, so a repeat caller is served the last one.
 lib.callback.register('sd-phone:server:badges:get', function(src)
     local cid = player.getIdentifier(src)
     if not cid then return { messages = 0, phone = 0, mail = 0, groups = 0, photogram = 0, vibez = 0, birdy = 0 } end
-    return badges.snapshot(cid)
+    return memoized(cid)
 end)
 
 ---Recomputes and pushes a player's badge counts from another resource. A non-number source is

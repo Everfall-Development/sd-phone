@@ -153,7 +153,7 @@ export function Profile({ profile, me, handle, onBack, onEdit, onOpenPost, onTog
                     {profile?.joined ? (
                         <div className="mt-2 flex items-center gap-1.5 text-[15px]" style={{ color: META }}>
                             <CalendarDays className="h-[18px] w-[18px]" strokeWidth={2} />
-                            {t('birdy.joined', 'Joined {date}', { date: profile.joined })}
+                            {t('birdy.joined', 'Member since {date}', { date: profile.joined })}
                         </div>
                     ) : null}
 

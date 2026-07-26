@@ -16,6 +16,15 @@ local payphones = require 'server.payphone.store'
 ---@type table Actions module; the table returned at end of file.
 local actions = {}
 
+---Whether a player can be rung at all. A server that gates the phone behind an item should not
+---ring someone who is not carrying one; a server with no items configured rings everyone.
+---@param src number player server id
+---@return boolean
+local function reachable(src)
+    if #(config.Phone.Items or {}) == 0 then return true end
+    return exports['sd-phone']:hasPhone(src) ~= nil
+end
+
 -- Live call state is transient and in-memory; only a finished call is persisted. Channels
 -- double as pma-voice call channels, handed out monotonically from 1000.
 ---@type table<number, table> Active 1:1 sessions keyed by channel: { channel, state ('ringing'|'active'), startedAt, caller, callee, company? (display name when promoted from a group ring) }.
@@ -70,14 +79,57 @@ local function boothRingForSource(src)
     return nil
 end
 
----Stops an unanswered booth ring: silences every client's booth, tells the caller, forgets it.
+---True when a source is already tied up: in a live session, in a group ring, or ringing a booth.
+---Exported so callers that fan out before dialling (services.callCompany) can reject a busy caller
+---up front instead of after their own expensive work.
+---@param src number
+---@return boolean
+function actions.isBusy(src)
+    return (sessionForSource(src) or ringForSource(src) or boothRingForSource(src)) ~= nil
+end
+
+---@type number Metres from a booth that its ring is sent to. The client discards a ring further
+---than 50 m away (client/payphone.lua), so this is double the audible radius and every player who
+---can hear a booth today still receives it.
+local BOOTH_RING_RANGE = 100.0
+
+---The players near a booth, as a set. Ringing all of them instead of the whole server keeps the
+---fan-out proportional to who can actually hear the bell.
+---@param location string 'x,y,z' booth key
+---@return table<number, boolean> sources
+local function listenersNear(location)
+    local out = {}
+    local x, y, z = location:match('^(-?[%d%.]+),(-?[%d%.]+),(-?[%d%.]+)$')
+    if not x then return out end
+    local at = vector3(tonumber(x), tonumber(y), tonumber(z))
+    for _, pid in ipairs(GetPlayers()) do
+        local psrc = tonumber(pid)
+        local ped = psrc and GetPlayerPed(psrc)
+        if ped and ped ~= 0 and #(GetEntityCoords(ped) - at) <= BOOTH_RING_RANGE then
+            out[psrc] = true
+        end
+    end
+    return out
+end
+
+---Silences a booth for exactly the players that were told it was ringing. Players move between
+---the two events, so the recorded set is authoritative, not a fresh proximity scan.
+---@param ring table ring from `boothRings`
+local function stopBoothRing(ring)
+    for lsrc in pairs(ring.heard) do
+        TriggerClientEvent('sd-phone:client:payphone:ringStop', lsrc, { channel = ring.channel })
+    end
+end
+
+---Stops an unanswered booth ring: silences every listening client's booth, tells the caller,
+---forgets it.
 ---@param channel number
 ---@param reason string
 local function cancelBoothRing(channel, reason)
     local ring = boothRings[channel]
     if not ring then return end
     boothRings[channel] = nil
-    TriggerClientEvent('sd-phone:client:payphone:ringStop', -1, { channel = channel })
+    stopBoothRing(ring)
     TriggerClientEvent('sd-phone:client:call:ended', ring.caller.src, { channel = channel, reason = reason })
 end
 
@@ -282,7 +334,8 @@ local function endCall(channel, reason, endedBy)
         logCall(s.callee.cid, s.caller.number, s.caller.name, answered and 'incoming' or 'missed', duration)
     end
 
-    if not answered then badges.push(s.callee.src) end
+    -- Only the missed-call count can have moved, and a full snapshot is seven store reads.
+    if not answered then badges.pushApp(s.callee.src, 'phone') end
 
     TriggerClientEvent('sd-phone:client:call:ended', s.caller.src, { channel = channel, reason = reason })
     TriggerClientEvent('sd-phone:client:call:ended', s.callee.src, { channel = channel, reason = reason })
@@ -297,6 +350,13 @@ end
 
 actions.endCall = endCall
 
+---@type integer Dial budget window in ms.
+local DIAL_WINDOW = 30000
+---@type integer Dials allowed per window, counted even when the dial fails. Redialling a busy
+---number a few times in a row is normal; nobody places ten calls in half a minute, while a
+---dial/hangup loop that used to broadcast a booth ring per pass is cut to this.
+local DIAL_PER_WINDOW = 10
+
 ---Starts a call to a dialed number. Rejects when the caller is mid-call/ring or in airplane
 ---mode, the number is unassigned, or the callee is unreachable, blocked, or busy.
 ---@param source number caller server id
@@ -310,6 +370,7 @@ function actions.dial(source, payload)
     local dialed = digits(payload.number)
     if dialed == '' then return fail('No number dialed') end
     if sessionForSource(source) or ringForSource(source) or boothRingForSource(source) then return fail('You are already on a call') end
+    if not util.rateLimit(cid, 'call:dial', DIAL_WINDOW, DIAL_PER_WINDOW) then return fail('Slow down') end
     if settings.isAirplane(cid) then return fail('Airplane Mode is on') end
     local muted = moderation.guard(cid, 'calls'); if muted then return muted end
 
@@ -330,10 +391,12 @@ function actions.dial(source, payload)
             if location then
                 local channel = nextChannel
                 nextChannel = nextChannel + 1
+                local heard = listenersNear(location)
                 boothRings[channel] = {
                     channel     = channel,
                     location    = location,
                     boothNumber = dialed,
+                    heard       = heard,
                     caller      = { src = source, cid = cid, name = player.getName(source), number = digits(myNumber) },
                 }
                 TriggerClientEvent('sd-phone:client:call:outgoing', source, {
@@ -341,7 +404,9 @@ function actions.dial(source, payload)
                     name    = contactNameFor(cid, dialed),
                     number  = dialed,
                 })
-                TriggerClientEvent('sd-phone:client:payphone:ringStart', -1, { channel = channel, location = location })
+                for lsrc in pairs(heard) do
+                    TriggerClientEvent('sd-phone:client:payphone:ringStart', lsrc, { channel = channel, location = location })
+                end
                 local ringChannel = channel
                 SetTimeout(tonumber(pcfg.Inbound.RingTimeout) or 30000, function()
                     cancelBoothRing(ringChannel, 'no-answer')
@@ -356,6 +421,7 @@ function actions.dial(source, payload)
     -- OTHER phone in their pocket (unlike UI pushes, which only land on the active phone).
     local targetSrc = player.getAnySourceByIdentifier(targetCid)
     if not targetSrc then return fail('This number is currently unavailable') end
+    if not reachable(targetSrc) then return fail('This number is currently unavailable') end
     if settings.isAirplane(targetCid) then return fail('This number is currently unavailable') end
     if contacts.isBlocked(targetCid, digits(myNumber)) then return fail('This number is currently unavailable') end
     if sessionForSource(targetSrc) or ringForSource(targetSrc) then return fail('Line busy') end
@@ -402,6 +468,8 @@ function actions.dialPayphone(source, payload)
     local dialed = digits(payload.number)
     if dialed == '' then return fail('No number dialed') end
     if sessionForSource(source) or ringForSource(source) then return fail('You are already on a call') end
+    -- Shares the dial budget: a booth is just another way to place the same call.
+    if not util.rateLimit(cid, 'call:dial', DIAL_WINDOW, DIAL_PER_WINDOW) then return fail('Slow down') end
     local muted = moderation.guard(cid, 'calls'); if muted then return muted end
 
     local callerNumber = digits(payload.callerNumber)
@@ -413,6 +481,7 @@ function actions.dialPayphone(source, payload)
 
     local targetSrc = player.getAnySourceByIdentifier(targetCid)
     if not targetSrc then return fail('This number is currently unavailable') end
+    if not reachable(targetSrc) then return fail('This number is currently unavailable') end
     if settings.isAirplane(targetCid) then return fail('This number is currently unavailable') end
     if callerNumber ~= '' and contacts.isBlocked(targetCid, callerNumber) then return fail('This number is currently unavailable') end
     if sessionForSource(targetSrc) or ringForSource(targetSrc) then return fail('Line busy') end
@@ -456,7 +525,7 @@ function actions.answerBoothRing(source, channel)
     if not cid then return fail('Player not found') end
 
     boothRings[ring.channel] = nil
-    TriggerClientEvent('sd-phone:client:payphone:ringStop', -1, { channel = ring.channel })
+    stopBoothRing(ring)
 
     sessions[ring.channel] = {
         channel      = ring.channel,
@@ -495,7 +564,7 @@ function actions.callGroup(source, targets, displayName, displayNumber)
     for _, t in ipairs(targets) do
         if t.src and t.src ~= source
             and not sessionForSource(t.src) and not ringForSource(t.src)
-            and not settings.isAirplane(t.cid) then
+            and not settings.isAirplane(t.cid) and reachable(t.src) then
             ringTargets[t.src] = {
                 src    = t.src,
                 cid    = t.cid,
@@ -730,13 +799,28 @@ local function peerSrc(src)
     return nil
 end
 
----Relays a WebRTC signaling blob to the call peer, verbatim. Dropped silently when the sender
----isn't in a live call.
+---@type table<string, boolean> Signal kinds the video peer sends (web/src/apps/phone/calls/webrtc.ts).
+local SIGNAL_KINDS = { offer = true, answer = true, ice = true }
+---@type integer Byte ceiling on one signaling blob. A video SDP with the full codec list runs
+---about 8 KB and a trickled candidate a couple of hundred bytes, so this is several times either.
+local SIGNAL_BYTES = 32768
+---@type integer Signal-relay budget window in ms.
+local SIGNAL_WINDOW = 10000
+---@type integer Relays allowed per window. One peer connection trickles a few dozen candidates
+---while it negotiates and nothing afterwards, so this is many times the real burst.
+local SIGNAL_PER_WINDOW = 200
+
+---Relays a WebRTC signaling blob to the call peer. Dropped silently when the sender isn't in a
+---live call, when the blob isn't the shape the video peer sends, or when it is over budget.
 ---@param src number
----@param payload any opaque signaling blob
+---@param payload table { kind: string, sdp?: string, candidate?: table }
 function actions.videoSignal(src, payload)
+    if type(payload) ~= 'table' or not SIGNAL_KINDS[payload.kind] then return end
+    if not util.smallTable(payload, 16, SIGNAL_BYTES) then return end
     local peer = peerSrc(src)
-    if peer then TriggerClientEvent('sd-phone:client:call:video:signal', peer, payload) end
+    if not peer then return end
+    if not util.rateLimit(player.getIdentifier(src), 'call:videoSignal', SIGNAL_WINDOW, SIGNAL_PER_WINDOW) then return end
+    TriggerClientEvent('sd-phone:client:call:video:signal', peer, payload)
 end
 
 ---Tell the peer this side wants to start video. Dropped silently outside a live call.

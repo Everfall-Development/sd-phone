@@ -116,7 +116,7 @@ local function chooseLabelResolver()
         end
     end
 
-    if framework.name == 'qb' and framework.core and framework.core.Shared and framework.core.Shared.Items then
+    if framework.qb and framework.core and framework.core.Shared and framework.core.Shared.Items then
         return function(itemName)
             local item = framework.core.Shared.Items[itemName]
             return item and item.label or nil
@@ -169,9 +169,10 @@ local function chooseCountResolver()
         return function(item) return exports[active]:GetItemTotalAmount(item) or 0 end
     end
 
-    if framework.name == 'qb' then
+    if framework.qb then
         return function(item)
-            local data = framework.core.Functions.GetPlayerData()
+            local data = framework.name == 'qbx' and exports.qbx_core:GetPlayerData()
+                or (framework.core and framework.core.Functions.GetPlayerData())
             if not data or not data.items then return 0 end
             local total = 0
             for _, slot in pairs(data.items) do

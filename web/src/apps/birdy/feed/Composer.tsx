@@ -98,7 +98,7 @@ export function Composer({ onClose, onPost }: {
                         onChange={e => setText(e.target.value)}
                         onFocus={() => setEmojiOpen(false)}
                         maxLength={MAX_POST_LENGTH}
-                        placeholder={t('birdy.whatsHappening', "What's happening?")}
+                        placeholder={t('birdy.whatsHappening', "What's on your mind?")}
                         className="min-h-[110px] flex-none resize-none bg-transparent pt-1 text-[17px] leading-snug text-black outline-none placeholder:font-semibold placeholder:text-[#536471]"
                         style={{ caretColor: BLUE }}
                     />

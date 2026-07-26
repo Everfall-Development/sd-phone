@@ -32,7 +32,7 @@ const NAV_MAIN: NavItem[] = [
 ];
 
 const NAV_APPS: NavItem[] = [
-    { id: 'birdy',       label: 'Birdy',       icon: <Bird size={15} /> },
+    { id: 'birdy',       label: 'Squawk',      icon: <Bird size={15} /> },
     { id: 'messages',    label: 'Messages',    icon: <MessageSquare size={15} /> },
     { id: 'darkchat',    label: 'Dark Chat',   icon: <Skull size={15} /> },
     { id: 'photogram',   label: 'Photogram',   icon: <Camera size={15} /> },
@@ -47,7 +47,7 @@ const PAGE_TITLE: Record<PageId, string> = {
     dashboard:   'Dashboard',
     players:     'Players',
     numbers:     'Numbers — SIM registry',
-    birdy:       'Birdy moderation',
+    birdy:       'Squawk moderation',
     mutes:       'Active mutes',
     audit:       'Audit log',
     messages:    'Messages (read-only)',

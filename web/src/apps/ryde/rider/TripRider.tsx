@@ -164,7 +164,7 @@ function TripRiderView({ r }: { r: Ride }) {
             {confirmCall && r.driver && (
                 <AlertDialog
                     title={t('common.callSubject', 'Call {subject}', { subject: r.driver.name })}
-                    message={t('ryde.callConfirm', 'Are you sure you want to call {name}?', { name: r.driver.name })}
+                    message={t('ryde.callConfirm', 'Call {name}?', { name: r.driver.name })}
                     cancelLabel={t('ryde.cancel', 'Cancel')}
                     confirmLabel={t('ryde.call', 'Call')}
                     onCancel={() => setConfirmCall(false)}

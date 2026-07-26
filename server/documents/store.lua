@@ -1,3 +1,6 @@
+---@type table Post-0.9.0 column back-fills (server.migrations).
+local migrations = require 'server.migrations'
+
 ---@type table Store module; the table returned at end of file. Documents and folders, one row
 ---per item scoped to a citizenid; every statement filters by citizenid, that WHERE clause is the
 ---ownership boundary.
@@ -5,20 +8,6 @@ local store = {}
 
 ---@type table Shared server helpers (server.util): legacy-table rescue and index bootstrap.
 local util = require 'server.util'
-
----Returns true if a column already exists on the given table (information_schema probe).
----@param tbl string table name
----@param name string column name
----@return boolean exists
-local function columnExists(tbl, name)
-    local row = MySQL.single.await([[
-        SELECT COUNT(*) AS n FROM information_schema.columns
-        WHERE table_schema = DATABASE()
-          AND table_name = ?
-          AND column_name = ?
-    ]], { tbl, name })
-    return row ~= nil and tonumber(row.n) > 0
-end
 
 ---Creates the phone_documents and phone_document_folders tables idempotently and adds their
 ---secondary indexes. Runs once at boot; an lb-phone-shaped same-named table is moved aside first.
@@ -45,6 +34,8 @@ function store.ensureSchema()
             PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
+
+    migrations.apply('phone_documents')
 
     MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS `phone_document_folders` (
@@ -78,12 +69,6 @@ function store.ensureSchema()
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
 
-    if not columnExists('phone_documents', 'signable') then
-        MySQL.query.await('ALTER TABLE `phone_documents` ADD COLUMN `signable` TINYINT(1) NOT NULL DEFAULT 1')
-    end
-    if not columnExists('phone_documents', 'deletable') then
-        MySQL.query.await('ALTER TABLE `phone_documents` ADD COLUMN `deletable` TINYINT(1) NOT NULL DEFAULT 1')
-    end
 
     -- Repair: createDoc used to coerce a numeric locked = 0 to 1 (0 is truthy in Lua), so every
     -- player-created document landed locked. Player rows never carry a source; issued rows always
@@ -98,6 +83,11 @@ function store.ensureSchema()
     util.ensureIndex('phone_documents', 'idx_phone_documents_updated', '(citizenid, updated_at)')
     util.ensureIndex('phone_document_folders', 'idx_phone_document_folders_cid', '(citizenid)')
     util.ensureIndex('phone_document_signatures', 'idx_phone_document_signatures_doc', '(doc_id)')
+
+    -- Referential integrity, added on boot so existing installs migrate with no manual SQL.
+    -- Each is a no-op once present; orphaned children are cleared first (they point at a
+    -- parent that is already gone) and a type or collation mismatch is skipped, never fatal.
+    util.ensureForeignKey('phone_documents', 'folder_id', 'phone_document_folders', 'id', 'fk_documents_folder')
 end
 
 ---All of a player's folders. Read-only.

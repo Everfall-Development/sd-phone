@@ -38,6 +38,9 @@ function store.ensureSchema()
             identity   VARCHAR(64) NOT NULL,
             enabled    TINYINT(1)  NOT NULL DEFAULT 1,
             password   VARCHAR(64) NULL,
+            device_identity VARCHAR(64) NULL,
+            auto_sync  TINYINT(1)  NOT NULL DEFAULT 1,
+            synced_at  BIGINT      NULL,
             updated_at TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP
                 ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (citizenid)

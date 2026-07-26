@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table sd-phone config root (configs/config.lua).
 local config   = require 'configs.config'
 ---@type table Payphone persistence (server.payphone.store): per-booth static numbers.
@@ -23,19 +26,47 @@ if cfg.Enabled then
     CreateThread(function()
         local success, err = pcall(store.ensureSchema)
         if not success then
-            print(('^1[sd-phone:payphone]^0 schema bootstrap failed: %s'):format(err))
+            boot.schemaFailed('payphone', err)
             return
         end
-        print('^2[sd-phone:payphone]^0 schema ready')
+        boot.schemaReady()
     end)
 end
 
----Coerces a client-supplied location key ('x,y,z' rounded coords) into a bounded string.
+---@type number Coordinate magnitude a booth key may claim. The playable map fits inside a fifth
+---of this, and the bound is what keeps the formatted key inside the VARCHAR(64) primary key.
+local MAX_COORD = 20000.0
+
+---Coerces a client-supplied location key ('x,y,z' rounded coords) into the canonical one-decimal
+---form the client mints, so textually different spellings of one spot cannot become distinct rows.
 ---@param raw any
 ---@return string|nil
 local function locationKey(raw)
     if type(raw) ~= 'string' or raw == '' or #raw > 64 then return nil end
-    return raw
+    local rx, ry, rz = raw:match('^(-?[%d%.]+),(-?[%d%.]+),(-?[%d%.]+)$')
+    local x, y, z = tonumber(rx), tonumber(ry), tonumber(rz)
+    if not util.finite(x) or not util.finite(y) or not util.finite(z) then return nil end
+    if math.abs(x) > MAX_COORD or math.abs(y) > MAX_COORD or math.abs(z) > MAX_COORD then return nil end
+    return ('%.1f,%.1f,%.1f'):format(x, y, z)
+end
+
+---@type integer Booth-minting budget window in ms.
+local MINT_WINDOW = 60000
+---@type integer New booth rows one player may create per window. A booth is minted once ever, by
+---whoever uses it first, so a player who spent an hour walking the map would still not reach this.
+local MINT_PER_WINDOW = 5
+
+---The booth's number, minting a row only when the caller has mint budget left. Rate-limiting the
+---MINT and never the read keeps an already-known booth instant for everyone. Empty rather than nil
+---when it refuses: both consumers format this straight into a string.
+---@param src number
+---@param location string canonical 'x,y,z' key
+---@return string number empty when the booth has no row and none may be minted right now
+local function boothNumber(src, location)
+    local existing = store.lookupNumber(location)
+    if existing then return existing end
+    if not util.rateLimit(player.getIdentifier(src), 'payphone:mint', MINT_WINDOW, MINT_PER_WINDOW) then return '' end
+    return store.numberFor(location) or ''
 end
 
 ---@type table<number, boolean> Sources holding an unspent coin credit. A coin buys ONE placed
@@ -73,6 +104,9 @@ lib.callback.register('sd-phone:server:payphone:state', function(src, payload)
     local favorites = {}
     local myNumber = nil
     local cid = player.getIdentifier(src)
+    -- Bounds the contacts read this callback pays for; opening a booth is a target interaction,
+    -- so no player reaches a second one inside the gap.
+    if not util.cooldown(cid, 'payphone:state', 500) then return fail('Slow down') end
     if cid then
         myNumber = settings.getPhoneNumber(cid)
         if cfg.ShowFavorites ~= false then
@@ -85,7 +119,7 @@ lib.callback.register('sd-phone:server:payphone:state', function(src, payload)
     end
 
     return ok({
-        number    = store.numberFor(location),
+        number    = boothNumber(src, location),
         anonymous = cfg.Anonymous == true,
         myNumber  = myNumber,
         favorites = favorites,
@@ -133,10 +167,14 @@ lib.callback.register('sd-phone:server:payphone:dial', function(src, payload)
     -- successful dial consumes the credit (failed dials keep it for a retry).
     if coinEnabled() and not credits[src] then return fail('Insert coin first') end
 
+    -- The booth-number read below is an argument to dialPayphone, so it is paid BEFORE that
+    -- call's own dial budget; without a gate here a refused dial still costs a lookup each time.
+    if not util.cooldown(player.getIdentifier(src), 'payphone:dial', 500) then return fail('Slow down') end
+
     local result = calls.dialPayphone(src, {
         number       = payload.number,
         callerName   = cfg.CallerLabel or 'Payphone',
-        callerNumber = cfg.Anonymous == true and '' or store.numberFor(location),
+        callerNumber = cfg.Anonymous == true and '' or boothNumber(src, location),
     })
     if coinEnabled() and result and result.success then credits[src] = nil end
     return result

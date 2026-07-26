@@ -7,6 +7,8 @@ local acctStore = require 'server.accounts.store'
 local store     = require 'server.vibez.store'
 ---@type table sd-phone config root (configs/config.lua).
 local config    = require 'configs.config'
+---@type table Watcher registry (server.watchers): shared with server.vibez.actions and init.
+local watchers  = require('server.watchers').of('vibez')
 
 ---@type table Live module; the table returned at end of file.
 local live = {}
@@ -39,11 +41,102 @@ local viewerLive = {}
 local MAX_FRAME = 600000
 ---@type integer Cap on cached current-GOP chunk COUNT.
 local MAX_GOP   = 240
----@type integer Cap on cached current-GOP total BYTES.
-local MAX_GOP_BYTES = 8 * 1024 * 1024
+---@type integer Cap on cached current-GOP total BYTES. One joiner is replayed the whole cache, so
+---this is also the ceiling on what a single join costs the outbound queue.
+local MAX_GOP_BYTES = 2 * 1024 * 1024
+---@type integer Window the host's ingest budget is measured over (ms).
+local INGEST_WINDOW = 1000
+---@type integer Video chunks accepted per window. The encoder emits one per ENC.timesliceMs (four
+---a second by default) and re-anchors on every keyframe, so 24 clears any real burst.
+local MAX_CHUNKS = 24
+---@type integer Video bytes accepted per window, held at or under the per-viewer relay drain: a
+---host that can push faster than the relay empties grows a server-side queue without limit.
+local MAX_CHUNK_BYTES = math.min(math.floor(ENC.bitrate / 8 * 4), RELAY_BPS)
+---@type integer JPEG frames accepted per window. Image mode captures one every two seconds.
+local MAX_FRAMES = 6
+---@type integer JPEG bytes accepted per window, matching that relay's fixed 256 KB/s drain.
+local MAX_FRAME_BYTES = 256 * 1024
+---@type integer Minimum gap between a viewer's cached-keyframe replays (ms). A stalled MSE buffer
+---does need re-priming, so repeats are spaced rather than refused.
+local REPLAY_MS = 5000
+---@type integer Minimum gap between one source's hearts (ms), roughly a fast tap.
+local HEART_MS = 250
+---@type integer Minimum gap between one source's live comments (ms).
+local COMMENT_MS = 1000
+---@type integer, integer Rolling budget of broadcast starts per character. A budget rather than a
+---gap on purpose: closing the live screen and reopening it straight away is a normal action and a
+---minimum gap would fail it silently, while start/end cycling still costs a profile read each.
+local START_WINDOW, START_MAX = 60000, 20
+---@type integer Minimum gap between server-wide liveChanged broadcasts (ms).
+local CHANGED_MS = 3000
 
 local util = require 'server.util'
 local ok, fail, trim, flag = util.ok, util.fail, util.trim, util.truthy
+
+---@type integer, boolean Last server-wide liveChanged broadcast, and whether one is owed.
+local lastChangedAt, changedDirty = 0, false
+
+---Announces that the live list moved. Coalesced, never suppressed: the first change goes out at
+---once and a churn of starts and ends behind it collapses into one broadcast per CHANGED_MS, so
+---every watching phone still learns about a real live.
+local function markChanged()
+    local now = GetGameTimer()
+    if now < lastChangedAt or (now - lastChangedAt) >= CHANGED_MS then
+        lastChangedAt, changedDirty = now, false
+        watchers.push('sd-phone:client:vibez:liveChanged', {})
+        return
+    end
+    changedDirty = true
+end
+
+CreateThread(function()
+    while true do
+        Wait(CHANGED_MS)
+        if changedDirty then
+            lastChangedAt, changedDirty = GetGameTimer(), false
+            watchers.push('sd-phone:client:vibez:liveChanged', {})
+        end
+    end
+end)
+
+---Rolling ingest budget for the host's media pushes, counted on the session so it dies with the
+---live and cannot be reset by reconnecting. The relay drains at a fixed rate per viewer; without
+---this the host fills those queues faster than they empty and the backlog is server memory.
+---@param session table live session
+---@param bytes integer size of the push being considered
+---@param maxPushes integer pushes accepted per window
+---@param maxBytes integer bytes accepted per window
+---@return boolean ok true when the push may be relayed
+local function ingestOk(session, bytes, maxPushes, maxBytes)
+    local now = GetGameTimer()
+    local since = now - session.ingestAt
+    if since < 0 or since >= INGEST_WINDOW then
+        -- Overshoot is carried into the next window rather than forgiven. A push is admitted on a
+        -- budget it then exceeds, so an in-spec one is never refused; repaying it here is what
+        -- holds the average at or under the drain instead of MAX_FRAME above it every window.
+        local debt = session.ingestBytes - maxBytes
+        session.ingestAt, session.ingestPushes = now, 0
+        session.ingestBytes = debt > 0 and debt or 0
+    end
+    if session.ingestPushes >= maxPushes or session.ingestBytes >= maxBytes then return false end
+    session.ingestPushes = session.ingestPushes + 1
+    session.ingestBytes  = session.ingestBytes + bytes
+    return true
+end
+
+---Per-source gate whose stamps live on the session, so they are dropped with the live rather than
+---needing their own disconnect sweep.
+---@param stamps table<integer, integer> the session's stamp table for this action
+---@param src integer caller server id
+---@param ms integer minimum gap between accepted calls
+---@return boolean ok true when the call may proceed
+local function sessionGate(stamps, src, ms)
+    local now  = GetGameTimer()
+    local last = stamps[src]
+    if last and now >= last and (now - last) < ms then return false end
+    stamps[src] = now
+    return true
+end
 
 ---Coerces a raw client payload to a table; any non-table becomes {}.
 ---@param payload any raw client payload
@@ -111,7 +204,7 @@ local function pushViewers(session)
 end
 
 ---Starts (or resumes) a broadcast for the caller's account. Idempotent: a re-entrant start
----returns the existing session. Broadcasts an empty liveChanged to every phone.
+---returns the existing session. Broadcasts an empty liveChanged to every watching phone.
 ---@param src integer hosting player server id
 ---@return table result { liveId, startedAt (ms), enc } or failure
 function live.start(src)
@@ -121,6 +214,11 @@ function live.start(src)
     local existing = hostLive[src]
     if existing and lives[existing] then
         return ok({ liveId = existing, startedAt = lives[existing].startedAt * 1000, enc = ENC })
+    end
+
+    -- Only a genuinely new session is gated; the re-entrant path above already short-circuits.
+    if not util.rateLimit(player.getIdentifier(src), 'vibez:liveStart', START_WINDOW, START_MAX) then
+        return fail('Slow down a moment')
     end
 
     local id = store.newId()
@@ -137,10 +235,16 @@ function live.start(src)
         genChunks = nil,    -- chunks since the last keyframe anchor (video mode)
         genBytes  = 0,      -- total bytes cached in genChunks
         viewers   = {},     -- [src] = username
+        ingestAt  = 0,      -- start of the current host ingest window
+        ingestPushes = 0,   -- pushes accepted in it
+        ingestBytes  = 0,   -- bytes accepted in it
+        replayAt  = {},     -- [src] = last cached-keyframe replay
+        heartAt   = {},     -- [src] = last heart
+        commentAt = {},     -- [src] = last comment
     }
     hostLive[src] = id
 
-    TriggerClientEvent('sd-phone:client:vibez:liveChanged', -1, {})
+    markChanged()
     return ok({ liveId = id, startedAt = lives[id].startedAt * 1000, enc = ENC })
 end
 
@@ -154,6 +258,7 @@ function live.frame(src, payload)
     if not session or session.hostSrc ~= src then return end
     local frame = payload.frame
     if type(frame) ~= 'string' or #frame == 0 or #frame > MAX_FRAME then return end
+    if not ingestOk(session, #frame, MAX_FRAMES, MAX_FRAME_BYTES) then return end
 
     session.mode  = 'image'
     session.frame = frame
@@ -172,6 +277,7 @@ function live.chunk(src, payload)
     if not session or session.hostSrc ~= src then return end
     local chunk = payload.chunk
     if type(chunk) ~= 'string' or #chunk == 0 or #chunk > MAX_FRAME then return end
+    if not ingestOk(session, #chunk, MAX_CHUNKS, MAX_CHUNK_BYTES) then return end
 
     local isInit = payload.init == true
     session.mode = 'video'
@@ -214,6 +320,10 @@ function live.join(src, payload)
     local session = lives[payload.liveId]
     if not session then return fail('This live has ended') end
     if session.hostSrc == src then return fail('You are the host') end
+    -- Bounds the replay and fan-out below: tapping through a live rail is nowhere near this rate.
+    if not util.rateLimit(player.getIdentifier(src), 'vibez:liveJoin', 10000, 20) then
+        return fail('Slow down a moment')
+    end
 
     if not session.viewers[src] and MAX_VIEWERS > 0 and viewerCount(session) >= MAX_VIEWERS then
         return fail('This live is full')
@@ -224,15 +334,21 @@ function live.join(src, payload)
         local old = lives[prior]
         if old and old.viewers[src] then
             old.viewers[src] = nil
+            old.replayAt[src] = nil
             pushViewers(old)
         end
     end
 
+    local isNew = not session.viewers[src]
     session.viewers[src] = acc.username
     viewerLive[src] = session.id
-    pushViewers(session)
+    if isNew then pushViewers(session) end
 
-    if session.mode == 'video' and session.header then
+    -- Replaying the cached keyframe group is megabytes of latent event, so a repeat join by a
+    -- viewer who is already attached only re-primes at REPLAY_MS, never on demand.
+    if session.mode == 'video' and session.header
+        and (isNew or sessionGate(session.replayAt, src, REPLAY_MS)) then
+        if isNew then session.replayAt[src] = GetGameTimer() end
         TriggerLatentClientEvent('sd-phone:client:vibez:liveChunk', src, RELAY_BPS,
             { liveId = session.id, chunk = session.header, init = true, mime = session.videoMime })
         if session.genChunks then
@@ -265,6 +381,7 @@ function live.leave(src, payload)
     local session = id and lives[id]
     if session and session.viewers[src] then
         session.viewers[src] = nil
+        session.replayAt[src] = nil
         viewerLive[src] = nil
         pushViewers(session)
     end
@@ -283,6 +400,7 @@ function live.comment(src, payload)
     local session = lives[payload.liveId]
     if not session then return fail('This live has ended') end
     if session.hostSrc ~= src and not session.viewers[src] then return fail('Not in this live') end
+    if not sessionGate(session.commentAt, src, COMMENT_MS) then return ok() end
 
     local text = trim(payload.text):sub(1, 200)
     if text == '' then return ok() end
@@ -303,11 +421,12 @@ function live.heart(src, payload)
     local session = lives[payload.liveId]
     if not session then return ok() end
     if session.hostSrc ~= src and not session.viewers[src] then return ok() end
+    if not sessionGate(session.heartAt, src, HEART_MS) then return ok() end
     relay(session, 'liveHeart', { liveId = session.id })
     return ok()
 end
 
----Ends a broadcast, host-only. Kicks every viewer, drops the session, and tells every phone to
+---Ends a broadcast, host-only. Kicks every viewer, drops the session, and tells every watching phone to
 ---refresh its live rail.
 ---@param src integer hosting player server id
 ---@param payload table { liveId? } attacker-controlled (falls back to the caller's hosted live)
@@ -325,7 +444,7 @@ function live.endLive(src, payload)
     lives[id] = nil
     hostLive[src] = nil
 
-    TriggerClientEvent('sd-phone:client:vibez:liveChanged', -1, {})
+    markChanged()
     return ok()
 end
 

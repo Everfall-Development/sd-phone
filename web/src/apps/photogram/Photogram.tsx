@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 
 import { t } from '@/i18n';
 import { useStatusBarLight } from '@/shell/useStatusBarLight';
+import { useDeckActive } from '@/shell/deckActive';
 import { clearSessionState, useSessionState } from '@/hooks/useSessionState';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { useAppAuth } from '@/hooks/useAppAuth';
@@ -12,7 +13,7 @@ import { IG, type Comment as IGComment, type Post, type ProfileData, type User }
 import {
     apiActivity, apiAddComment, apiAddStory, apiComments, apiCounts, apiCreate, apiDeleteAccount, apiDeletePost, apiDismissNotification, apiExplore, apiFeed,
     apiFollowRequests, apiPost, apiProfile, apiProfilePosts, apiStories, apiToggleCommentLike,
-    apiToggleLike, apiToggleSave, apiUpdateProfile, mapComment,
+    apiToggleLike, apiToggleSave, apiUpdateProfile, apiWatch, mapComment,
     type ActivityItem, type FollowUser, type LiveEntry, type ProfileView, type SrvComment, type StoryGroup,
 } from './photogramApi';
 import { ActionSheet } from '@/ui/ActionSheet';
@@ -110,13 +111,31 @@ export function Photogram({ onClose: _onClose }: { onClose: () => void }) {
 
     useEffect(() => { if (authed) refreshCounts(); }, [dmOpen, authed, refreshCounts]);
 
+    // Content pushes reach only the phones showing Photogram, so the subscription follows the
+    // foreground. AppDeck keeps this subtree alive, so returning to it is not a remount.
+    const deckActive = useDeckActive();
+    const wasActive = useRef(deckActive);
+    useEffect(() => {
+        if (!deckActive) return;
+        apiWatch(true);
+        return () => { apiWatch(false); };
+    }, [deckActive]);
+
+    // Re-sync on the way back in: anything pushed while this phone was not listening is missed.
+    const [syncNonce, setSyncNonce] = useState(0);
+    useEffect(() => {
+        const returning = deckActive && !wasActive.current;
+        wasActive.current = deckActive;
+        if (returning) setSyncNonce(n => n + 1);
+    }, [deckActive]);
+
     useEffect(() => {
         if (!authed) return;
         if (tab === 'home')     refreshHome();
         if (tab === 'search')   void apiExplore().then(setExplore);
         if (tab === 'activity') refreshActivity();
         if (tab === 'profile')  refreshMe();
-    }, [tab, authed, refreshActivity, refreshMe, refreshHome]);
+    }, [tab, authed, syncNonce, refreshActivity, refreshMe, refreshHome]);
 
     useNuiEvent('sd-phone:photogram:notification', useCallback(() => {
         if (tab === 'activity') refreshActivity(); else refreshCounts();

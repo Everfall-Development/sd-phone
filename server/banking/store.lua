@@ -34,6 +34,25 @@ function store.insert(citizenid, label, amount, category, counterparty, ts)
         { citizenid, label, amount, category or 'transfer', counterparty, ts })
 end
 
+---Trims a character's log to the newest `keep` rows. Nothing reads past that (the app takes
+---Banking.TransactionLimit, the export caps at 100), so the tail only slows the list query and
+---grows with every logged movement. The derived table is what lets MySQL delete from the table it
+---is selecting from; a character under `keep` rows matches nothing and is left alone.
+---@param citizenid string owning character's citizenid
+---@param keep integer rows to retain
+function store.prune(citizenid, keep)
+    if not citizenid or citizenid == '' then return end
+    MySQL.query.await([[
+        DELETE FROM `phone_bank_transactions`
+        WHERE citizenid = ? AND id <= (
+            SELECT cutoff FROM (
+                SELECT id AS cutoff FROM `phone_bank_transactions`
+                WHERE citizenid = ? ORDER BY id DESC LIMIT 1 OFFSET ?
+            ) AS t
+        )
+    ]], { citizenid, citizenid, math.floor(tonumber(keep) or 0) })
+end
+
 ---Returns the most-recent `limit` transactions for a character, newest-first by insert id.
 ---Read-only.
 ---@param citizenid string owning character's citizenid

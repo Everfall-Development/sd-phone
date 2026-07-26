@@ -106,6 +106,11 @@ function store.ensureSchema()
         end
         MySQL.update.await("UPDATE phone_groups SET invites = '[]' WHERE id = ?", { row.id })
     end
+
+    -- Referential integrity, added on boot so existing installs migrate with no manual SQL.
+    -- Each is a no-op once present; orphaned children are cleared first (they point at a
+    -- parent that is already gone) and a type or collation mismatch is skipped, never fatal.
+    util.ensureForeignKey('phone_group_invites', 'group_id', 'phone_groups', 'id', 'fk_group_invites_group')
 end
 
 ---Reads a single group by id, hydrated; nil if missing. Non-string / empty ids return nil.

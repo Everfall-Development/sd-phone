@@ -7,7 +7,7 @@ local ACTIONS = {
     'feed', 'discover', 'post', 'create', 'deletePost', 'toggleLike', 'toggleSave', 'addView',
     'comments', 'addComment', 'toggleCommentLike', 'profile', 'profilePosts', 'likedPosts',
     'savedPosts', 'updateProfile', 'toggleFollow', 'followList', 'search',
-    'activity', 'counts', 'dismissNotification', 'deleteAccount',
+    'activity', 'counts', 'dismissNotification', 'deleteAccount', 'watch',
     'lives', 'liveStart', 'liveJoin', 'liveLeave', 'liveEnd', 'liveComment', 'liveHeart',
 }
 

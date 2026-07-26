@@ -13,7 +13,7 @@ local gang = {}
 function gang.getName(source)
     local p = player_mod.get(source)
     if not p then return nil end
-    if framework.name == 'qb' then return p.PlayerData.gang and p.PlayerData.gang.name or nil end
+    if framework.qb then return p.PlayerData.gang and p.PlayerData.gang.name or nil end
     return nil
 end
 
@@ -24,7 +24,7 @@ end
 function gang.getGrade(source)
     local p = player_mod.get(source)
     if not p then return 0 end
-    if framework.name == 'qb' then
+    if framework.qb then
         return p.PlayerData.gang and p.PlayerData.gang.grade and p.PlayerData.gang.grade.level or 0
     end
     return 0
@@ -41,7 +41,7 @@ function gang.has(source, gangName, minGrade)
     local p = player_mod.get(source)
     if not p then return false end
 
-    if framework.name == 'qb' then
+    if framework.qb then
         local data = p.PlayerData.gang
         if data and data.name == gangName then
             return (data.grade and data.grade.level or 0) >= minGrade

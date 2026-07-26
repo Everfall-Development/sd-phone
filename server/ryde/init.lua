@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Ryde persistence layer (server.ryde.store): drivers + finished-rides tables.
 local store   = require 'server.ryde.store'
 ---@type table Authoritative Ryde handlers (server.ryde.actions): matching, trips, money movement.
@@ -7,10 +10,10 @@ local actions = require 'server.ryde.actions'
 CreateThread(function()
     local success, err = pcall(store.ensureSchema)
     if not success then
-        print(('^1[sd-phone:ryde]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('ryde', err)
         return
     end
-    print('^2[sd-phone:ryde]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- Authoritative Ryde callbacks: thin delegates into server.ryde.actions.
@@ -34,8 +37,12 @@ lib.callback.register('sd-phone:server:ryde:history',       function(src)       
 lib.callback.register('sd-phone:server:ryde:leaderboard',   function()             return actions.leaderboard() end)
 
 ---/rydeoffer - DEV/TEST: injects a dummy fare offer onto the caller's own active ride request.
+---Restricted: it mints a synthetic trip record per run, so it must not be player-reachable.
 ---@param source integer player server id
-lib.addCommand('rydeoffer', { help = 'Ryde: add a test fare offer to your active ride request' }, function(source)
+lib.addCommand('rydeoffer', {
+    help = 'Ryde: add a test fare offer to your active ride request',
+    restricted = 'group.admin',
+}, function(source)
     local msg = actions.devOffer(source)
     TriggerClientEvent('ox_lib:notify', source, { title = 'Ryde', description = msg, type = 'inform' })
 end)

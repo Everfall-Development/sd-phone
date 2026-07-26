@@ -1,5 +1,10 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Player bridge (bridge.server.player): identity + display names from a server-trusted src.
 local player = require 'bridge.server.player'
+---@type table Shared server helpers (server.util): ensureIndex, rateLimit.
+local util = require 'server.util'
 
 ---@type table Rail Runner module; the table returned at end of file. Per-character high scores,
 ---coin wallet and unlocked cosmetics - one row per character - powering the real (all-players)
@@ -51,6 +56,9 @@ function rr.ensureSchema()
             PRIMARY KEY (citizenid)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
+    -- Composite, not (best) alone: the board orders by `best DESC, plays ASC`, so this serves the
+    -- sort as well as the scan, and the rank COUNT(*) becomes an index range count.
+    util.ensureIndex('phone_railrunner', 'idx_rr_best', '(best, plays)')
 end
 
 ---Decodes a stored unlocked-skins JSON array, falling back to just the default skin on NULL or
@@ -172,15 +180,33 @@ function rr.select(src, skin)
     return profileOf(ensureRow(cid, nameOf(src)))
 end
 
+---@type integer Seconds the shared top-20 stays warm. The board is cosmetic and the callback is
+---ungated, so the cache also bounds how often a client can force the query.
+local BOARD_TTL = 30
+
+---@type table|nil, integer Cached board and the os.time it was built.
+local topCache, topAt = nil, 0
+
+---The all-player top 20, rebuilt at most once per BOARD_TTL. The result is never mutated, so every
+---caller can share the one table.
+---@return { name: string, best: integer }[] top
+local function cachedTop()
+    local now = os.time()
+    if topCache and (now - topAt) < BOARD_TTL then return topCache end
+    local rows = MySQL.query.await(
+        'SELECT name, best FROM phone_railrunner WHERE best > 0 ORDER BY best DESC, plays ASC LIMIT 20') or {}
+    local top = {}
+    for _, row in ipairs(rows) do top[#top + 1] = { name = row.name, best = row.best } end
+    topCache, topAt = top, now
+    return top
+end
+
 ---Top 20 by best distance (all players), plus the caller's own best + rank. Read-only; exposes
 ---only display names and distances.
 ---@param src integer player server id
 ---@return table board { top, you = { best, rank? } }
 function rr.leaderboard(src)
-    local rows = MySQL.query.await(
-        'SELECT name, best FROM phone_railrunner WHERE best > 0 ORDER BY best DESC, plays ASC LIMIT 20') or {}
-    local top = {}
-    for _, row in ipairs(rows) do top[#top + 1] = { name = row.name, best = row.best } end
+    local top = cachedTop()
 
     local you = { best = 0, rank = nil }
     local cid = cidOf(src)
@@ -206,6 +232,9 @@ end)
 ---Bank a finished run on the caller's own row (clamped in rr.submit).
 lib.callback.register('sd-phone:server:games:rrSubmit', function(src, payload)
     payload = type(payload) == 'table' and payload or {}
+    -- Four queries per banked run. Even a player who dies on the first obstacle every time cannot
+    -- finish forty runs inside a minute.
+    if not util.rateLimit(cidOf(src), 'games:rrSubmit', 60000, 40) then return { success = false, message = 'Slow down' } end
     local r = rr.submit(src, payload.dist, payload.coins)
     if not r then return { success = false, message = 'Player not found' } end
     return { success = true, data = r }
@@ -235,7 +264,7 @@ end)
 -- One-shot boot thread: creates the profile schema.
 CreateThread(function()
     local good, err = pcall(rr.ensureSchema)
-    if not good then print(('^1[sd-phone:games]^0 railrunner schema bootstrap failed: %s'):format(err)) end
+    if good then boot.schemaReady() else boot.schemaFailed('games:railrunner', err) end
 end)
 
 return rr

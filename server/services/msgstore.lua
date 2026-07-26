@@ -70,11 +70,89 @@ function store.threadMessages(job, citizenNumber, limit)
     ]], { job, citizenNumber, limit or 100 }) or {}
 end
 
+---Every message of several threads at once, so an inbox rebuild costs one round trip instead of
+---one per thread. `fixedCol`/`inCol` are file constants, never client input.
+---The row cap is the same total the per-thread reads could return, so a thread long enough to eat
+---it alone cannot make this cost more than the loop it replaces. A key missing from the result is
+---the caller's cue to read that one thread itself.
+---@param fixedCol string column pinned to one value
+---@param fixedValue string
+---@param inCol string column the thread set is keyed by, and the returned map's key
+---@param values string[] thread keys
+---@param limit number per-thread row cap, matching threadMessages
+---@return table<string, table[]> byKey threads this covers; keys it could not cover are absent
+local function batchThreads(fixedCol, fixedValue, inCol, values, limit)
+    local n = #values
+    if n == 0 then return {} end
+
+    local cap  = n * limit + 1
+    local args = { fixedValue }
+    for i = 1, n do args[i + 1] = values[i] end
+    args[#args + 1] = cap
+
+    local rows = MySQL.query.await(([[
+        SELECT %s, id, sender, staff_cid, staff_name, citizen_name, body, kind, meta, created_at
+        FROM phone_service_messages
+        WHERE %s = ? AND %s IN (%s)
+        ORDER BY %s ASC, created_at ASC, id ASC
+        LIMIT ?
+    ]]):format(inCol, fixedCol, inCol, string.rep('?', n, ','), inCol), args) or {}
+
+    local out, order = {}, {}
+    for i = 1, #rows do
+        local row = rows[i]
+        local key = row[inCol]
+        if key ~= nil then
+            local list = out[key]
+            if not list then list = {}; out[key] = list; order[#order + 1] = key end
+            -- Rows arrive in the per-thread query's own order, so the first `limit` of each are
+            -- exactly what that query would have returned.
+            if #list < limit then list[#list + 1] = row end
+        end
+    end
+
+    -- Cap reached: rows come grouped by `inCol`, so every key but the last is whole. Drop the last
+    -- (it may be cut short) and leave the untouched keys absent rather than serve a short thread.
+    if #rows >= cap and #order > 0 then out[order[#order]] = nil end
+    return out
+end
+
+---Messages for many customer threads of one job. Keys the batch could not cover are absent.
+---@param job string
+---@param citizenNumbers string[]
+---@param limit number
+---@return table<string, table[]> byCitizenNumber
+function store.jobThreadMessages(job, citizenNumbers, limit)
+    return batchThreads('job', job, 'citizen_number', citizenNumbers, limit)
+end
+
+---Messages for many company threads of one customer. Keys the batch could not cover are absent.
+---@param citizenNumber string
+---@param jobs string[]
+---@param limit number
+---@return table<string, table[]> byJob
+function store.citizenThreadMessages(citizenNumber, jobs, limit)
+    return batchThreads('citizen_number', citizenNumber, 'job', jobs, limit)
+end
+
+---True when a (job, citizen) thread already has at least one message. Staff replies are gated on
+---this: without it a client-chosen number mints a brand-new thread per call. Read-only.
+---@param job string
+---@param citizenNumber string
+---@return boolean
+function store.threadExists(job, citizenNumber)
+    if not job or job == '' or not citizenNumber or citizenNumber == '' then return false end
+    return MySQL.scalar.await(
+        'SELECT 1 FROM phone_service_messages WHERE job = ? AND citizen_number = ? LIMIT 1',
+        { job, citizenNumber }) ~= nil
+end
+
 ---Distinct customer threads for a job (one row per customer, newest first), each carrying the
 ---latest body + the customer's most recent known display name. Read-only.
 ---@param job string
+---@param limit? number thread cap (default 50); the inbox runs one query per thread returned
 ---@return { citizen_number: string, citizen_name?: string, last_body?: string, created_at: number }[]
-function store.jobThreads(job)
+function store.jobThreads(job, limit)
     return MySQL.query.await([[
         SELECT t.citizen_number, t.created_at,
                (SELECT body FROM phone_service_messages
@@ -89,7 +167,8 @@ function store.jobThreads(job)
             GROUP BY citizen_number
         ) t
         ORDER BY t.created_at DESC
-    ]], { job, job, job }) or {}
+        LIMIT ?
+    ]], { job, job, job, limit or 50 }) or {}
 end
 
 ---Marks a (viewer, job, citizen) thread read up to `ts`; the stored timestamp never moves

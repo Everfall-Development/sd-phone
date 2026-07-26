@@ -1,3 +1,6 @@
+---@type table Shared server helpers (server.util): index, column and constraint bootstrap.
+local util = require 'server.util'
+
 ---@type table Store module; the table returned at end of file.
 local store = {}
 
@@ -38,6 +41,11 @@ function store.ensureSchema()
             UNIQUE KEY uniq_like (post_id, citizenid)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
+
+    -- Referential integrity, added on boot so existing installs migrate with no manual SQL.
+    -- Each is a no-op once present; orphaned children are cleared first (they point at a
+    -- parent that is already gone) and a type or collation mismatch is skipped, never fatal.
+    util.ensureForeignKey('phone_streak_likes', 'post_id', 'phone_streak_posts', 'id', 'fk_streak_likes_post')
 end
 
 ---A character's streak row (nil if they've never posted). last_post_date is read back as a

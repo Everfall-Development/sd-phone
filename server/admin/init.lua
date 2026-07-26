@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Panel permission gate (server.admin.permissions): ace check.
 local permissions = require 'server.admin.permissions'
 ---@type table Admin persistence layer (server.admin.store): schema bootstrap + reads.
@@ -17,10 +20,10 @@ CreateThread(function()
         moderation.ensureSchema()
     end)
     if not okSchema then
-        print(('^1[sd-phone:admin]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('admin', err)
         return
     end
-    print('^2[sd-phone:admin]^0 schema ready')
+    boot.schemaReady()
 end)
 
 ---Registers one admin callback behind the server-side permission gate. The gate runs on every

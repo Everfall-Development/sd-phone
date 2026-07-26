@@ -68,6 +68,12 @@ function store.ensureSchema()
             INDEX idx_album_items_photo (photo_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
+
+    -- Referential integrity, added on boot so existing installs migrate with no manual SQL.
+    -- Each is a no-op once present; orphaned children are cleared first (they point at a
+    -- parent that is already gone) and a type or collation mismatch is skipped, never fatal.
+    util.ensureForeignKey('phone_photo_album_items', 'album_id', 'phone_photo_albums', 'id', 'fk_photo_album_items_album')
+    util.ensureForeignKey('phone_photo_album_items', 'photo_id', 'phone_photos', 'id', 'fk_photo_album_items_photo')
 end
 
 ---Persists a freshly-uploaded photo against its owner.

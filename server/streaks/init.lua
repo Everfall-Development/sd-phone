@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Streaks persistence layer (server.streaks.store): schema bootstrap + row CRUD.
 local store   = require 'server.streaks.store'
 ---@type table Authoritative Streaks handlers (server.streaks.actions): validation + world mutation.
@@ -9,10 +12,10 @@ local live    = require 'server.streaks.live'
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:streaks]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('streaks', err)
         return
     end
-    print('^2[sd-phone:streaks]^0 schema ready')
+    boot.schemaReady()
 end)
 
 ---Register one Streaks callback under the app's 'sd-phone:server:streaks:' prefix.

@@ -1,7 +1,8 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, Home, Inbox as InboxIcon, Plus, Search, User } from 'lucide-react';
 
 import { useStatusBarLight } from '@/shell/useStatusBarLight';
+import { useDeckActive } from '@/shell/deckActive';
 import { setLaunchIntent } from '@/shell/launchIntent';
 import { useSessionState } from '@/hooks/useSessionState';
 import { isVideoUrl } from '@/core/photosApi';
@@ -15,7 +16,7 @@ import { t } from '@/i18n';
 import { ACCENT, GRAD_FROM, GRAD_TO, fmt, type VLive, type VPost, type VProfile } from './data';
 import {
     apiAddView, apiCounts, apiDeletePost, apiFeed, apiLives, apiPost, apiProfile, apiToggleFollow,
-    apiToggleLike, apiToggleSave, type FeedTab,
+    apiToggleLike, apiToggleSave, apiWatch, type FeedTab,
 } from './vibezApi';
 import { Feed, type FeedHandlers } from './Feed';
 import { Discover } from './Discover';
@@ -79,6 +80,23 @@ export function Vibez({ onClose: _onClose }: { onClose: () => void }) {
     );
 
     const bumpRefresh = useCallback(() => setRefreshKey(k => k + 1), []);
+
+    // Content pushes reach only the phones showing Vibez, so the subscription follows the
+    // foreground. AppDeck keeps this subtree alive, so returning to it is not a remount.
+    const deckActive = useDeckActive();
+    const wasActive  = useRef(deckActive);
+    useEffect(() => {
+        if (!deckActive) return;
+        apiWatch(true);
+        return () => { apiWatch(false); };
+    }, [deckActive]);
+
+    // Re-sync on the way back in: anything pushed while this phone was not listening is missed.
+    useEffect(() => {
+        const returning = deckActive && !wasActive.current;
+        wasActive.current = deckActive;
+        if (returning) bumpRefresh();
+    }, [deckActive, bumpRefresh]);
 
     useNuiEvent('sd-phone:vibez:notification', useCallback(() => {
         void apiCounts().then(setUnread);

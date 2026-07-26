@@ -35,7 +35,7 @@ export function MarketplaceListTab({ listings, onCreate, onOpen, onMessage, onCa
                 </button>
             </div>
 
-            <SearchBar value={query} onChange={setQuery} placeholder={t('marketplace.searchPlaceholder','Search for listings or numbers')} className="mx-4 mb-2 mt-1" />
+            <SearchBar value={query} onChange={setQuery} placeholder={t('marketplace.searchPlaceholder','Find a listing or a seller')} className="mx-4 mb-2 mt-1" />
 
             <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar px-4 pb-6">
                 {list.length === 0 ? (

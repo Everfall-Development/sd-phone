@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Groups persistence layer (server.groups.store): phone_groups row CRUD + active-group pointers.
 local store   = require 'server.groups.store'
 ---@type table Authoritative Groups handlers (server.groups.actions): validation + permission checks.
@@ -13,10 +16,10 @@ local framework = require 'bridge.shared.framework'
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:groups]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('groups', err)
         return
     end
-    print('^2[sd-phone:groups]^0 schema ready')
+    boot.schemaReady()
 end)
 
 ---Pushes a group-related event to a single player; no-op if they're offline.
@@ -149,7 +152,9 @@ lib.callback.register('sd-phone:server:groups:invite', function(src, payload)
             body  = ('%s invited you to join'):format(inv.invitedBy or 'Someone'),
             time  = 'now',
         })
-        badges.push(targetSrc)
+        -- Aimed at another player on their say-so, so it must stay one indexed count rather than
+        -- the seven-store snapshot; an invite only ever moves the Groups badge anyway.
+        badges.pushApp(targetSrc, 'groups')
         result.data = { invite = inv }
     end
     return result
@@ -167,14 +172,14 @@ lib.callback.register('sd-phone:server:groups:accept', function(src, payload)
         })
         result.data = { group = result.data.group }
     end
-    badges.push(src)
+    badges.pushApp(src, 'groups')
     return result
 end)
 
 ---Declines an invite and recounts the caller's Groups badge.
 lib.callback.register('sd-phone:server:groups:decline', function(src, payload)
     local result = actions.decline(src, payload)
-    badges.push(src)
+    badges.pushApp(src, 'groups')
     return result
 end)
 

@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table sd-phone config root (configs/config.lua).
 local config   = require 'configs.config'
 ---@type table SIM feature flags (server.sim.state): active + mode, flipped on here.
@@ -123,7 +126,7 @@ CreateThread(function()
 
     local ok, err = pcall(simStore.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:sim]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('sim', err)
         return
     end
 
@@ -254,6 +257,10 @@ end
 ---@type table<number, number> Last requestPush per source (GetGameTimer ms); floods are dropped.
 local lastRequestPush = {}
 
+---@type table<number, boolean> Per-source snapshot/restore in progress; drops overlapping
+---attempts on the manual, automatic and restore paths.
+local syncBusy = {}
+
 ---Client asks for a fresh SIM snapshot (fired once after character load, so the closed-phone
 ---frame colour is right before the first open). Cooldown-guarded: push does a full inventory
 ---rescan, so a flooding client only gets one every 5s.
@@ -271,14 +278,21 @@ end)
 
 AddEventHandler('playerDropped', function()
     lastRequestPush[source] = nil
+    syncBusy[source] = nil
 end)
 
----The player's SIM panel snapshot for Settings -> SIM & Backup. Drops the session cache first
----so the panel always reflects the live inventory. Read-only.
+---The player's SIM panel snapshot for Settings -> SIM & Backup. Drops the session cache first,
+---at most once every 5s, so the panel reflects the live inventory. Read-only.
 lib.callback.register('sd-phone:server:sim:get', function(source)
     local realCid = player.getRealIdentifier(source)
     if not realCid then return util.fail('Player not found') end
-    session.invalidate(source)
+    -- A rescan is an inventory search per carried phone plus registry writes. Shares the push
+    -- window so the panel is never more than one session-cache generation behind either way.
+    local now = GetGameTimer()
+    if not lastRequestPush[source] or (now - lastRequestPush[source]) >= 5000 then
+        lastRequestPush[source] = now
+        session.invalidate(source)
+    end
     local s = session.resolve(source)
     local sims = {}
     if s then
@@ -378,6 +392,13 @@ local function isCloudIdentity(identity)
     return type(identity) == 'string' and identity:sub(1, 6) == 'cloud:'
 end
 
+---@type integer Auto-sync throttle: the enrolled phone re-snapshots at most this often (seconds).
+local AUTO_SYNC_MIN_GAP = 300
+
+---@type integer Manual "Back Up Now" throttle. Shorter than the auto gap so the button stays
+---responsive, but enough that the ~88-statement run can't be looped at will.
+local MANUAL_SYNC_MIN_GAP = 30
+
 ---Takes a fresh snapshot of `s.identity` into ITS profile, converting a legacy pointer row to
 ---a `cloud:` namespace on first use, and stamps the picker labels (colour + number).
 ---@param realCid string real (framework) citizenid
@@ -438,28 +459,34 @@ lib.callback.register('sd-phone:server:sim:backup:set', function(source, payload
                 return util.fail(('You can back up at most %d phones. Delete a backup first.'):format(cap))
             end
         end
+        -- Enabling a phone that is already enrolled and freshly snapshotted changes nothing, so
+        -- don't pay the ~60-statement run for it.
+        if profile and profile.enabled and (os.time() - (profile.syncedAt or 0)) < MANUAL_SYNC_MIN_GAP then
+            return util.ok()
+        end
+        if syncBusy[source] then return util.fail('A backup is already running.') end
+        -- Armed only here, so a wrong password or a disable still answers immediately: enabling
+        -- runs the same ~60-statement snapshot as "Back Up Now", and off/on cycling reaches it.
+        if not util.cooldown(realCid, 'sim:backupSet', 5000) then
+            return util.fail('Backed up moments ago. Try again in a few seconds.')
+        end
+
         local cloudId = (profile and isCloudIdentity(profile.identity)) and profile.identity
             or ('cloud:' .. util.newId(16))
-        simStore.upsertProfile(realCid, s.identity, cloudId)
-        accounts.saveVaultEntry(s.identity, 'cloud', 'Cloud Backup', password, nil, s.number)
-        profile = simStore.getProfile(realCid, s.identity)
-        if profile then runProfileSync(realCid, profile, s) end
+        syncBusy[source] = true
+        local okRun, err = pcall(function()
+            simStore.upsertProfile(realCid, s.identity, cloudId)
+            accounts.saveVaultEntry(s.identity, 'cloud', 'Cloud Backup', password, nil, s.number)
+            profile = simStore.getProfile(realCid, s.identity)
+            if profile then runProfileSync(realCid, profile, s) end
+        end)
+        syncBusy[source] = nil
+        if not okRun then error(err, 0) end
     else
         simStore.setProfileEnabled(realCid, s.identity, false)
     end
     return util.ok()
 end)
-
----@type integer Auto-sync throttle: the enrolled phone re-snapshots at most this often (seconds).
-local AUTO_SYNC_MIN_GAP = 300
-
----@type integer Manual "Back Up Now" throttle. Shorter than the auto gap so the button stays
----responsive, but enough that the ~88-statement run can't be looped at will.
-local MANUAL_SYNC_MIN_GAP = 30
-
----@type table<number, boolean> Per-source sync in progress; drops overlapping attempts on both
----the manual and the automatic path.
-local syncBusy = {}
 
 ---Manual "Back Up Now" for the caller's phone (its own profile only).
 lib.callback.register('sd-phone:server:sim:backup:sync', function(source)
@@ -590,9 +617,19 @@ lib.callback.register('sd-phone:server:sim:backup:restore', function(source, pay
         end
     end
 
+    if syncBusy[source] then return util.fail('A backup is already running.') end
+    -- Checked after the password so a fumbled one can be retried at once. A restore is idempotent
+    -- (the rows are remapped, so a repeat writes nothing) but costs the full copy every time.
+    if not util.cooldown(realCid, 'sim:backupRestore', 30000) then
+        return util.fail('Restored moments ago. Try again in a moment.')
+    end
+
     -- Snapshot untouched: restore copies OUT of the cloud. Live room state (groups, mail
     -- logins) moves from the profile's source phone; legacy pointer rows ARE that phone.
-    local rows = backup.restore(profile.identity, s.identity, s.number or '', profile.deviceIdentity)
+    syncBusy[source] = true
+    local okRun, rows = pcall(backup.restore, profile.identity, s.identity, s.number or '', profile.deviceIdentity)
+    syncBusy[source] = nil
+    if not okRun then error(rows, 0) end
     print(('^3[sd-phone:sim]^0 restored backup %s -> %s for %s (%d rows)')
         :format(profile.identity, s.identity, realCid, rows))
     -- The restored data replaced the acting profile in place: the client resets the NUI (kept-

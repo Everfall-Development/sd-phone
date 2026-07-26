@@ -108,6 +108,16 @@ function store.ensureSchema()
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
     util.ensureIndex('phone_vibez_notifications', 'idx_vibez_notifs_unseen', '(recipient, seen)')
+    util.ensureIndex('phone_vibez_notifications', 'idx_vibez_notifs_dedupe', '(recipient, kind, actor, post_id)')
+
+    -- Referential integrity, added on boot so existing installs migrate with no manual SQL.
+    -- Each is a no-op once present; orphaned children are cleared first (they point at a
+    -- parent that is already gone) and a type or collation mismatch is skipped, never fatal.
+    util.ensureForeignKey('phone_vibez_comments', 'post_id', 'phone_vibez_posts', 'id', 'fk_vibez_comments_post')
+    util.ensureForeignKey('phone_vibez_likes', 'post_id', 'phone_vibez_posts', 'id', 'fk_vibez_likes_post')
+    util.ensureForeignKey('phone_vibez_saves', 'post_id', 'phone_vibez_posts', 'id', 'fk_vibez_saves_post')
+    util.ensureForeignKey('phone_vibez_notifications', 'post_id', 'phone_vibez_posts', 'id', 'fk_vibez_notifications_post')
+    util.ensureForeignKey('phone_vibez_comment_likes', 'comment_id', 'phone_vibez_comments', 'id', 'fk_vibez_comment_likes_comment')
 end
 
 ---A profile row by exact username, nil when the handle doesn't exist. Read-only.
@@ -132,16 +142,17 @@ function store.upsertProfile(username, p)
     })
 end
 
----Matches accounts by handle or display name.
+---Matches accounts by handle or display name. Wildcards in the client's text are escaped, so a
+---bare '%' searches for a literal percent instead of scanning the whole table.
 ---@param query string search text
 ---@param limit? integer max rows (default 20)
 ---@return table[] rows
 function store.searchProfiles(query, limit)
     local n = math.floor(tonumber(limit) or 20)
-    local like = '%' .. query .. '%'
+    local like = '%' .. query:gsub('[%%_\\]', '\\%0') .. '%'
     return MySQL.query.await(([[
         SELECT * FROM phone_vibez_profiles
-        WHERE username LIKE ? OR display_name LIKE ?
+        WHERE username LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\'
         ORDER BY username ASC
         LIMIT %d
     ]]):format(n), { like, like }) or {}
@@ -516,6 +527,26 @@ end
 function store.commentLikeCount(commentId)
     local row = MySQL.single.await('SELECT COUNT(*) AS n FROM phone_vibez_comment_likes WHERE comment_id = ?', { commentId })
     return row and tonumber(row.n) or 0
+end
+
+---True when the same actor already raised this kind of notification on the same post for the
+---same recipient since `since`. Lets the caller drop the duplicate a like/follow toggle would
+---otherwise mint on every flip. The postless kinds are matched through IFNULL because SQL treats
+---two NULL post_ids as distinct, which is also why this is not a UNIQUE key.
+---@param recipient string account handle receiving it
+---@param kind string notification kind
+---@param actor string account handle that caused it
+---@param postId string|nil related post id
+---@param since integer unix seconds - only rows newer than this count
+---@return boolean exists
+function store.recentNotification(recipient, kind, actor, postId, since)
+    local n = MySQL.scalar.await([[
+        SELECT 1 FROM phone_vibez_notifications
+        WHERE recipient = ? AND kind = ? AND actor = ?
+          AND IFNULL(post_id, '') = ? AND created_at > ?
+        LIMIT 1
+    ]], { recipient, kind, actor, postId or '', since })
+    return n ~= nil
 end
 
 ---Persists an Inbox notification.

@@ -17,6 +17,15 @@ local actions = {}
 local util = require 'server.util'
 local digits, trim = util.digits, util.trim
 
+---@type integer Longest client images array parseFields will walk; every element is trimmed before
+---the MaxImages cap applies, so an unbounded array is free CPU for the caller.
+local MAX_IMAGE_ENTRIES = 50
+---@type integer Rolling window the write budget is measured over, in ms.
+local WRITE_WINDOW = 10000
+---@type integer Creates plus edits plus deletes one character may make per window. Clearing out a
+---full MaxPostsPerPlayer set in one go still fits.
+local WRITE_MAX = 16
+
 ---Caller identity, resolved from src via the player bridge.
 ---@param src integer player server id
 ---@return string|nil citizenid (nil while no character is loaded)
@@ -132,6 +141,7 @@ local function parseFields(payload, cid)
         end
     end
     if type(payload.images) == 'table' then
+        if #payload.images > MAX_IMAGE_ENTRIES then return nil, 'Too many photos' end
         for _, u in ipairs(payload.images) do addImg(u) end
     end
     if #images == 0 then addImg(payload.image) end
@@ -173,6 +183,9 @@ function actions.create(src, payload)
     local cid = cidOf(src)
     if not cid then return { success = false } end
     if type(payload) ~= 'table' then payload = {} end
+    if not util.rateLimit(cid, 'pages:write', WRITE_WINDOW, WRITE_MAX) then
+        return { success = false, message = 'Slow down' }
+    end
 
     if store.countFor(cid) >= PG.MaxPostsPerPlayer then
         return { success = false, message = 'You have too many active posts' }
@@ -206,6 +219,9 @@ function actions.update(src, payload)
     local cid = cidOf(src)
     if not cid then return { success = false } end
     if type(payload) ~= 'table' then payload = {} end
+    if not util.rateLimit(cid, 'pages:write', WRITE_WINDOW, WRITE_MAX) then
+        return { success = false, message = 'Slow down' }
+    end
 
     local id = tonumber(payload.id)
     id = id and math.tointeger(id)
@@ -230,6 +246,9 @@ end
 function actions.delete(src, id)
     local cid = cidOf(src)
     if not cid then return { success = false } end
+    if not util.rateLimit(cid, 'pages:write', WRITE_WINDOW, WRITE_MAX) then
+        return { success = false, message = 'Slow down' }
+    end
     id = tonumber(id)
     id = id and math.tointeger(id)
     if not id then return { success = false, message = 'Bad post id' } end

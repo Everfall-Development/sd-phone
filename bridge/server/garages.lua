@@ -167,9 +167,23 @@ local function normPlate(p)
     return (p:gsub('^%s+', ''):gsub('%s+$', '')):upper()
 end
 
----Set of plates currently spawned in the world (server-side).
----@return table<string, boolean> plateSet normalised plate -> true
+---@type integer Seconds the world-plate set and the garage collection stay warm. Both are
+---server-global, so a per-player cache upstream still let N players each pay full price inside the
+---same second. Kept short: the plate set is live world state.
+local MEMO_TTL = 2
+
+---@type table<string, boolean>|nil Last built plate set.
+local platesCache
+---@type integer os.time the plate set was built (0 = never).
+local platesAt = 0
+
+---Set of plates currently spawned in the world (server-side). Memoised: the walk is one entity
+---native per vehicle on the whole server, and the answer is the same for every caller.
+---@return table<string, boolean> plateSet normalised plate -> true (shared, read-only)
 local function spawnedPlates()
+    local now = os.time()
+    if platesCache and (now - platesAt) < MEMO_TTL then return platesCache end
+
     local set = {}
     local ok, vehs = pcall(GetAllVehicles)
     if ok and type(vehs) == 'table' then
@@ -178,6 +192,7 @@ local function spawnedPlates()
             if p then set[p] = true end
         end
     end
+    platesCache, platesAt = set, now
     return set
 end
 
@@ -218,10 +233,19 @@ end
 -- jg-advancedgarages, cd_garage, op_garages) are read directly; the rest fall back to the manual
 -- coordinate map in configs.garages -> Locations.
 
----Pull the active system's full garage collection once per list() call. Nil for op_garages
----(per-garage export lookups) and for unsupported systems.
+---@type table|nil Last loaded garage collection (nil is a valid cached answer).
+local gcolCache
+---@type integer os.time the collection was loaded (0 = never).
+local gcolAt = 0
+
+---Pull the active system's full garage collection. Nil for op_garages (per-garage export lookups)
+---and for unsupported systems. Memoised on the same short TTL as the plate set: it crosses a
+---resource boundary and every caller gets the same answer.
 ---@return table|nil collection
 local function loadGarageCollection()
+    local now = os.time()
+    if (now - gcolAt) < MEMO_TTL then return gcolCache end
+
     local ok, data = pcall(function()
         if ACTIVE == 'qbx_garages'        then return exports['qbx_garages']:GetGarages() end
         if ACTIVE == 'qb-garages'         then return exports['qb-garages']:getAllGarages() end
@@ -229,7 +253,18 @@ local function loadGarageCollection()
         if ACTIVE == 'cd_garage'          then return exports['cd_garage']:GetConfig() end
         return nil
     end)
-    return ok and data or nil
+    gcolCache, gcolAt = ok and data or nil, now
+    return gcolCache
+end
+
+-- A cached collection holds tables owned by the garage resource, so a restart must drop it rather
+-- than hand out references into the old instance.
+if ACTIVE then
+    local function dropCollection(name)
+        if name == ACTIVE then gcolCache, gcolAt = nil, 0 end
+    end
+    AddEventHandler('onResourceStart', dropCollection)
+    AddEventHandler('onResourceStop', dropCollection)
 end
 
 ---Coords (a vector with .x/.y) for the vehicle's garage from the active system's own data.

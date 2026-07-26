@@ -82,17 +82,22 @@ function store.clearFeatured(keepId)
     MySQL.query.await('UPDATE `phone_weazel_articles` SET featured = 0 WHERE id <> ?', { keepId or 0 })
 end
 
----Count one view of an article. A no-op for a missing id.
----@param id integer article id
-function store.bumpViews(id)
-    MySQL.query.await('UPDATE `phone_weazel_articles` SET views = views + 1 WHERE id = ?', { id })
+---Adds buffered view counts to their articles, one statement per article touched since the last
+---flush. Reading an article used to cost an UPDATE plus a SELECT per call, on a path with no gate.
+---@param counts table<integer, integer> article id -> views to add
+function store.bumpViewsBatch(counts)
+    for id, n in pairs(counts) do
+        if n > 0 then
+            MySQL.query.await('UPDATE `phone_weazel_articles` SET views = views + ? WHERE id = ?', { n, id })
+        end
+    end
 end
 
----An article's current view total (0 when missing). Read-only.
+---An article's current view total, or nil when no such article exists. Read-only.
 ---@param id integer article id
----@return integer views
+---@return integer|nil views
 function store.viewsOf(id)
-    return MySQL.scalar.await('SELECT views FROM `phone_weazel_articles` WHERE id = ?', { id }) or 0
+    return tonumber(MySQL.scalar.await('SELECT views FROM `phone_weazel_articles` WHERE id = ?', { id }))
 end
 
 ---Ticker lines in display order. Read-only.

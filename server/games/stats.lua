@@ -1,6 +1,19 @@
 ---@type table Shared server helpers (server.util): ensureIndex.
 local util = require 'server.util'
 
+---@type table<string, boolean> Games allowed to own a stats row. Deliberately NOT the engine's
+---`configs` table: blackjack, blocks, climber and flappy are single-player and never register.
+local STAT_GAMES = {
+    battleship = true, blackjack = true, blocks = true, chess = true,
+    climber = true, connectfour = true, flappy = true, wordle = true,
+}
+
+---True when a client-supplied game id is one of the shipped games. Closes the key space of
+---`phone_game_stats` and of the board cache, both of which are otherwise attacker-chosen.
+---@param game any client-supplied game id
+---@return boolean
+local function knownGame(game) return type(game) == 'string' and STAT_GAMES[game] == true end
+
 ---@type table Stats module; the table returned at end of file. Unified per-character game stats
 ---(W/L/D, split vs-Computer / Online, cumulative chip amounts, and a single-player high score)
 ---shared by every game (chess, connectfour, blackjack, blocks, flappy, ...). One row per
@@ -58,12 +71,12 @@ function stats.ensureSchema()
 end
 
 ---Reads a player's stats for one game: { cpu = {wins,losses,draws}, online = {...}, won, lost,
----high, plays, last }. A non-string game id returns the zero shape. Read-only.
+---high, plays, last }. An unknown game id returns the zero shape. Read-only.
 ---@param cid string citizenid
 ---@param game any game id (client-supplied)
----@return table stats zero-filled when the row (or a valid game id) doesn't exist
+---@return table stats zero-filled when the row (or a known game id) doesn't exist
 function stats.statsFor(cid, game)
-    local r = type(game) == 'string'
+    local r = knownGame(game)
         and MySQL.single.await('SELECT * FROM phone_game_stats WHERE citizenid = ? AND game = ?', { cid, game })
         or nil
     return {
@@ -99,7 +112,7 @@ local SCORE_MAX = 100000000
 ---@param amount any net chip swing (client-supplied)
 ---@return table|nil stats updated stats, nil when the report is malformed
 function stats.record(cid, game, mode, result, name, amount)
-    if type(game) ~= 'string' or game == '' or #game > 32 then return nil end
+    if not knownGame(game) then return nil end
     local col = STAT_COL[mode] and STAT_COL[mode][result]
     if not col then return nil end
     name = type(name) == 'string' and name:sub(1, 64) or nil
@@ -124,7 +137,7 @@ end
 ---@param name string display name for the board (server-resolved)
 ---@return { best: integer, isRecord: boolean, plays: integer, last: integer }|nil
 function stats.submitScore(cid, game, score, name)
-    if type(game) ~= 'string' or game == '' or #game > 32 then return nil end
+    if not knownGame(game) then return nil end
     name = type(name) == 'string' and name:sub(1, 64) or nil
     score = tonumber(score)
     if not score or score ~= score or score == math.huge or score == -math.huge then score = 0 end
@@ -148,14 +161,14 @@ function stats.submitScore(cid, game, score, name)
 end
 
 ---Global leaderboards for a game: `cpu`/`online` ranked by wins, `winners`/`losers` ranked by net
----chips (won - lost). A non-string game id returns the empty shape. Read-only.
+---chips (won - lost). An unknown game id returns the empty shape. Read-only.
 ---@param game any game id (client-supplied)
 ---@return table boards { cpu, online, winners, losers }
 ---@type integer Seconds a computed board stays warm. The boards are cosmetic, and the callback
 ---behind them is ungated, so a short cache also bounds how often a client can force the queries.
 local BOARD_TTL = 30
----@type integer Cache entries kept before the whole cache is dropped. The game id comes from the
----client, so the key space is attacker-chosen and must not grow without bound.
+---@type integer Cache entries kept before the whole cache is dropped. A backstop only now that
+---STAT_GAMES closes the key space to the shipped games.
 local BOARD_KEYS_MAX = 64
 
 local boardCache, boardKeys = {}, 0
@@ -178,7 +191,7 @@ local function cachedBoard(key, build)
 end
 
 function stats.leaderboard(game)
-    if type(game) ~= 'string' then return { cpu = {}, online = {}, winners = {}, losers = {} } end
+    if not knownGame(game) then return { cpu = {}, online = {}, winners = {}, losers = {} } end
     return cachedBoard('lb:' .. game, function()
         local function wlBoard(winCol, lossCol)
             return MySQL.query.await((
@@ -202,12 +215,12 @@ function stats.leaderboard(game)
     end)
 end
 
----Global high-score board for a game: top 20 players by high score. A non-string game id returns
+---Global high-score board for a game: top 20 players by high score. An unknown game id returns
 ---the empty board. Read-only.
 ---@param game any game id (client-supplied)
 ---@return { name: string, score: integer }[]
 function stats.scoreboard(game)
-    if type(game) ~= 'string' then return {} end
+    if not knownGame(game) then return {} end
     return cachedBoard('sb:' .. game, function()
         return MySQL.query.await([[
             SELECT name, high_score AS score FROM phone_game_stats

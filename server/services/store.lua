@@ -28,7 +28,30 @@ function store.ensureSchema()
     end
 end
 
----Reads a character's prefs for a job; unset (or blank keys) all default to ON.
+---@type integer How long a cached prefs entry is reused, in ms. A backstop under the explicit
+---invalidation below: the rows are also rewritten from outside this module (admin wipe, SIM backup
+---restore), and an entry that never expires would stay wrong until the character disconnected.
+local PREFS_TTL = 30000
+---@type table<string, table<string, { at: number, prefs: table }>> Prefs by citizenid then job.
+---Company calls and company messages read one employee's prefs per online player, so an uncached
+---read made every fan-out an O(online) burst of blocking queries. Every writer below invalidates;
+---a drop clears the character.
+local cache = {}
+
+---Drops a character's cached prefs, so the next read reloads them from the row just written.
+---@param citizenid string
+---@param job string
+local function invalidate(citizenid, job)
+    local byCid = cache[citizenid]
+    if byCid then byCid[job] = nil end
+end
+
+util.onCleanup(function(_, citizenid)
+    if citizenid then cache[citizenid] = nil end
+end)
+
+---Reads a character's prefs for a job; unset (or blank keys) all default to ON. The returned table
+---is shared with the cache: callers read it, never mutate it.
 ---@param citizenid string
 ---@param job string
 ---@return { duty: boolean, jobCalls: boolean, jobMessages: boolean }
@@ -36,11 +59,20 @@ function store.getPrefs(citizenid, job)
     if not citizenid or citizenid == '' or not job or job == '' then
         return { duty = true, jobCalls = true, jobMessages = true }
     end
+    local byCid = cache[citizenid]
+    local hit = byCid and byCid[job]
+    if hit and (GetGameTimer() - hit.at) < PREFS_TTL then return hit.prefs end
+
     local row = MySQL.single.await(
         'SELECT duty, job_calls, job_messages FROM phone_service_prefs WHERE citizenid = ? AND job = ?',
         { citizenid, job })
-    if not row then return { duty = true, jobCalls = true, jobMessages = true } end
-    return { duty = isTruthy(row.duty), jobCalls = isTruthy(row.job_calls), jobMessages = isTruthy(row.job_messages) }
+    local prefs = row
+        and { duty = isTruthy(row.duty), jobCalls = isTruthy(row.job_calls), jobMessages = isTruthy(row.job_messages) }
+        or  { duty = true, jobCalls = true, jobMessages = true }
+
+    if not byCid then byCid = {}; cache[citizenid] = byCid end
+    byCid[job] = { at = GetGameTimer(), prefs = prefs }
+    return prefs
 end
 
 ---Persists the Duty toggle for a (character, job), leaving the other toggles intact.
@@ -53,6 +85,7 @@ function store.setDuty(citizenid, job, on)
         INSERT INTO phone_service_prefs (citizenid, job, duty) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE duty = VALUES(duty)
     ]], { citizenid, job, on and 1 or 0 })
+    invalidate(citizenid, job)
 end
 
 ---Persists the Job-Calls toggle for a (character, job), leaving the other toggles intact.
@@ -65,6 +98,7 @@ function store.setJobCalls(citizenid, job, on)
         INSERT INTO phone_service_prefs (citizenid, job, job_calls) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE job_calls = VALUES(job_calls)
     ]], { citizenid, job, on and 1 or 0 })
+    invalidate(citizenid, job)
 end
 
 ---Persists the Job-Messages toggle for a (character, job), leaving the other toggles intact.
@@ -77,6 +111,7 @@ function store.setJobMessages(citizenid, job, on)
         INSERT INTO phone_service_prefs (citizenid, job, job_messages) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE job_messages = VALUES(job_messages)
     ]], { citizenid, job, on and 1 or 0 })
+    invalidate(citizenid, job)
 end
 
 return store

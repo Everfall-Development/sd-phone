@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table sd-phone config root (configs/config.lua).
 local config  = require 'configs.config'
 ---@type table Shared server helpers (server.util): digit / trim sanitizers for the export boundary.
@@ -14,11 +17,11 @@ local PENDING_MAX_AGE = 14 * 24 * 60 * 60
 CreateThread(function()
     local success, err = pcall(store.ensureSchema)
     if not success then
-        print(('^1[sd-phone:messages]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('messages', err)
         return
     end
     pcall(store.prunePending, PENDING_MAX_AGE)
-    print('^2[sd-phone:messages]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- Authoritative NUI callbacks: thin delegates into server.messages.actions.

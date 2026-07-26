@@ -153,6 +153,14 @@ function store.blockNumber(citizenid, number)
     ]], { citizenid, d })
 end
 
+---How many numbers a player currently blocks. Read-only.
+---@param citizenid string
+---@return number
+function store.blockedCount(citizenid)
+    local n = MySQL.scalar.await('SELECT COUNT(*) FROM phone_blocked WHERE citizenid = ?', { citizenid })
+    return tonumber(n) or 0
+end
+
 ---Remove a number from the owner's block list. Idempotent; a silent no-op on garbage input.
 ---@param citizenid string
 ---@param number string
@@ -288,6 +296,10 @@ end
 function store.pruneCalls(citizenid, keep)
     local n = math.floor(tonumber(keep) or 100)
     if n < 1 then n = 1 end
+    -- The DELETE below runs a correlated derived-table subquery over the player's rows. An
+    -- indexed COUNT first means the log only pays for it on the calls that actually overflow.
+    local have = MySQL.scalar.await('SELECT COUNT(*) FROM phone_calls WHERE citizenid = ?', { citizenid })
+    if (tonumber(have) or 0) <= n then return end
     MySQL.update.await(([[
         DELETE FROM phone_calls
         WHERE citizenid = ?

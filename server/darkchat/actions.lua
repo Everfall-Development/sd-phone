@@ -36,6 +36,12 @@ end
 local util = require 'server.util'
 local trim = util.trim
 
+---@type integer Minimum gap between accepted sends, and the rolling window budget. A public-room
+---send both INSERTs a row and fans out to every viewer, so the gap bounds the broadcast too;
+---40 a minute is roughly twice the fastest a person sustains in a busy room.
+local SEND_GAP_MS = 750
+local SEND_WINDOW_MS, SEND_PER_WINDOW = 60000, 40
+
 ---Trims a client string and caps its byte length; nil for non-strings and empties.
 ---@param s any client-supplied value
 ---@param max integer maximum byte length kept
@@ -215,6 +221,10 @@ function actions.send(src, roomId, payload)
     local cid = cidOf(src)
     if not cid then return { success = false } end
     local muted = moderation.guard(cid, 'darkchat'); if muted then return muted end
+    if not util.cooldown(cid, 'darkchat:send', SEND_GAP_MS)
+        or not util.rateLimit(cid, 'darkchat:send', SEND_WINDOW_MS, SEND_PER_WINDOW) then
+        return { success = false, message = 'Slow down' }
+    end
     if type(roomId) ~= 'string' then return { success = false, message = 'Bad room' } end
     if not canAccess(roomId, cid) then return { success = false, message = 'No access to that room' } end
 

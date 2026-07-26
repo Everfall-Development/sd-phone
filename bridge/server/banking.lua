@@ -171,7 +171,7 @@ end
 ---@param amount number
 ---@return boolean ok
 function banking.addOffline(citizenid, amount)
-    if framework.name == 'qb' then
+    if framework.qb then
         local ok, affected = pcall(function()
             return MySQL.update.await(
                 "UPDATE players SET money = JSON_SET(money, '$.bank', JSON_EXTRACT(money, '$.bank') + ?) WHERE citizenid = ?",

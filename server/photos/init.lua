@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Photos persistence layer (server.photos.store): photo/album row CRUD.
 local store    = require 'server.photos.store'
 ---@type table Authoritative photo/album handlers (server.photos.actions).
@@ -15,10 +18,10 @@ local util     = require 'server.util'
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:photos]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('photos', err)
         return
     end
-    print('^2[sd-phone:photos]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- Authoritative gallery-read callback: thin delegate into server.photos.actions.
@@ -64,7 +67,6 @@ RegisterNetEvent('sd-phone:server:photos:upload', function(image, kind)
         return
     end
 
-    print(('^2[sd-phone:photos]^0 [UPLOAD] src=%s kind=%s bytes=%d'):format(tostring(src), isVideo and 'video' or 'photo', #image))
 
     local ext = 'jpg'
     if isVideo then
@@ -82,7 +84,6 @@ RegisterNetEvent('sd-phone:server:photos:upload', function(image, kind)
         local saveRes = actions.saveFromUrl(src, url)
         if saveRes and saveRes.success and saveRes.data and saveRes.data.photo then
             TriggerClientEvent('sd-phone:client:photos:added', src, saveRes.data.photo)
-            print(('^2[sd-phone:photos]^0 [UPLOAD] saved + pushed id=%s'):format(saveRes.data.photo.id))
         end
     end)
 end)
@@ -102,6 +103,10 @@ lib.callback.register('sd-phone:server:photos:saveUrl', function(src, payload)
     if not actions.isAllowedImportUrl(payload and payload.url) then
         return { success = false, message = 'Images from that site aren\'t allowed' }
     end
+    -- Same budget the capture upload uses: saving a hosted URL is a deliberate tap, so the 1s
+    -- gap is invisible, and without it this path writes and prunes phone_photos at line rate.
+    local okLimit = mediaLimit.check(player.getIdentifier(src), #(payload and payload.url or ''))
+    if not okLimit then return { success = false, message = 'Slow down a moment' } end
     local res = actions.saveFromUrl(src, payload and payload.url)
     if res and res.success and res.data and res.data.photo then
         TriggerClientEvent('sd-phone:client:photos:added', src, res.data.photo)

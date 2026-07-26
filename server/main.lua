@@ -7,8 +7,6 @@ end
 
 ---@type table sd-phone config root (configs/config.lua).
 local config    = require 'configs.config'
----@type table Framework bridge (bridge.shared.framework): active framework detection + name.
-local framework = require 'bridge.shared.framework'
 ---@type table Inventory bridge (bridge.server.inventory): backend-agnostic item ops.
 local inv       = require 'bridge.server.inventory'
 
@@ -147,15 +145,6 @@ CreateThread(function()
     Wait(50)
     RegisterPhoneItems()
 
-    local names = {}
-    for _, entry in ipairs(config.Phone.Items or {}) do names[#names + 1] = entry.item end
-    local itemList = #names > 0 and table.concat(names, ', ') or 'disabled'
-
-    print('^2╭─────────────────────────────────────────────╮^0')
-    print('^2│^0  ^3sd-phone^0 — iOS-themed in-game phone         ^2│^0')
-    print('^2╰─────────────────────────────────────────────╯^0')
-    print(('^2[sd-phone]^0 Framework: ^3%s^0  Items: ^3%s^0  v0.1.0'):format(
-        framework.name, itemList))
 end)
 
 ---Public export: does this player own a phone - exports['sd-phone']:hasPhone(source). Returns

@@ -148,6 +148,9 @@ local function wipeCid(cid)
         for _, c in ipairs(arr) do if c ~= cid then keep[#keep + 1] = c end end
         del('UPDATE phone_mail_accounts SET logged_in_citizens = ? WHERE email = ?', { json.encode(keep), m.email })
     end
+    -- phone_mail_sessions indexes the column rewritten above; it has to be dropped in the same
+    -- pass or mail.listAccountsForCitizen keeps reading rows this wipe just signed out of.
+    del('DELETE FROM phone_mail_sessions WHERE citizenid = ?', { cid })
 
     if #accountIds > 0 then
         local ph = {}

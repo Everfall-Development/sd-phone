@@ -85,11 +85,20 @@ function store.getSaved(citizenid)
     return (ok and type(decoded) == 'table') and decoded or {}
 end
 
----Returns everyone who has `jobName` in their saved jobs as `{ {citizenid, grade}, ... }`.
+---@type integer How long a savedJobMembers result is reused, in ms.
+local MEMBERS_TTL = 30000
+---@type table<string, { at: number, rows: table[] }> Memoised savedJobMembers results by job name.
+local membersCache = {}
+
+---Returns everyone who has `jobName` in their saved jobs as `{ {citizenid, grade}, ... }`. The
+---JSON_EXTRACT predicate no index can serve, so the result is memoised for MEMBERS_TTL and
+---dropped whenever any saved-jobs map is written.
 ---@param jobName string
 ---@return { citizenid: string, grade: number }[]
 function store.savedJobMembers(jobName)
     if not jobName or jobName == '' then return {} end
+    local hit = membersCache[jobName]
+    if hit and (GetGameTimer() - hit.at) < MEMBERS_TTL then return hit.rows end
     local path = ('$."%s".grade'):format(jobName)
     local rows = MySQL.query.await([[
         SELECT citizenid, JSON_EXTRACT(jobs, ?) AS grade
@@ -100,6 +109,7 @@ function store.savedJobMembers(jobName)
     for _, r in ipairs(rows) do
         out[#out + 1] = { citizenid = r.citizenid, grade = math.floor(tonumber(r.grade) or 0) }
     end
+    membersCache[jobName] = { at = GetGameTimer(), rows = out }
     return out
 end
 
@@ -112,6 +122,8 @@ function store.setSaved(citizenid, map)
         INSERT INTO phone_saved_jobs (citizenid, jobs) VALUES (?, ?)
         ON DUPLICATE KEY UPDATE jobs = VALUES(jobs)
     ]], { citizenid, json.encode(map or {}) })
+    -- One character's map can add or drop membership of any job, so the whole memo goes.
+    membersCache = {}
 end
 
 ---Adds (or updates the grade of) one saved job, with the grade coerced to an integer.

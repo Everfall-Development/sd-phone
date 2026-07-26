@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Dark Chat persistence layer (server.darkchat.store): schema bootstrap + CRUD.
 local store   = require 'server.darkchat.store'
 ---@type table Dark Chat business logic (server.darkchat.actions): validated room/message/reaction handlers.
@@ -5,14 +8,25 @@ local actions = require 'server.darkchat.actions'
 ---@type table Player bridge (bridge.server.player): server id lookups from a citizenid.
 local player  = require 'bridge.server.player'
 
+---@type integer Newest messages retained per room by the sweep. The app only ever renders
+---DarkChat.HistoryLimit (60) of them, so this is roughly eight times the reachable history.
+local RETAIN_PER_ROOM = 500
+---@type integer Gap between retention sweeps. Nothing else prunes darkchat_messages.
+local SWEEP_MS = 30 * 60 * 1000
+
 -- Schema bootstrap runs once at load; a failure is printed.
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:darkchat]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('darkchat', err)
         return
     end
-    print('^2[sd-phone:darkchat]^0 schema ready')
+    boot.schemaReady()
+
+    while true do
+        pcall(store.pruneRoomMessages, RETAIN_PER_ROOM)
+        Wait(SWEEP_MS)
+    end
 end)
 
 -- Live presence, in memory only: who is tabbed into which room, and who is sitting on the

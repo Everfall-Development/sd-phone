@@ -181,7 +181,7 @@ export interface MuteScopeDef {
 
 // Mirrors SCOPES in server/admin/moderation.lua.
 export const MUTE_SCOPES: MuteScopeDef[] = [
-    { id: 'birdy',     label: 'Birdy',     social: true },
+    { id: 'birdy',     label: 'Squawk',    social: true },
     { id: 'photogram', label: 'Photogram', social: true },
     { id: 'vibez',     label: 'Vibez',     social: true },
     { id: 'cherry',    label: 'Cherry',    social: true },

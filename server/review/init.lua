@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Review persistence layer (server.review.store): review/helpful-vote/override row CRUD.
 local store = require 'server.review.store'
 ---@type table Authoritative review handlers (server.review.actions): validation + row mutation.
@@ -7,10 +10,10 @@ local actions = require 'server.review.actions'
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:review]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('review', err)
         return
     end
-    print('^2[sd-phone:review]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- App callbacks: thin delegates into server.review.actions.

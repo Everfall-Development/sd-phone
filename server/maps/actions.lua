@@ -7,6 +7,8 @@ local player = require 'bridge.server.player'
 ---@type table AirShare core (server.share.core): nearby-target validation + the
 ---request/accept handshake every share kind rides on.
 local share  = require 'server.share.core'
+---@type table Shared server helpers (server.util): cooldown.
+local util   = require 'server.util'
 
 ---@type table Actions module; the table returned at end of file.
 local actions = {}
@@ -22,6 +24,14 @@ local ICON_KEYS = {
 ---@type string Default swatch when a payload's colour isn't a valid #rrggbb (first entry of
 ---COLOR_SWATCHES in web/src/apps/maps/data.ts).
 local DEFAULT_COLOR = '#f0c43a'
+
+---@type integer Longest marker array read from a save. config.MaxMarkers (50) is what actually
+---persists, so ten times that leaves any UI reordering room while bounding the walk.
+local MAX_INCOMING = 500
+
+---@type integer Minimum gap between pin shares (ms). Each one queues a pending request and rings
+---the recipient's phone, and no real sender fires them back to back.
+local SHARE_COOLDOWN = 3000
 
 ---Actor identity for every handler: the caller's citizenid, resolved from src via the player
 ---bridge.
@@ -82,6 +92,9 @@ function actions.save(src, payload)
 
     local incoming = type(payload) == 'table' and payload.markers or nil
     if type(incoming) ~= 'table' then return { success = false, message = 'Bad payload' } end
+    -- Rejected outright rather than truncated: every element that fails sanitizeMarker is dropped
+    -- without growing `clean`, so the MaxMarkers break below never fires on an array of junk.
+    if #incoming > MAX_INCOMING then return { success = false, message = 'Too many pins' } end
 
     local clean = {}
     for i = 1, #incoming do
@@ -105,6 +118,11 @@ end
 function actions.requestShare(src, target, payload)
     local m = sanitizeMarker(type(payload) == 'table' and payload.marker or nil)
     if not m then return { success = false, message = 'Invalid pin' } end
+    -- Spent only once the share would actually go out, mirroring share.core's own gate: a
+    -- recipient who walked away must not cost the sender their immediate retry.
+    if share.canShareTo(src, tonumber(target)) and not util.cooldown(cidOf(src), 'maps:sharePin', SHARE_COOLDOWN) then
+        return { success = false, message = 'Slow down' }
+    end
 
     local okSent, msg = share.request(src, target, 'pin', m)
     if not okSent then return { success = false, message = msg or 'Could not send request' } end

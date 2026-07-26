@@ -162,15 +162,65 @@ function actions.feed(src)
     return { success = true, data = { articles = articles, ticker = ticker, canManage = canManage(src) } }
 end
 
----Counts one read of an article and returns its new view total. A bad or unknown id no-ops.
+---@type integer Rolling window the article-read budget is measured over, in ms.
+local VIEW_WINDOW = 60000
+---@type integer Article opens one character may register per window.
+local VIEW_MAX = 60
+---@type table<integer, integer> View increments not yet written, by article id.
+local pendingViews = {}
+---@type table<integer, integer> Running view total per article id, seeded from the row on first read.
+local viewTotals = {}
+---@type table<string, table<integer, boolean>> Articles a character has already counted this session.
+local viewedBy = {}
+
+util.onCleanup(function(_, citizenid)
+    if citizenid then viewedBy[citizenid] = nil end
+end)
+
+---Writes the buffered view counts and clears the buffer. Driven by the flush timer in
+---server/weazelnews/init.lua.
+function actions.flushViews()
+    if next(pendingViews) == nil then return end
+    local batch = pendingViews
+    pendingViews = {}
+    store.bumpViewsBatch(batch)
+end
+
+---Counts one read of an article and returns its new view total. A bad or unknown id no-ops. The
+---count is per character per session and buffered in memory, so re-opening a story is neither a
+---free write nor a way to inflate the number.
 ---@param src integer player server id
 ---@param id any client-supplied article id
 ---@return table result envelope with { id, views }
 function actions.view(src, id)
     id = articleId(id)
     if not id then return { success = false, message = 'Bad article id' } end
-    store.bumpViews(id)
-    return { success = true, data = { id = tostring(id), views = store.viewsOf(id) } }
+
+    local cid = cidOf(src)
+    if cid and not util.rateLimit(cid, 'weazelnews:view', VIEW_WINDOW, VIEW_MAX) then
+        return { success = false, message = 'Slow down' }
+    end
+
+    local total = viewTotals[id]
+    if not total then
+        -- Unknown ids stop here: seeding the table from a client id would let id probing grow it.
+        total = store.viewsOf(id)
+        if not total then return { success = false, message = 'Article not found' } end
+        viewTotals[id] = total
+    end
+
+    if cid then
+        local seen = viewedBy[cid]
+        if not seen then seen = {}; viewedBy[cid] = seen end
+        if not seen[id] then
+            seen[id] = true
+            total = total + 1
+            viewTotals[id] = total
+            pendingViews[id] = (pendingViews[id] or 0) + 1
+        end
+    end
+
+    return { success = true, data = { id = tostring(id), views = total } }
 end
 
 ---Staff-only: creates a new article, or updates an existing one when `id` is set. Byline, author

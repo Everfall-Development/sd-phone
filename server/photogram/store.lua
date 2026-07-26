@@ -164,6 +164,7 @@ function store.ensureSchema()
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
     util.ensureIndex('phone_photogram_notifications', 'idx_photogram_notifs_unseen', '(recipient, seen)')
+    util.ensureIndex('phone_photogram_notifications', 'idx_photogram_notifs_dedupe', '(recipient, kind, actor, post_id)')
 
     MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_photogram_dms (
@@ -195,6 +196,15 @@ function store.ensureSchema()
     ensureColumn('phone_photogram_profiles', 'is_private', 'is_private TINYINT(1) NOT NULL DEFAULT 0')
     ensureColumn('phone_photogram_profiles', 'verified',   'verified TINYINT(1) NOT NULL DEFAULT 0')
     ensureColumn('phone_photogram_follows',  'status',     "status VARCHAR(12) NOT NULL DEFAULT 'accepted'")
+
+    -- Referential integrity, added on boot so existing installs migrate with no manual SQL.
+    -- Each is a no-op once present; orphaned children are cleared first (they point at a
+    -- parent that is already gone) and a type or collation mismatch is skipped, never fatal.
+    util.ensureForeignKey('phone_photogram_comments', 'post_id', 'phone_photogram_posts', 'id', 'fk_photogram_comments_post')
+    util.ensureForeignKey('phone_photogram_likes', 'post_id', 'phone_photogram_posts', 'id', 'fk_photogram_likes_post')
+    util.ensureForeignKey('phone_photogram_saves', 'post_id', 'phone_photogram_posts', 'id', 'fk_photogram_saves_post')
+    util.ensureForeignKey('phone_photogram_notifications', 'post_id', 'phone_photogram_posts', 'id', 'fk_photogram_notifications_post')
+    util.ensureForeignKey('phone_photogram_comment_likes', 'comment_id', 'phone_photogram_comments', 'id', 'fk_photogram_comment_likes_comment')
 end
 
 ---A profile row by exact username, nil when the handle doesn't exist. Read-only.
@@ -237,16 +247,17 @@ function store.profilesByUsernames(list)
     return out
 end
 
----Matches accounts by handle or display name.
+---Matches accounts by handle or display name. Wildcards in the client's text are escaped, so a
+---bare '%' searches for a literal percent instead of scanning the whole table.
 ---@param query string search text
 ---@param limit? integer max rows (default 20)
 ---@return table[] rows
 function store.searchProfiles(query, limit)
     local n = math.floor(tonumber(limit) or 20)
-    local like = '%' .. query .. '%'
+    local like = '%' .. query:gsub('[%%_\\]', '\\%0') .. '%'
     return MySQL.query.await(([[
         SELECT * FROM phone_photogram_profiles
-        WHERE username LIKE ? OR display_name LIKE ?
+        WHERE username LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\'
         ORDER BY username ASC
         LIMIT %d
     ]]):format(n), { like, like }) or {}
@@ -631,21 +642,40 @@ end
 
 ---Active (non-expired) stories from the viewer + the accounts they accepted-follow, ordered by
 ---author then chronologically. Read-only.
+---The LIMIT is a ceiling on what one tray open can serialise, not a play limit. It is taken over
+---the newest frames rather than the outer author ordering, so an early-alphabet author sitting at
+---STORY_CAP cannot push everyone after them out of the tray.
 ---@param viewer string viewing account handle
 ---@param cutoff integer unix seconds - stories created at or before this are expired
 ---@return table[] rows
 function store.activeStoriesFor(viewer, cutoff)
     return MySQL.query.await([[
-        SELECT s.id, s.author, s.image, s.created_at,
-               pr.display_name, pr.avatar, pr.verified
-        FROM phone_photogram_stories s
-        JOIN phone_photogram_profiles pr ON pr.username = s.author
-        WHERE s.created_at > ?
-          AND (s.author = ? OR s.author IN (
-              SELECT target FROM phone_photogram_follows WHERE follower = ? AND status = 'accepted'
-          ))
-        ORDER BY s.author ASC, s.created_at ASC
+        SELECT * FROM (
+            SELECT s.id, s.author, s.image, s.created_at,
+                   pr.display_name, pr.avatar, pr.verified
+            FROM phone_photogram_stories s
+            JOIN phone_photogram_profiles pr ON pr.username = s.author
+            WHERE s.created_at > ?
+              AND (s.author = ? OR s.author IN (
+                  SELECT target FROM phone_photogram_follows WHERE follower = ? AND status = 'accepted'
+              ))
+            ORDER BY s.created_at DESC
+            LIMIT 1000
+        ) recent
+        ORDER BY recent.author ASC, recent.created_at ASC
     ]], { cutoff, viewer, viewer }) or {}
+end
+
+---How many live (non-expired) stories an author currently holds. Read-only.
+---@param author string account handle
+---@param cutoff integer unix seconds - stories created at or before this are expired
+---@return integer n
+function store.countActiveStories(author, cutoff)
+    local n = MySQL.scalar.await(
+        'SELECT COUNT(*) FROM phone_photogram_stories WHERE author = ? AND created_at > ?',
+        { author, cutoff }
+    )
+    return tonumber(n) or 0
 end
 
 ---Story ids the viewer has already seen, as a set. Read-only.
@@ -693,6 +723,26 @@ function store.insertNotification(id, recipient, kind, actor, postId, preview, c
         INSERT INTO phone_photogram_notifications (id, recipient, kind, actor, post_id, preview, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
     ]], { id, recipient, kind, actor, postId, preview, createdAt })
+end
+
+---True when the same actor already raised this kind of notification on the same post for the
+---same recipient since `since`. Lets the caller drop the duplicate a like/follow toggle would
+---otherwise mint on every flip. The postless kinds are matched through IFNULL because SQL treats
+---two NULL post_ids as distinct, which is also why this is not a UNIQUE key.
+---@param recipient string account handle receiving it
+---@param kind string notification kind
+---@param actor string account handle that caused it
+---@param postId string|nil related post id
+---@param since integer unix seconds - only rows newer than this count
+---@return boolean exists
+function store.recentNotification(recipient, kind, actor, postId, since)
+    local n = MySQL.scalar.await([[
+        SELECT 1 FROM phone_photogram_notifications
+        WHERE recipient = ? AND kind = ? AND actor = ?
+          AND IFNULL(post_id, '') = ? AND created_at > ?
+        LIMIT 1
+    ]], { recipient, kind, actor, postId or '', since })
+    return n ~= nil
 end
 
 ---A recipient's notifications, newest first, each with the actor's profile card. Read-only.

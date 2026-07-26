@@ -152,6 +152,11 @@ function store.ensureSchema()
             INDEX idx_phone_pending_messages_number (number, created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
+
+    -- Referential integrity, added on boot so existing installs migrate with no manual SQL.
+    -- Each is a no-op once present; orphaned children are cleared first (they point at a
+    -- parent that is already gone) and a type or collation mismatch is skipped, never fatal.
+    util.ensureForeignKey('phone_message_group_members', 'group_id', 'phone_message_groups', 'id', 'fk_message_group_members_group')
 end
 
 ---Lists a player's conversation keys, most-recently-active first, each with the newest message
@@ -166,6 +171,30 @@ function store.threadKeys(citizenid)
         GROUP BY conversation
         ORDER BY last_at DESC
     ]], { citizenid }) or {}
+end
+
+---True when the player's mailbox already holds at least one copy in this thread. An index dive
+---on idx_phone_messages_thread, so it is cheap enough to run before every 1:1 send. Read-only.
+---@param citizenid string
+---@param conversation string
+---@return boolean
+function store.threadExists(citizenid, conversation)
+    local row = MySQL.single.await(
+        'SELECT 1 AS hit FROM phone_messages WHERE citizenid = ? AND conversation = ? LIMIT 1',
+        { citizenid, conversation }
+    )
+    return row ~= nil
+end
+
+---How many distinct threads the player's mailbox holds. Read-only.
+---@param citizenid string
+---@return number
+function store.conversationCount(citizenid)
+    local n = MySQL.scalar.await(
+        'SELECT COUNT(DISTINCT conversation) FROM phone_messages WHERE citizenid = ?',
+        { citizenid }
+    )
+    return tonumber(n) or 0
 end
 
 ---Reads the newest `limit` messages in one thread, returned oldest-first. The cap is a

@@ -271,6 +271,10 @@ function backup.restore(fromId, toId, toNumber, liveFromId)
     end)
     if ok and type(mails) == 'table' then
         for _, m in ipairs(mails) do
+            -- Unconditional: the JSON ends up carrying toId either way, and phone_mail_sessions
+            -- indexes it, so a restore that skipped the write must still leave the index right.
+            run('INSERT IGNORE INTO phone_mail_sessions (citizenid, email) VALUES (?, ?)', { toId, m.email })
+
             local arr = json.decode(m.logged_in_citizens or '[]') or {}
             local present = false
             for _, c in ipairs(arr) do

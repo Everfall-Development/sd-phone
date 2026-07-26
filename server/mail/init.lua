@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Mail persistence layer (server.mail.store): schema bootstrap + read-only lookups
 ---for the exports.
 local store   = require 'server.mail.store'
@@ -14,10 +17,10 @@ local fail, trim = util.fail, util.trim
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:mail]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('mail', err)
         return
     end
-    print('^2[sd-phone:mail]^0 schema ready')
+    boot.schemaReady()
 end)
 
 ---Completes a successful send envelope: runs the delivery fan-out, then strips the pushes list

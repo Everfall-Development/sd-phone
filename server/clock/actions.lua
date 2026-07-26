@@ -18,6 +18,13 @@ local function cidOf(src) return player.getIdentifier(src) end
 local util = require 'server.util'
 local isTruthy = util.truthy
 
+---@type table<string, integer> citizenid -> alarms held, seeded from the DB on first touch. Both
+---the exists probe and the count read yield, so a burst of concurrent saves would otherwise all
+---pass the same stale count; this counter is claimed with no yield between read and increment.
+local alarmCount = {}
+
+util.onCleanup(function(_src, cid) if cid then alarmCount[cid] = nil end end)
+
 ---Every alarm the caller owns, ordered by time of day, with the TINYINT flags normalised to
 ---real booleans for the UI. Read-only.
 ---@param src integer player server id
@@ -56,8 +63,17 @@ function actions.saveAlarm(src, payload)
     local id = payload.id
     if type(id) ~= 'string' or id == '' or #id > 40 then return { success = false, message = 'Bad alarm id' } end
 
-    if not store.alarmExists(cid, id) and store.countAlarms(cid) >= MAX_ALARMS then
-        return { success = false, message = 'Alarm limit reached' }
+    local exists = store.alarmExists(cid, id)
+    if alarmCount[cid] == nil then
+        local n = store.countAlarms(cid)
+        -- Re-checked after the await: a sibling save may have seeded (and claimed) meanwhile, and
+        -- overwriting with this now-stale read would hand back the slot it just took.
+        if alarmCount[cid] == nil then alarmCount[cid] = n end
+    end
+    if not exists then
+        local held = alarmCount[cid]
+        if held >= MAX_ALARMS then return { success = false, message = 'Alarm limit reached' } end
+        alarmCount[cid] = held + 1
     end
 
     local hour    = math.max(0, math.min(23, math.floor(tonumber(payload.hour)   or 0)))
@@ -88,6 +104,9 @@ function actions.deleteAlarm(src, id)
     if not cid then return { success = false } end
     if type(id) ~= 'string' or id == '' then return { success = false, message = 'Bad alarm id' } end
     store.deleteAlarm(cid, id)
+    -- Dropped rather than decremented: the next save reseeds from the table, so a delete that hit
+    -- nothing can never leave the counter below the real row count.
+    alarmCount[cid] = nil
     return { success = true, data = { id = id } }
 end
 
@@ -109,6 +128,7 @@ function actions.addRecent(src, seconds)
     if not cid then return { success = false } end
     local s = math.floor(tonumber(seconds) or 0)
     if s ~= s or s <= 0 or s > 86400 then return { success = false, message = 'Bad duration' } end
+    if not util.cooldown(cid, 'clock:recent', 1000) then return { success = false, message = 'Slow down' } end
     store.addRecent(cid, s, os.time())
     return { success = true }
 end

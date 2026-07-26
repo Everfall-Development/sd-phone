@@ -121,7 +121,7 @@ export function Phone({ onClose: _onClose }: { onClose: () => void }) {
             {callTarget !== null && (
                 <AlertDialog
                     title={t('phone.callName','Call {name}',{ name: callTarget.name || formatPhone(callTarget.number) })}
-                    message={t('phone.callConfirm','Are you sure you want to call {name}?',{ name: callTarget.name || formatPhone(callTarget.number) })}
+                    message={t('phone.callConfirm','Call {name}?',{ name: callTarget.name || formatPhone(callTarget.number) })}
                     cancelLabel={t('phone.cancel','Cancel')}
                     confirmLabel={t('phone.call','Call')}
                     onCancel={() => setCallTarget(null)}

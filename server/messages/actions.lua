@@ -52,6 +52,17 @@ local REACTION_SET = { ['❤️'] = true, ['👍'] = true, ['👎'] = true, ['�
 ---@type integer Upper bound on raw member entries scanned per group create / add call.
 local MAX_MEMBER_SCAN = 64
 
+---@type integer Minimum gap between accepted sends, per character. A group send costs one write
+---plus one push per member, so the gap is what bounds the fan-out, not the member cap.
+local SEND_GAP_MS = 500
+---@type integer Rolling send window, and the sends allowed inside it. A chatty player runs at
+---roughly 20 a minute; 60 leaves that untouched while capping a script at one per second.
+local SEND_WINDOW_MS, SEND_PER_WINDOW = 60000, 60
+
+---@type integer Distinct threads one mailbox may open by sending. Only a NEW thread is gated, so
+---an existing conversation always goes through; a heavy roleplay character sits well under this.
+local MAX_CONVERSATIONS = 300
+
 
 
 
@@ -322,7 +333,9 @@ local function notify(targetSrc, title, body)
         time  = 'now',
         appId = 'messages',
     })
-    badges.push(targetSrc)
+    -- Per-recipient, so it must stay one indexed count: the full snapshot reads seven stores
+    -- including the unindexed mail scan, and a group send pays it once per member.
+    badges.pushApp(targetSrc, 'messages')
 end
 
 ---Returns full message state for one player: every conversation (1:1 + group, including empty
@@ -392,6 +405,12 @@ end
 local function sendDirect(source, cid, myNumber, target, kind, body, meta, ts, mid)
     if target == '' or #target > 48 then return fail('No recipient') end
     if target == myNumber then return fail('You can\'t message yourself') end
+
+    -- pruneThread caps rows per thread, so a fresh destination number each time is unbounded
+    -- growth. The count is only paid when the thread is genuinely new.
+    if not store.threadExists(cid, target) and store.conversationCount(cid) >= MAX_CONVERSATIONS then
+        return fail('Your inbox is full. Delete a conversation first.')
+    end
 
     local outId = store.newId()
     store.insertMessage(outId, mid, cid, target, myNumber, 'outgoing', kind, body, meta, true, ts)
@@ -686,6 +705,10 @@ function actions.send(source, payload)
     payload = type(payload) == 'table' and payload or {}
     local cid = player.getIdentifier(source)
     if not cid then return fail('Player not found') end
+    if not util.cooldown(cid, 'messages:send', SEND_GAP_MS)
+        or not util.rateLimit(cid, 'messages:send', SEND_WINDOW_MS, SEND_PER_WINDOW) then
+        return fail('Slow down')
+    end
     if settings.isAirplane(cid) then return fail('Airplane Mode is on') end
     local muted = moderation.guard(cid, 'sms'); if muted then return muted end
 

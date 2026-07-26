@@ -158,7 +158,7 @@ export function VoicePanel({ onSend, onClose, forceDark = false }: Props) {
         ? error
         : uploading ? t('common.sending', 'Sending…')
         : recording ? t('messages.tapToStopSend', 'Tap the button to stop & send')
-        : t('messages.pressToStartRecording', 'Press the button to start recording');
+        : t('messages.pressToStartRecording', 'Tap the button below to record');
 
     return (
         <Sheet

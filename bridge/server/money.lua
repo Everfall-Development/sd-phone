@@ -15,7 +15,7 @@ local money = {}
 ---@param t string
 ---@return string
 local function convertType(t)
-    if t == 'money' and framework.name == 'qb'  then return 'cash'  end
+    if t == 'money' and framework.qb  then return 'cash'  end
     if t == 'cash'  and framework.name == 'esx' then return 'money' end
     return t
 end
@@ -30,7 +30,7 @@ function money.add(source, moneyType, amount, reason)
     local p = player_mod.get(source)
     if not p then return end
 
-    if framework.name == 'qb' then
+    if framework.qb then
         p.Functions.AddMoney(convertType(moneyType), amount, reason)
     elseif framework.name == 'esx' then
         p.addAccountMoney(convertType(moneyType), amount)
@@ -47,7 +47,7 @@ function money.remove(source, moneyType, amount, reason)
     local p = player_mod.get(source)
     if not p then return end
 
-    if framework.name == 'qb' then
+    if framework.qb then
         p.Functions.RemoveMoney(convertType(moneyType), amount, reason)
     elseif framework.name == 'esx' then
         p.removeAccountMoney(convertType(moneyType), amount)
@@ -63,7 +63,7 @@ function money.get(source, moneyType)
     local p = player_mod.get(source)
     if not p then return 0 end
 
-    if framework.name == 'qb' then
+    if framework.qb then
         return p.PlayerData.money[convertType(moneyType)] or 0
     elseif framework.name == 'esx' then
         local account = p.getAccount(convertType(moneyType))
@@ -80,7 +80,7 @@ local function chooseGetBlack()
         local invMod = require 'bridge.server.inventory'
         return function(src) return invMod.count(src, 'black_money') end
     end
-    if framework.name == 'qb' and inventoryId.name == 'qb-inventory' then
+    if framework.qb and inventoryId.name == 'qb-inventory' then
         return function(src)
             local bills = exports['qb-inventory']:GetItemsByName(src, 'markedbills')
             if not bills then return 0 end
@@ -119,7 +119,7 @@ local function chooseAddBlack()
         local invMod = require 'bridge.server.inventory'
         return function(src, amount) return invMod.add(src, 'black_money', amount) end
     end
-    if framework.name == 'qb' and inventoryId.name == 'qb-inventory' then
+    if framework.qb and inventoryId.name == 'qb-inventory' then
         return function(src, amount)
             local p = player_mod.get(src); if not p then return false end
             return p.Functions.AddItem('markedbills', 1, false, { worth = amount })
@@ -152,7 +152,7 @@ local function chooseRemoveBlack()
         local invMod = require 'bridge.server.inventory'
         return function(src, amount) return invMod.remove(src, 'black_money', amount) end
     end
-    if framework.name == 'qb' and inventoryId.name == 'qb-inventory' then
+    if framework.qb and inventoryId.name == 'qb-inventory' then
         return function(src, amount)
             local p = player_mod.get(src); if not p then return false end
             local bills = exports['qb-inventory']:GetItemsByName(src, 'markedbills')

@@ -91,7 +91,7 @@ export function ActionsTab({ myCompany, multijob = false, invoicesEnabled = fals
                     <Row
                         icon={<Tile color="#FF9F0A"><Hourglass className="h-[18px] w-[18px] text-white" strokeWidth={2.25} /></Tile>}
                         title={t('services.duty', 'Duty')}
-                        subtitle={t('services.toggleDutyStatus', 'Toggle your duty status')}
+                        subtitle={t('services.toggleDutyStatus', 'Go on or off duty')}
                         right={<Toggle on={myCompany.duty} onChange={v => void toggle('duty', v)} />}
                     />
                     {myCompany.isCompany && (
@@ -108,7 +108,7 @@ export function ActionsTab({ myCompany, multijob = false, invoicesEnabled = fals
                             <Row
                                 dimmed={dutyOff}
                                 icon={<Tile color="#0A84FF"><MessageSquare className="h-[18px] w-[18px] text-white" strokeWidth={2.25} /></Tile>}
-                                title={t('services.jobMessages', 'Job Messages')}
+                                title={t('services.jobMessages', 'Work Messages')}
                                 subtitle={t('services.getNotified', 'Get notified of new messages.')}
                                 right={<Toggle disabled={dutyOff} on={!dutyOff && myCompany.jobMessages} onChange={v => void toggle('jobMessages', v)} />}
                             />
@@ -138,12 +138,12 @@ export function ActionsTab({ myCompany, multijob = false, invoicesEnabled = fals
 
                 {showEmployees && (
                     <>
-                        <SectionHeader>{t('services.manageEmployees', 'Manage Employees')}</SectionHeader>
+                        <SectionHeader>{t('services.manageEmployees', 'Manage Staff')}</SectionHeader>
                         <div className="overflow-hidden rounded-[12px] bg-[#e5e5e5] dark:bg-surface">
                             <Row
                                 icon={<Tile color="#0A84FF"><UserPlus className="h-[18px] w-[18px] text-white" strokeWidth={2.25} /></Tile>}
                                 title={t('services.hire', 'Hire')}
-                                subtitle={t('services.hireNewEmployee', 'Hire a new employee')}
+                                subtitle={t('services.hireNewEmployee', 'Add someone to the payroll')}
                                 onClick={() => setHiring(true)}
                                 right={<Plus className="h-[22px] w-[22px] text-black/35 dark:text-white/35" strokeWidth={2.25} />}
                             />

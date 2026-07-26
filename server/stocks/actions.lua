@@ -29,6 +29,12 @@ local function cidOf(src) return player.getIdentifier(src) end
 local util = require 'server.util'
 local wholeDollars = util.wholeAmount
 
+---@type integer Rolling window the trade budget is measured over, in ms.
+local TRADE_WINDOW = 10000
+---@type integer Buys plus sells one character may settle per window. The gate above only serialises
+---calls; with a zero fee at MinTrade a buy/sell round trip is free and each leg is four DB writes.
+local TRADE_MAX = 10
+
 ---@type table<string, boolean> Citizenids with a wallet-mutating call currently in flight.
 local tradeBusy = {}
 
@@ -46,11 +52,21 @@ local function withTradeGate(cid, fn)
     return result
 end
 
+---@type integer How long a trade's price push waits so a burst of trades costs one broadcast, in ms.
+local PUSH_COALESCE = 1000
+---@type boolean True while a coalesced price push is already scheduled.
+local pushQueued = false
+
 ---Pushes a fresh price snapshot to the players with Stocks open. Ticks carry symbol/price/%
----change only. Scoped to watchers: a trade used to wake every client on the server.
+---change only. Scoped to watchers: a trade used to wake every client on the server. Coalesced: a
+---trade loop used to serialise a 30-asset payload to every watcher per leg.
 local function broadcastPrices()
-    if not watchers.any() then return end
-    watchers.push('sd-phone:client:stocks:prices', { assets = engine.ticks() })
+    if pushQueued or not watchers.any() then return end
+    pushQueued = true
+    SetTimeout(PUSH_COALESCE, function()
+        pushQueued = false
+        if watchers.any() then watchers.push('sd-phone:client:stocks:prices', { assets = engine.ticks() }) end
+    end)
 end
 
 ---Full market + the caller's positions + brokerage cash, for the app's main screen. Creates the
@@ -152,6 +168,9 @@ function actions.buy(src, payload)
     return withTradeGate(cid, function()
         local symbol = tostring(payload.symbol or '')
         if not engine.meta(symbol) then return { success = false, message = 'Unknown asset' } end
+        if not util.rateLimit(cid, 'stocks:trade', TRADE_WINDOW, TRADE_MAX) then
+            return { success = false, message = 'Slow down' }
+        end
 
         local amount = wholeDollars(payload.amount)
         if amount < (ST.MinTrade or 1)         then return { success = false, message = 'Enter a valid amount' } end
@@ -201,6 +220,9 @@ function actions.sell(src, payload)
     return withTradeGate(cid, function()
         local symbol = tostring(payload.symbol or '')
         if not engine.meta(symbol) then return { success = false, message = 'Unknown asset' } end
+        if not util.rateLimit(cid, 'stocks:trade', TRADE_WINDOW, TRADE_MAX) then
+            return { success = false, message = 'Slow down' }
+        end
 
         local existing = store.getHolding(cid, symbol)
         local heldQty  = existing and tonumber(existing.quantity) or 0

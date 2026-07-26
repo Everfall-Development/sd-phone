@@ -121,16 +121,29 @@ function store.recentsFor(cid)
     return out
 end
 
----Records a started duration, bumping its recency when already seen (upsert on (citizenid, seconds)).
+---Records a started duration, bumping its recency when already seen (upsert on (citizenid, seconds)),
+---and trims the character back to the RECENTS_LIMIT newest rows the read side actually shows.
 ---@param cid string framework per-character id
 ---@param seconds integer validated duration
 ---@param usedAt integer unix seconds
 function store.addRecent(cid, seconds, usedAt)
-    MySQL.query.await([[
+    local affected = MySQL.update.await([[
         INSERT INTO `phone_timer_recents` (citizenid, seconds, used_at)
         VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE used_at = VALUES(used_at)
     ]], { cid, seconds, usedAt })
+    -- 1 is an insert, 2 an update, so the common repeat-duration case skips the prune entirely.
+    -- The inner derived table is what lets MySQL delete from the table the cutoff is read from.
+    if affected ~= 1 then return end
+    MySQL.query.await(([[
+        DELETE FROM `phone_timer_recents`
+        WHERE citizenid = ? AND used_at < (
+            SELECT used_at FROM (
+                SELECT used_at FROM `phone_timer_recents`
+                WHERE citizenid = ? ORDER BY used_at DESC LIMIT 1 OFFSET %d
+            ) cutoff
+        )
+    ]]):format(RECENTS_LIMIT - 1), { cid, cid })
 end
 
 return store

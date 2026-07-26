@@ -36,8 +36,4 @@ lib.callback.register('sd-phone:server:homes:removeKey', function(src, data)
     return { success = housing.removeKey(src, data and data.id, data and data.holder) }
 end)
 
----Boot report: prints the housing system the bridge detected.
-CreateThread(function()
-    Wait(300)
-    print(('^2[sd-phone:homes]^0 ready — system: ^3%s^0'):format(housing.activeSystem() or 'none'))
-end)
+-- No boot print: the detected housing system is available via housing.activeSystem() when needed.

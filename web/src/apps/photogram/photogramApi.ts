@@ -121,6 +121,12 @@ export async function apiUpdateProfile(input: { name: string; bio: string; avata
 }
 
 
+/** Subscribe/unsubscribe this phone to the feed, post and live-list pushes. The server only pushes
+ * to watchers, so a phone that is closed or backgrounded no longer pays to receive and discard one. */
+export function apiWatch(on: boolean): void {
+    if (isFiveM) void fetchNui('sd-phone:photogram:watch', { on });
+}
+
 export async function apiFeed(): Promise<Post[]> {
     if (!isFiveM) return POSTS;
     return (await call<{ posts: SrvPost[] }>('sd-phone:photogram:feed'))?.posts.map(mapPost) ?? [];

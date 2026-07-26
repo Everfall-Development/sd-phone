@@ -14,7 +14,7 @@ import { MAIL_DOMAIN, accountsConfirmReset, accountsRequestReset, accountsSavePa
 import { toggleReactionLocal } from '@/shared/chat/messagesApi';
 import type { MessageDraft } from '@/shared/chat/ChatView';
 import {
-    apiCreate, apiDmList, apiDmMarkRead, apiDmReact, apiDmResolve, apiDmSend, apiDmThread, apiFeed, apiLogin, apiMe, apiPostDetail, apiProfile, apiRegister, apiNotificationCount, apiReply, apiToggleFollow, apiToggleLike, apiToggleRepost,
+    apiCreate, apiDmList, apiDmMarkRead, apiDmReact, apiDmResolve, apiDmSend, apiDmThread, apiFeed, apiLogin, apiMe, apiPostDetail, apiProfile, apiRegister, apiNotificationCount, apiReply, apiToggleFollow, apiToggleLike, apiToggleRepost, apiWatch,
 } from './birdyApi';
 import { ChatView } from './dms/ChatView';
 import { Composer } from './feed/Composer';
@@ -62,6 +62,14 @@ export function Birdy({ onClose }: { onClose: () => void }) {
         if (deckActive && !wasActive.current) refreshFeed();
         wasActive.current = deckActive;
     }, [deckActive, refreshFeed]);
+
+    // feedChanged reaches only the phones showing Birdy, so the subscription follows the
+    // foreground. The refresh above covers anything pushed while this one was not listening.
+    useEffect(() => {
+        if (!deckActive) return;
+        apiWatch(true);
+        return () => { apiWatch(false); };
+    }, [deckActive]);
 
     useEffect(() => {
         if (!authed) return;
@@ -207,7 +215,7 @@ export function Birdy({ onClose }: { onClose: () => void }) {
             setOpenConvo(prev => (prev && prev.id === convoId
                 ? { ...prev, messages: prev.messages.filter(m => m.id !== optimistic.id) }
                 : prev));
-            setSendError(res.error ?? t('birdy.failedToSend', 'Failed to send'));
+            setSendError(res.error ?? t('birdy.failedToSend', 'Message not sent'));
         }
     }
 
@@ -436,7 +444,7 @@ export function Birdy({ onClose }: { onClose: () => void }) {
             <button
                 type="button"
                 onClick={onClose}
-                aria-label={t('birdy.closeBirdy', 'Close Birdy')}
+                aria-label={t('birdy.closeBirdy', 'Close Squawk')}
                 className="absolute inset-x-0 bottom-0 z-[5] h-5 cursor-default"
             />
         </div>

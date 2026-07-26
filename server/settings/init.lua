@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Player bridge (bridge.server.player): citizenid/name/job lookups from a server id.
 local player = require 'bridge.server.player'
 ---@type table Settings persistence layer (server.settings.store): phone_settings row CRUD plus
@@ -15,6 +18,8 @@ local photos = require 'server.photos.actions'
 ---@type table Version helpers (bridge.server.version): manifest version + cached latest-GitHub-
 ---release lookup for the Software Update page.
 local version = require 'bridge.server.version'
+---@type table Shared server helpers (server.util): write throttles + the disconnect sweep.
+local util = require 'server.util'
 
 ---@type string GitHub repo the Software Update page checks for new releases.
 local UPDATE_REPO = 'Samuels-Development/sd-phone'
@@ -23,10 +28,10 @@ local UPDATE_REPO = 'Samuels-Development/sd-phone'
 CreateThread(function()
     local success, err = pcall(store.ensureSchema)
     if not success then
-        print(('^1[sd-phone:settings]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('settings', err)
         return
     end
-    print('^2[sd-phone:settings]^0 schema ready')
+    boot.schemaReady()
 end)
 
 ---Server export: returns a player's phone number by server id, assigning one on first access;
@@ -37,6 +42,96 @@ exports('getPhoneNumber', function(source)
     local cid = player.getIdentifier(source)
     if not cid then return nil end
     return store.ensurePhoneNumber(cid)
+end)
+
+---@type integer Rolling budget per settings write, per character, per 10s. Six a second is an
+---order of magnitude past what a finger on a toggle can produce; the sliders never reach it
+---because they take the coalescing path instead.
+local WRITES_PER_10S = 60
+
+---@type integer Rolling budget across the whole settings namespace, per character, per 10s, so
+---rotating between handlers cannot multiply the per-handler budget.
+local NAMESPACE_WRITES_PER_10S = 240
+
+---@type table Envelope for a character writing settings faster than any UI could drive.
+local BUSY = { success = false, message = 'Too many changes at once' }
+
+---True when this character may run one more settings write.
+---@param cid string framework per-character id
+---@param key string handler name, a call-site constant
+---@return boolean ok
+local function writeAllowed(cid, key)
+    if not util.rateLimit(cid, 'settings:' .. key, 10000, WRITES_PER_10S) then return false end
+    return util.rateLimit(cid, 'settings:*', 10000, NAMESPACE_WRITES_PER_10S)
+end
+
+---@type integer Minimum gap between persisted writes of one coalesced setting (ms).
+local WRITE_GAP = 400
+
+---@type table<string, { last: number, pending: fun()|nil, timer: boolean }> Trailing-write state
+---per (citizenid, setting).
+local writes = {}
+
+---Runs `fn` at most once per WRITE_GAP for one character and setting, keeping the LAST call made
+---inside a window and running it when the window closes. Refusing would drop the value a drag
+---gesture ends on, so these handlers stash instead; every coalesced payload carries the setting's
+---full current state, so an intermediate tick is never worth writing.
+---@param cid string framework per-character id
+---@param key string setting name, a call-site constant
+---@param fn fun() the write to perform
+local function coalesce(cid, key, fn)
+    local k = cid .. '\0' .. key
+    local w = writes[k]
+    local now = GetGameTimer()
+    if not w then
+        writes[k] = { last = now }
+        fn()
+        return
+    end
+    local since = now - w.last
+    if since < 0 or since >= WRITE_GAP then
+        w.last, w.pending = now, nil
+        fn()
+        return
+    end
+    w.pending = fn
+    if not w.timer then
+        w.timer = true
+        SetTimeout(WRITE_GAP - since, function()
+            w.timer = false
+            local pending = w.pending
+            w.pending = nil
+            if not pending then return end
+            w.last = GetGameTimer()
+            pcall(pending)
+        end)
+    end
+end
+
+-- A pending timer holds its own state by upvalue, so a trailing write still lands for a player
+-- who disconnects mid-gesture; only the idle rows go.
+util.onCleanup(function(_, cid)
+    if type(cid) ~= 'string' or cid == '' then return end
+    local prefix = cid .. '\0'
+    for k in pairs(writes) do
+        if k:sub(1, #prefix) == prefix then writes[k] = nil end
+    end
+end)
+
+---@type integer How often idle coalescing rows are dropped (ms).
+local SWEEP_MS = 5 * 60 * 1000
+
+-- Backstop for the sweep above, whose citizenid is best effort at disconnect. A row with no
+-- pending timer past the gap rebuilds identically on the next write, so dropping it is invisible.
+CreateThread(function()
+    while true do
+        Wait(SWEEP_MS)
+        local now = GetGameTimer()
+        for k, w in pairs(writes) do
+            local since = now - w.last
+            if not w.timer and (since < 0 or since >= WRITE_GAP) then writes[k] = nil end
+        end
+    end
 end)
 
 -- Client-reachable settings callbacks; the acting character always resolves from src.
@@ -61,6 +156,7 @@ end)
 lib.callback.register('sd-phone:server:settings:setWallpaper', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'wallpaper') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
     store.setWallpaper(cid, payload.lock or payload.wallpaper, payload.home)
     return { success = true }
@@ -72,7 +168,7 @@ lib.callback.register('sd-phone:server:settings:setBlur', function(source, paylo
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     payload = type(payload) == 'table' and payload or {}
-    store.setBlur(cid, payload.lock, payload.home)
+    coalesce(cid, 'blur', function() store.setBlur(cid, payload.lock, payload.home) end)
     return { success = true }
 end)
 
@@ -81,6 +177,7 @@ end)
 lib.callback.register('sd-phone:server:settings:wallpapers:add', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'wallpapersAdd') then return BUSY end
     if not photos.importEnabled() then
         return { success = false, message = 'URL import is disabled on this server' }
     end
@@ -98,6 +195,7 @@ end)
 lib.callback.register('sd-phone:server:settings:wallpapers:remove', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'wallpapersRemove') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
     store.removeCustomWallpaper(cid, payload.url)
     return { success = true }
@@ -107,6 +205,7 @@ end)
 lib.callback.register('sd-phone:server:settings:setSecurity', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'security') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
     store.setSecurity(cid, payload.passcode, payload.faceId == true)
     return { success = true }
@@ -116,7 +215,8 @@ end)
 lib.callback.register('sd-phone:server:settings:setLockClock', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
-    store.setLockClock(cid, payload or {})
+    local cfg = type(payload) == 'table' and payload or {}
+    coalesce(cid, 'lockClock', function() store.setLockClock(cid, cfg) end)
     return { success = true }
 end)
 
@@ -125,7 +225,7 @@ lib.callback.register('sd-phone:server:settings:setChatTextScale', function(sour
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     payload = type(payload) == 'table' and payload or {}
-    store.setChatTextScale(cid, payload.scale)
+    coalesce(cid, 'chatTextScale', function() store.setChatTextScale(cid, payload.scale) end)
     return { success = true }
 end)
 
@@ -146,7 +246,7 @@ lib.callback.register('sd-phone:server:settings:setPhoneScale', function(source,
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     payload = type(payload) == 'table' and payload or {}
-    store.setPhoneScale(cid, payload.scale)
+    coalesce(cid, 'phoneScale', function() store.setPhoneScale(cid, payload.scale) end)
     return { success = true }
 end)
 
@@ -155,7 +255,7 @@ lib.callback.register('sd-phone:server:settings:setBrightness', function(source,
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     payload = type(payload) == 'table' and payload or {}
-    store.setBrightness(cid, payload.brightness)
+    coalesce(cid, 'brightness', function() store.setBrightness(cid, payload.brightness) end)
     return { success = true }
 end)
 
@@ -163,6 +263,7 @@ end)
 lib.callback.register('sd-phone:server:settings:setPhoneAlign', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'phoneAlign') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
     store.setPhoneAlign(cid, payload.align)
     return { success = true }
@@ -173,7 +274,7 @@ lib.callback.register('sd-phone:server:settings:setVolumes', function(source, pa
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     payload = type(payload) == 'table' and payload or {}
-    store.setVolumes(cid, payload.ringtone, payload.call)
+    coalesce(cid, 'volumes', function() store.setVolumes(cid, payload.ringtone, payload.call) end)
     return { success = true }
 end)
 
@@ -181,6 +282,7 @@ end)
 lib.callback.register('sd-phone:server:settings:setLocale', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'locale') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
     store.setLocale(cid, payload.locale)
     return { success = true }
@@ -190,6 +292,7 @@ end)
 lib.callback.register('sd-phone:server:settings:setAirplane', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'airplane') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
     local on = payload.on == true
     store.setAirplane(cid, on)
@@ -201,6 +304,7 @@ end)
 lib.callback.register('sd-phone:server:settings:setHour24', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'hour24') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
     store.setHour24(cid, payload.on == true)
     return { success = true }
@@ -211,6 +315,7 @@ end)
 lib.callback.register('sd-phone:server:settings:setSetupDone', function(source)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'setupDone') then return BUSY end
     store.setSetupDone(cid)
     return { success = true }
 end)
@@ -219,6 +324,7 @@ end)
 lib.callback.register('sd-phone:server:settings:setReopenApp', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'reopenApp') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
     store.setReopenApp(cid, payload.on == true)
     return { success = true }
@@ -228,6 +334,7 @@ end)
 lib.callback.register('sd-phone:server:settings:setTheme', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'theme') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
     store.setTheme(cid, payload.theme)
     return { success = true }
@@ -237,6 +344,7 @@ end)
 lib.callback.register('sd-phone:server:settings:setDarkTheme', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'darkTheme') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
     store.setDarkTheme(cid, payload.darkTheme)
     return { success = true }
@@ -246,6 +354,7 @@ end)
 lib.callback.register('sd-phone:server:settings:setTones', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'tones') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
     store.setTones(cid, payload.ringtone, payload.notificationTone)
     return { success = true }
@@ -263,6 +372,7 @@ end)
 lib.callback.register('sd-phone:server:settings:setNotifPref', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'notifPref') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
     store.setNotifPref(cid, payload.app, payload.on == true)
     return { success = true }
@@ -273,6 +383,7 @@ end)
 lib.callback.register('sd-phone:server:settings:tones:add', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'tonesAdd') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
     return { success = store.addCustomTone(cid, payload.kind, payload.id, payload.name, payload.url) }
 end)
@@ -281,6 +392,7 @@ end)
 lib.callback.register('sd-phone:server:settings:tones:remove', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'tonesRemove') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
     store.removeCustomTone(cid, payload.id)
     return { success = true }
@@ -291,6 +403,11 @@ end)
 lib.callback.register('sd-phone:server:settings:factoryReset', function(source)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
+    -- Two unindexed mail scans plus a badge recompute, and a character erases their phone once
+    -- at most; a repeat inside the window has nothing left to erase anyway.
+    if not util.cooldown(cid, 'settings:factoryReset', 30000) then
+        return { success = false, message = 'Please wait a moment before trying again' }
+    end
     store.setInstalledApps(cid, {})
     store.setHomeLayout(cid, '')
     accounts.clearAllSessions(cid)

@@ -1,18 +1,25 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Birdy persistence layer (server.birdy.store): schema bootstrap.
 local store   = require 'server.birdy.store'
 ---@type table Authoritative Birdy handlers (server.birdy.actions): all validation + mutation.
 local actions = require 'server.birdy.actions'
 ---@type table Player bridge (bridge.server.player): citizenid -> online source for pushes.
 local player  = require 'bridge.server.player'
+---@type table Watcher registry (server.watchers): shared with the feed broadcast in actions.
+local watchers = require('server.watchers').of('birdy')
+---@type table Shared server helpers (server.util): disconnect sweep registration.
+local util    = require 'server.util'
 
 -- Boot thread: creates/upgrades the phone_birdy_* tables.
 CreateThread(function()
     local success, err = pcall(store.ensureSchema)
     if not success then
-        print(('^1[sd-phone:birdy]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('birdy', err)
         return
     end
-    print('^2[sd-phone:birdy]^0 schema ready')
+    boot.schemaReady()
 end)
 
 ---Pushes an event to a single player. No-op when they're offline.
@@ -63,6 +70,19 @@ lib.callback.register('sd-phone:server:birdy:dmResolve',      function(src, payl
 lib.callback.register('sd-phone:server:birdy:dmList',         function(src)          return actions.dmList(src) end)
 lib.callback.register('sd-phone:server:birdy:dmThread',       function(src, payload) return actions.dmThread(src, payload) end)
 lib.callback.register('sd-phone:server:birdy:dmMarkRead',     function(src, payload) return actions.markRead(src, payload) end)
+
+---Subscribes or unsubscribes the caller to the feed push. The app calls this whenever it moves in
+---or out of the foreground, and refetches the feed on the way back in.
+---@param src number player server id
+---@param payload table { on: boolean }
+lib.callback.register('sd-phone:server:birdy:watch', function(src, payload)
+    payload = type(payload) == 'table' and payload or {}
+    watchers.watch(src, payload.on == true)
+    return { success = true }
+end)
+
+-- Drops a departing watcher's entry.
+util.onCleanup(function(src) watchers.drop(src) end)
 
 ---Sends a DM: delivers the recipient's copy as a live push when they're online, then rewrites
 ---the envelope so the sender only receives their own message.

@@ -17,6 +17,25 @@ local LOCAL_ID = 'local'
 local util = require 'server.util'
 local ok, fail = util.ok, util.fail
 
+---@type integer Minimum gap between accepted group creations, per character.
+local CREATE_GAP_MS = 10000
+
+---@type integer Minimum gap between accepted invites, and the rolling window budget. A leader
+---filling a fresh group taps through the nearby list in a burst, so the gap stays short and the
+---window does the capping. The budget sits above MaxPendingInvitesPerGroup so filling a group's
+---pending list in one sitting is never refused.
+local INVITE_GAP_MS = 1000
+local INVITE_WINDOW_MS, INVITE_PER_WINDOW = 60000, 25
+
+---@type integer How long one inviter must wait before inviting the SAME character again. Keyed on
+---the citizenid pair, not the group, because disbanding clears the pending-invite row and the
+---MaxOwnedPerPlayer count - every per-group gate re-arms, this one does not.
+local INVITE_SAME_TARGET_MS = 60000
+
+---@type integer Invites one character may RECEIVE per minute, whatever the source. Without it
+---colluding inviters each pay their own cooldown and still bury one victim in banners.
+local INVITE_RECV_WINDOW_MS, INVITE_RECV_PER_WINDOW = 60000, 10
+
 
 ---Resolves a connected player's display name + citizenid from their server id. Returns nil for
 ---offline / unknown sources.
@@ -155,6 +174,10 @@ function actions.create(source, payload)
     local name, err = validateName(payload.name)
     if not name then return fail(err) end
 
+    if not util.cooldown(me.cid, 'groups:create', CREATE_GAP_MS) then
+        return fail('Slow down')
+    end
+
     if store.countOwnedBy(me.cid) >= groupsCfg.MaxOwnedPerPlayer then
         return fail(('You can lead at most %d groups'):format(groupsCfg.MaxOwnedPerPlayer))
     end
@@ -184,6 +207,11 @@ function actions.invite(source, payload)
         return fail('Group id and target player id are required')
     end
 
+    if not util.cooldown(me.cid, 'groups:invite', INVITE_GAP_MS)
+        or not util.rateLimit(me.cid, 'groups:invite', INVITE_WINDOW_MS, INVITE_PER_WINDOW) then
+        return fail('Slow down')
+    end
+
     local group = store.getGroup(groupId)
     if not group then return fail('Group not found') end
     if group.leader_cid ~= me.cid then
@@ -206,6 +234,13 @@ function actions.invite(source, payload)
     end
     if store.countInvitesForGroup(groupId) >= groupsCfg.MaxPendingInvitesPerGroup then
         return fail('Too many pending invites for this group')
+    end
+
+    if not util.cooldown(me.cid, 'groups:invite:' .. target.cid, INVITE_SAME_TARGET_MS) then
+        return fail(target.name .. ' was invited recently')
+    end
+    if not util.rateLimit(target.cid, 'groups:inviteRecv', INVITE_RECV_WINDOW_MS, INVITE_RECV_PER_WINDOW) then
+        return fail(target.name .. ' has too many pending invites right now')
     end
 
     local inviteId = store.newId()

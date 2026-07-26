@@ -96,7 +96,7 @@ export const SEED_POSTS: BirdyPost[] = [
     {
         id:        'seed-2',
         author:    MARCUS,
-        body:      'wow, the birdy app really is cool #Birdy',
+        body:      'wow, the squawk app really is cool #Squawk',
         createdAt: Date.now() - 3 * HOUR,
         replies:   0,
         reposts:   0,

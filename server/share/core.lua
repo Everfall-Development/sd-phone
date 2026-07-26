@@ -4,6 +4,8 @@ local config = require 'configs.config'
 local player = require 'bridge.server.player'
 ---@type table Settings persistence (server.settings.store): citizenid -> phone-number lookups.
 local settings = require 'server.settings.store'
+---@type table Shared server helpers (server.util): per-citizenid cooldown + payload size guard.
+local util = require 'server.util'
 
 ---@type table Core module; the table returned at end of file.
 local core = {}
@@ -27,6 +29,15 @@ local requests  = {}
 local handlers  = {}
 ---@type integer Next request id ordinal.
 local nextReqId = 1
+---@type integer Minimum gap between accepted requests from one character (ms). A share is a
+---deliberate tap on a picked recipient, so seconds apart; this only bites a scripted flood.
+local REQUEST_COOLDOWN = 2000
+---@type integer Pending requests one player may have open as sender, and as recipient. Answering
+---is a single tap and unanswered entries expire after 60s, so five is far past normal use.
+local MAX_PENDING = 5
+---@type integer Encoded ceiling on a held payload. A note with a full set of sketches is the
+---biggest legitimate share and lands around 1 MB; anything past this is not a real share.
+local MAX_PAYLOAD_BYTES = 4 * 1024 * 1024
 
 ---Registers the delivery handler for a share kind (e.g. 'contact', 'voice').
 ---@param kind string share kind
@@ -48,12 +59,24 @@ local function kindLabel(kind)
     return 'contact'
 end
 
----Drops every expired pending request.
-local function pruneExpired()
+---Drops every expired pending request, tallying what survives for the pair about to be checked
+---in the same walk so the caps never cost a second pass over the table.
+---@param fromSrc number sender server id to count open requests for
+---@param target number recipient server id to count inbound requests for
+---@return integer sent still-pending requests opened by `fromSrc`
+---@return integer inbound still-pending requests addressed to `target`
+local function pruneExpired(fromSrc, target)
     local now = os.time()
+    local sent, inbound = 0, 0
     for id, req in pairs(requests) do
-        if now > req.expires then requests[id] = nil end
+        if now > req.expires then
+            requests[id] = nil
+        else
+            if req.fromSrc == fromSrc then sent = sent + 1 end
+            if req.target == target then inbound = inbound + 1 end
+        end
     end
+    return sent, inbound
 end
 
 ---Opens an AirShare request to a nearby, phone-open player. The kind must have a registered
@@ -64,11 +87,23 @@ end
 ---@param payload table kind-specific share data, handed to the handler on accept
 ---@return boolean ok, string? message failure reason
 function core.request(src, target, kind, payload)
-    pruneExpired()
     target = tonumber(target)
     if not target then return false, 'Invalid recipient' end
+    -- Sharing to yourself needs no second player, so it is the one path with no proximity cost
+    -- at all; the picker never offers it either.
+    if target == src then return false, 'Invalid recipient' end
     if not handlers[kind] then return false, 'Unknown share type' end
     if not core.canShareTo(src, target) then return false, 'Recipient is no longer nearby' end
+
+    -- Gated only once the request would otherwise be accepted, so a recipient who walked away
+    -- never costs the sender their next attempt.
+    if not util.cooldown(player.getIdentifier(src), 'airshare', REQUEST_COOLDOWN) then
+        return false, 'Slow down a moment'
+    end
+    local sent, inbound = pruneExpired(src, target)
+    if sent >= MAX_PENDING then return false, 'Too many pending shares' end
+    if inbound >= MAX_PENDING then return false, 'Recipient has too many pending shares' end
+    if not util.encodedSize(payload, MAX_PAYLOAD_BYTES) then return false, 'That is too large to share' end
 
     local id = ('as%d'):format(nextReqId)
     nextReqId = nextReqId + 1

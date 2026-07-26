@@ -2,7 +2,13 @@
 
 # sd-phone (THIS IS A BETA RELEASE, WILL HAVE ISSUES)
 
-**An iOS-themed smartphone for FiveM. 45+ server-backed apps, real app accounts, a live game-view camera, online multiplayer games, and drop-in lb-phone compatibility.**
+**An iOS-themed smartphone for FiveM.** 45+ server-backed apps, real app accounts, a live game-view camera and online multiplayer games. Ships its own custom phone props: eight phone items in eight colours, each tinting both the on-screen frame and the custom prop model held in hand. A unique phone system as well as sim cards can be enabled!
+
+**A drop-in lb-phone replacement.** Scripts and custom apps written against lb-phone's exports and events keep running unmodified, and a first-boot migration carries your players across rather than resetting them: phone numbers and lock passcodes, contacts, call history, blocked numbers, SMS threads including groups, photos and albums, and notes.
+
+If sd-phone is useful to you, please ⭐ the repo. Issues and pull requests are always welcome.
+
+[![Live demo](https://img.shields.io/badge/Live%20demo-try%20it%20in%20your%20browser-F0E155?style=for-the-badge)](https://fivem.samueldev.shop/phone)
 
 [![Release](https://img.shields.io/github/v/release/Samuels-Development/sd-phone?label=Release&logo=github)](https://github.com/Samuels-Development/sd-phone)
 [![Downloads](https://img.shields.io/github/downloads/Samuels-Development/sd-phone/total?label=Downloads&logo=github&color=94DD0C)](https://github.com/Samuels-Development/sd-phone)
@@ -14,14 +20,11 @@
 ![Voice](https://img.shields.io/badge/Voice-pma--voice-3b82f6)
 ![Compatibility](https://img.shields.io/badge/lb--phone-drop--in%20compatible-3b82f6)
 
-[**Documentation**](https://docs.samueldev.shop/resources/phone/) · [**Store**](https://fivem.samueldev.shop) · [**Discord**](https://discord.gg/FzPehMQaBQ)
+[**Live demo**](https://fivem.samueldev.shop/phone) · [**Documentation**](https://docs.samueldev.shop/resources/phone/) · [**Store**](https://fivem.samueldev.shop) · [**Discord**](https://discord.gg/FzPehMQaBQ)
 
 </div>
 
 ---
-Thanks for trying this so early. I'd put the phone at about 90% done as of writing, so expect rough edges and a few gaps. Some apps are still mock-only or not fully wired up yet (Vibez, for example, has no backend at this point and only a mock frontend), and there's a good amount of polish and fixes left across the board
-
-Any issues or PRs are highly appreciated. Ohhh and please ⭐the repo! :)
 
 ## Preview
 
@@ -110,142 +113,64 @@ end)
 
 ## Installation
 
-Full guide: [docs.samueldev.shop/resources/phone/installation](https://docs.samueldev.shop/resources/phone/installation)
+> [!IMPORTANT]
+> Grab the packaged **`sd-phone-*.zip`** from the [latest release](https://github.com/Samuels-Development/sd-phone/releases).
+> The green **Code → Download ZIP** button gives you source only, with no `web/build/`, and the phone will open blank.
 
-**Dependencies:** [ox_lib](https://github.com/CommunityOx/ox_lib) · [oxmysql](https://github.com/CommunityOx/oxmysql) · [sd-phone-props](https://github.com/Samuels-Development/sd-phone-props) (streams the in-hand phone models)
+Prefer the full walkthrough? [docs.samueldev.shop/resources/phone/installation](https://docs.samueldev.shop/resources/phone/installation)
 
-1. Drop `sd-phone` and [`sd-phone-props`](https://github.com/Samuels-Development/sd-phone-props) into your resources folder and ensure them after `ox_lib` and `oxmysql`. Database tables create themselves on first boot.
-2. Add the phone items to your inventory, one per frame colour (`phone_black`, `phone_blue`, `phone_green`, `phone_orange`, `phone_pink`, `phone_purple`, `phone_red`, `phone_yellow`). Ready-made ox_inventory definitions and item icons are in the [installation docs](https://docs.samueldev.shop/resources/phone/installation); the icons ship in this repo's `images/` folder. Players can also open with the keybind (default F1), gated on owning a phone item.
-3. Set your API keys in `configs/server/apikeys.lua`: a [Fivemanage](https://refer.fivemanage.com/samuel) token of type **Media** in `FivemanageMedia` (required for the Camera, Photos and Voice Memos apps to upload), and optionally a GIPHY key for the Messages GIF picker.
+### Dependencies
 
-**Download the [latest release](https://github.com/Samuels-Development/sd-phone/releases)** (the packaged `sd-phone-*.zip`), not the green *Code -> Download ZIP*. The release zip carries the compiled UI and runs as-is; the source zip is code only and has no `web/build/`, so the phone opens blank.
+| Resource | What it is for |
+| --- | --- |
+| [ox_lib](https://github.com/CommunityOx/ox_lib) | Shared library |
+| [oxmysql](https://github.com/CommunityOx/oxmysql) | Database access |
+| [sd-phone-props](https://github.com/Samuels-Development/sd-phone-props) | Streams the in-hand phone models |
 
-Building from a git clone yourself: `cd web && npm ci && npm run build`. The output lands in the gitignored `web/build/`; the server logs a clear error on boot if it is missing.
+### 1. Start the resources
 
-## Unique Phones & SIM Cards (optional)
+Extract `sd-phone` and `sd-phone-props` into your resources folder, then start them after their dependencies:
 
-Everything lives in `configs/uniqueandsim.lua`. The short version:
-
-| You want | Set |
-|---|---|
-| Stock behaviour (shared data, automatic numbers) | `Enabled = false` |
-| Unique phones, SIM cards carry the number | `Enabled = true`, `DataOwner = 'device'` |
-| Unique phones, **no SIM items** (built-in numbers) | `'device'` + `BuiltInNumbers = true` |
-| Stock data, SIMs **only change your number** | `Enabled = true`, `DataOwner = 'character'` |
-| The SIM *is* the phone (original unique phones) | `Enabled = true`, `DataOwner = 'sim'` |
-
-Off by default. Flip `Enabled = true` and phone numbers stop belonging to characters — they live on **SIM card items**. A second switch, `DataOwner`, decides who owns the *data*:
-
-- **`DataOwner = 'device'` (default) — the phone owns the data, the SIM only lends a number.** Each phone item gets a persistent identity the first time it's used, and that identity keys everything: messages, call log, contacts, photos, notes, app logins, settings, games. Popping the SIM out just drops your **number and service** — the phone still opens and every non-number app keeps working, the status bar reads **No Service**. Move a SIM to another phone and that phone gets your **number**, not your data. Steal a phone and you get *its* apps behind the owner's lockscreen (Face Unlock never works for you), but never their number unless the SIM is inside.
-- **`DataOwner = 'sim'` (legacy) — the SIM owns the data.** Whichever SIM is in a phone decides whose data that phone shows — everything. Steal someone's phone with the SIM inside and you're reading *their* phone; without any SIM, a phone opens to a full-screen **No SIM** screen with no service and every server action refused.
-- **`DataOwner = 'character'` — stock data, SIM numbers.** Every phone opens the holder's *own* character profile, exactly like the feature being off — a stolen phone shows the thief's data, never the owner's. Without a SIM the character keeps a vanilla auto-assigned number with full service; installing a SIM changes **only the number**, ejecting falls back to a fresh auto number. Enabling this on an existing stock server keeps everyone's data untouched.
-
-Either mode: the number follows the SIM, and Cloud Backup carries a character's data to a new phone (the number stays behind on the old SIM). Flipping an existing legacy server to the default device mode is safe and automatic — the first time each phone is used it **adopts** the identity of the SIM currently in it, so no data is copied or lost; only from then on does the number float free of the data.
-
-**Don't want SIM cards at all?** Set `BuiltInNumbers = true` and phones stay unique devices but mint their own **permanent built-in number** on first use (an eSIM, stamped onto the item) — no `sim_card` item, no install/eject, the number lives and dies with the phone. Device identity is implied; skip the SIM item setup below entirely.
-
-### Setup
-
-1. Enable the feature in `configs/uniqueandsim.lua` and add the SIM item to your inventory (ox_inventory example; not needed with `BuiltInNumbers`):
-
-   ```lua
-   ['sim_card'] = {
-       label = 'SIM Card',
-       weight = 5,
-       stack = false,
-       close = true,
-       consume = 0, -- required: sd-phone consumes the item itself on install
-       server = { export = 'sd-phone.useSim_card' },
-   },
-   ```
-
-2. Get SIMs to players — **no integration needed**: sell or spawn `sim_card` like any normal item (ox_inventory shop, loot table, `/give`, anything). A blank card **activates itself on first use**, minting and registering a fresh number on the spot; once activated the number stays on that card through every eject and reinsert. (`ActivateBlankSims = false` turns this off if you want SIM distribution controlled.)
-
-   Optional paths for special cases:
-   - `/givesim <playerId>` (admin) — a pre-activated SIM with a fresh number.
-   - `/givesim <playerId> bind` — a **character-bound** SIM: it carries the player's existing number and their existing phone data, so servers switching the feature on lose nothing.
-   - From another resource: `exports['sd-phone']:giveSimCard(source, { citizenid = cid })` for character-bound SIMs, or `{ number = '2085550123' }` to hardcode a specific number.
-3. Phones handed out **before** enabling the feature keep working as items, but in container mode they have no SIM tray until re-issued.
-
-### Two attach modes
-
-| | `UseContainers = false` (default, universal) | `UseContainers = true` (ox_inventory only) |
-|---|---|---|
-| Install SIM | **Use the sim_card item** — it's consumed and written onto your phone | Right-click/use the phone → SIM tray opens → drag the SIM in |
-| Eject SIM | Settings → **SIM & Backup** → *Eject SIM Card* (returns the item, number intact) | Drag the SIM out of the tray |
-| Using the phone item | Opens the phone UI | Opens the SIM tray (ox intercepts container items); the phone UI opens via the keybind (default F1) |
-| Backends | every supported backend below | ox_inventory |
-
-Supported backends (via the slot-level bridge API in `bridge/server/inventory.lua`): **ox_inventory**, **qb-inventory**, **ps-inventory**, **lj-inventory**, **qs-inventory(-pro)**, **tgiann-inventory**, **codem-inventory**, **origen_inventory**, **jaksam_inventory**, plus a framework-native fallback for QBCore setups without a dedicated inventory. Plain ESX inventory has no item metadata and cannot support unique phones.
-
-### Multiple phones & SIMs
-
-A player can carry **several phones, each with its own SIM**. Whichever phone they open (use the item, or the keybind's last-used colour) is the **active** one — outgoing calls and messages act as that phone's number. All carried SIM'd phones stay **reachable**: a call or text to any of their numbers reaches the player, even while another phone is active. Settings → SIM & Backup lists the other phones on you.
-
-### What players should know
-
-- **No SIM = no service.** In the default device mode the phone still opens and non-number apps (photos, notes, settings, account apps, games) keep working — you just can't call or text and the bar shows **No Service** until a SIM is installed. In legacy mode a SIM-less phone is a dead **No SIM** screen.
-- **Your number lives on the SIM.** Move the SIM to another phone and the number moves with it — and in legacy mode the whole phone profile follows too. **A lost number is lost** — restores never bring numbers back.
-- **Passcodes still protect you.** A thief sees your lockscreen; if you set a passcode they must know it — Face Unlock never works for anyone but the phone's original owner.
-- **Cloud Backup** (Settings → SIM & Backup) belongs to your **character** and is protected by a **backup password** you set when turning it on (a copy is saved into your Passwords app). After losing your phone, get a new phone + blank SIM, press *Restore from Backup* and enter the password: your contacts, messages, photos, notes, settings and app logins are copied to the new phone. The number is **not** restored — your new SIM keeps its own number, and the old number stays on the old SIM.
-
-### SIM exports
-
-```lua
--- Create + give a SIM card. opts.citizenid makes it character-bound (carries that
--- character's number/data); opts.number requests a specific number (nil if taken).
-local number = exports['sd-phone']:giveSimCard(source, { citizenid = nil, number = nil })
-
-exports['sd-phone']:getSimNumber(source)     -- bare-digit number in the player's ACTIVE phone, or nil
-exports['sd-phone']:hasSim(source)           -- true when their active phone has a SIM
-exports['sd-phone']:isSimModeActive()        -- true while unique phones are enabled + supported
-exports['sd-phone']:isNumberAvailable(number) -- true when a number is free to assign
-
--- Assign a specific number to the SIM in the player's ACTIVE phone (identity/data kept).
--- This is the hook for your own "buy a custom number" implementation.
-local ok, err = exports['sd-phone']:setSimNumber(source, '5550001234')
--- err on failure: 'invalid' | 'no_sim' | 'taken'
+```cfg
+ensure ox_lib
+ensure oxmysql
+ensure sd-phone-props
+ensure sd-phone
 ```
 
-Existing number exports (`getPhoneNumber`, `getSourceByNumber`, `getIdentifierByNumber`, `isNumberInService`, `hasPhone`) automatically follow the SIM when the feature is on.
+Database tables create themselves on first boot.
 
----
+### 2. Add the phone items
 
-## Payphones (optional)
+One item per frame colour:
 
-Street payphones let players call any number from the phone boxes around the map - no phone item needed. Walk up to a booth, target **Use Payphone**, punch the number in on the keypad and hit call. The booth plays the scripted payphone animation while you talk.
-
-### Setup
-
-Everything lives in `configs/payphone.lua`:
-
-- `Enabled` - master switch; `false` removes the targets and disables every payphone callback.
-- `Models` - the phone-box props that get the target interaction (works with ox_target, qb-target and qtarget through the built-in bridge).
-- `UseOxLibMenu` - swap the payphone UI page for ox_lib context menus and an input dialog.
-- `Anonymous` - when `true`, the person you call sees a withheld caller instead of the booth's number.
-- `CallerLabel` - the name shown on the callee's incoming-call screen (their saved contacts still take priority).
-- `ShowFavorites` - shows the player's favourite contacts (and their own number) on the booth's notepad for quick dialing.
-- `NumberPrefix` - the area code minted payphone numbers start with.
-- `Scene` - the on-the-phone animation clips; disable or reclip per game build.
-- `Inbound` - calling a booth's number back rings the physical booth; anyone nearby can pick up via **Answer Phone**. Configure the ring timeout and bell sound here.
-
-### Static numbers
-
-Each booth mints a persistent number the first time it's used (stored in `phone_payphones`). The same street corner always calls out from the same number, so players can save it, recognise it - and call it back.
-
-### Payphone exports
-
-```lua
--- Opens the payphone dial UI at the player's position, for any script (client-side):
-exports['sd-phone']:openPayphone()
-
--- True while the payphone UI is on screen (client-side):
-exports['sd-phone']:isPayphoneOpen()
+```
+phone_black   phone_blue     phone_green   phone_orange
+phone_pink    phone_purple   phone_red     phone_yellow
 ```
 
-<div align="center">
+Ready-made ox_inventory definitions live in the [installation docs](https://docs.samueldev.shop/resources/phone/installation), and the item icons ship in this repo's `images/` folder.
 
-**[Documentation](https://docs.samueldev.shop/resources/phone/)** · **[Store](https://fivem.samueldev.shop)** · **[Discord](https://discord.gg/FzPehMQaBQ)**
+Players can also open the phone with a keybind (<kbd>F1</kbd> by default), which still requires owning one of these items.
 
-</div>
+### 3. Add your API keys
+
+In `configs/server/apikeys.lua`:
+
+| Key | Needed for |
+| --- | --- |
+| `FivemanageMedia` | **Required.** Camera, Photos and Voice Memos uploads. Create a free [Fivemanage](https://refer.fivemanage.com/samuel) token of type **Media**. Without it those apps open, but nothing uploads or saves. |
+| `Giphy` | Optional. The GIF picker in Messages. Free key from [developers.giphy.com](https://developers.giphy.com). |
+
+### Building from source
+
+Cloned the repo instead of using a release? Build the UI yourself:
+
+```bash
+cd web
+npm ci
+npm run build
+```
+
+The output lands in the gitignored `web/build/`, and the server logs a clear error on boot if it is missing.
 

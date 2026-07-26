@@ -9,6 +9,7 @@ export interface Company {
     canCall:     boolean;
     callNumber?: string;
     coords?:     { x: number; y: number; z: number };
+    onDuty?:     boolean;
 }
 
 export interface Employee {
@@ -22,8 +23,8 @@ export interface Employee {
 }
 
 export const COMPANIES: Company[] = [
-    { id: 'police',    name: 'Police',    location: 'Mission Row', color: '#0A84FF', emoji: '🚓', canCall: true,  callNumber: '911', coords: { x: 425.1,  y: -979.5,  z: 30.7 } },
-    { id: 'ambulance', name: 'Ambulance', location: 'Pillbox',     color: '#C0392B', emoji: '🚑', canCall: true,  callNumber: '912', coords: { x: 307.7,  y: -1433.4, z: 29.9 } },
+    { id: 'police',    name: 'Police',    location: 'Mission Row', color: '#0A84FF', emoji: '🚓', canCall: true,  callNumber: '911', onDuty: true,  coords: { x: 425.1,  y: -979.5,  z: 30.7 } },
+    { id: 'ambulance', name: 'Ambulance', location: 'Pillbox',     color: '#C0392B', emoji: '🚑', canCall: true,  callNumber: '912', onDuty: true,  coords: { x: 307.7,  y: -1433.4, z: 29.9 } },
     { id: 'mechanic',  name: 'Mechanic',  location: 'LS Customs',  color: '#3A3A3C', emoji: '⚙️', canCall: false, coords: { x: -347.3, y: -133.8,  z: 39.0 } },
     { id: 'taxi',      name: 'Taxi',      location: 'Taxi HQ',     color: '#27AE60', emoji: '🚕', canCall: false, coords: { x: 895.7,  y: -179.3,  z: 74.7 } },
 ];

@@ -412,7 +412,7 @@ export function MatchOverlay({ profile, onSend, onClose }: {
                         value={text}
                         onChange={e => setText(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') submit(); }}
-                        placeholder={t('cherry.sayNice', 'Say something nice')}
+                        placeholder={t('cherry.sayNice', 'Leave a comment')}
                         className="min-w-0 flex-1 bg-transparent px-4 py-[18px] text-[18px] text-black placeholder-black/45 outline-none"
                     />
                     <button

@@ -15,7 +15,7 @@ function job.getName(source)
     local p = player_mod.get(source)
     if not p then return nil end
     if framework.name == 'esx'  then return p.job and p.job.name or nil end
-    if framework.name == 'qb' then return p.PlayerData.job and p.PlayerData.job.name or nil end
+    if framework.qb then return p.PlayerData.job and p.PlayerData.job.name or nil end
     return nil
 end
 
@@ -26,7 +26,7 @@ function job.getGrade(source)
     local p = player_mod.get(source)
     if not p then return 0 end
     if framework.name == 'esx'  then return p.job and p.job.grade or 0 end
-    if framework.name == 'qb' then
+    if framework.qb then
         return p.PlayerData.job and p.PlayerData.job.grade and p.PlayerData.job.grade.level or 0
     end
     return 0
@@ -43,7 +43,7 @@ function job.has(source, jobName, minGrade)
     local p = player_mod.get(source)
     if not p then return false end
 
-    if framework.name == 'qb' then
+    if framework.qb then
         local data = p.PlayerData.job
         if data and data.name == jobName then
             return (data.grade and data.grade.level or 0) >= minGrade
@@ -81,7 +81,7 @@ function job.isBoss(source, jobName, esxBossGrade)
     local p = player_mod.get(source)
     if not p then return false end
 
-    if framework.name == 'qb' then
+    if framework.qb then
         local data = p.PlayerData.job
         return data ~= nil and data.name == jobName and data.isboss == true
     elseif framework.name == 'esx' then
@@ -102,7 +102,7 @@ function job.set(source, jobName, grade)
     if not p then return false end
     grade = grade or 0
 
-    if framework.name == 'qb' then return p.Functions.SetJob(jobName, grade) end
+    if framework.qb then return p.Functions.SetJob(jobName, grade) end
     if framework.name == 'esx' then p.setJob(jobName, grade); return true end
     return false
 end
@@ -114,7 +114,7 @@ end
 function job.getDuty(source)
     local p = player_mod.get(source)
     if not p then return nil end
-    if framework.name == 'qb' then
+    if framework.qb then
         return p.PlayerData.job ~= nil and p.PlayerData.job.onduty == true
     end
     return nil
@@ -123,7 +123,7 @@ end
 ---True when the framework supports a multi-job ("saved jobs") model (QBCore/QBox); false on ESX.
 ---@return boolean
 function job.supportsMultijob()
-    return framework.name == 'qb'
+    return framework.qb
 end
 
 ---Every job the framework has assigned to this player, not just the active one. On QBox these
@@ -137,7 +137,7 @@ function job.getAll(source)
     local p = player_mod.get(source)
     if not p then return out end
 
-    if framework.name == 'qb' then
+    if framework.qb then
         local jobs = p.PlayerData and p.PlayerData.jobs
         if type(jobs) == 'table' then
             for name, grade in pairs(jobs) do
@@ -160,9 +160,12 @@ end
 ---@return string|nil
 function job.getLabel(jobName)
     if not jobName or jobName == '' then return nil end
-    if framework.name == 'qb' then
+    if framework.qb then
         local def
-        if framework.core and framework.core.Shared and framework.core.Shared.Jobs then
+        if framework.name == 'qbx' then
+            pcall(function() def = exports.qbx_core:GetJob(jobName) end)
+        end
+        if not def and framework.core and framework.core.Shared and framework.core.Shared.Jobs then
             def = framework.core.Shared.Jobs[jobName]
         end
         if not def then pcall(function() def = exports.qbx_core:GetJob(jobName) end) end
@@ -179,7 +182,7 @@ end
 function job.setDuty(source, onDuty)
     local p = player_mod.get(source)
     if not p then return false end
-    if framework.name == 'qb' then
+    if framework.qb then
         p.Functions.SetJobDuty(onDuty == true)
         return true
     end

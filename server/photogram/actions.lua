@@ -10,6 +10,8 @@ local store     = require 'server.photogram.store'
 local live      = require 'server.photogram.live'
 ---@type table Admin mute registry (server.admin.moderation): scope guards for posting/commenting/DMing.
 local moderation = require 'server.admin.moderation'
+---@type table Watcher registry (server.watchers): shared with server.photogram.live and init.
+local watchers  = require('server.watchers').of('photogram')
 
 ---@type table Actions module; the table returned at end of file.
 local actions = {}
@@ -18,9 +20,54 @@ local actions = {}
 local STORY_TTL    = 86400
 ---@type table<string, boolean> Whitelisted DM kinds; anything else coerces to 'text'.
 local VALID_DMKIND = { text = true, image = true, gif = true, voice = true, post = true }
+---@type table<string, boolean> Allowed DM reaction emoji, mirroring the four the composer offers
+---(web/src/shared/chat/MessageBubble.tsx). Bounds the reactions blob to four keys.
+local REACTION_SET = { ['❤️'] = true, ['👍'] = true, ['👎'] = true, ['😂'] = true }
+---@type integer Live (<24h) story frames one account may hold at once.
+local STORY_CAP    = 50
+---@type integer How long a like/follow notification suppresses an identical repeat (seconds).
+local NOTIF_DEDUPE = 3600
 
 local util = require 'server.util'
 local ok, fail, trim, flag = util.ok, util.fail, util.trim, util.truthy
+
+---@type table<string, boolean> Notification kinds a toggle can re-raise indefinitely, so the same
+---actor + post + recipient is only stored once per NOTIF_DEDUPE window.
+---follow_request is absent on purpose: cancelling a request deletes its row, so that pair cannot
+---accumulate, and deduping it would swallow a genuine second request after a decline.
+local TOGGLE_KINDS = { like = true, follow = true, unfollow = true }
+
+---@type table<string, integer[]> Per-citizenid write budgets as { minimum gap ms, accepted calls
+---per day }. Both sit far above real play; they exist so a scripted client cannot mint rows,
+---notifications or broadcasts faster than a person can tap.
+local WRITE_BUDGET = {
+    create  = { 2000, 100 },
+    comment = { 800, 500 },
+    story   = { 1500, 100 },
+    like    = { 250, 3000 },
+    follow  = { 400, 500 },
+    dm      = { 400, 1000 },
+    react   = { 250, 2000 },
+}
+
+---@type integer Rolling window the per-day half of WRITE_BUDGET is measured over (ms).
+local BUDGET_WINDOW = 86400000
+
+---Applies the caller's write budget for `key`. nil means the call may proceed; anything else is
+---the envelope to hand straight back to the client.
+---@param src integer player server id
+---@param key string WRITE_BUDGET key
+---@return table|nil refusal
+local function throttle(src, key)
+    local cid = player.getIdentifier(src)
+    if not cid then return nil end
+    local budget = WRITE_BUDGET[key]
+    if not util.cooldown(cid, 'photogram:' .. key, budget[1]) then return fail('Slow down') end
+    if not util.rateLimit(cid, 'photogram:' .. key, BUDGET_WINDOW, budget[2]) then
+        return fail('Daily limit reached')
+    end
+    return nil
+end
 
 ---The photogram account the calling player is signed into, resolved from `src` alone. nil when
 ---the character isn't signed in.
@@ -64,14 +111,15 @@ local function sourcesFor(username, activeSrcs)
     return out
 end
 
----Fans a content change out to every phone.
+---Fans a content change out to the phones with Photogram in the foreground. Scoped to watchers:
+---one like used to cost a packet per player on the server and a refetch on every one of them.
 ---@param event string client event suffix
 ---@param data table event payload
 local function broadcast(event, data)
-    TriggerClientEvent('sd-phone:client:photogram:' .. event, -1, data)
+    watchers.push('sd-phone:client:photogram:' .. event, data)
 end
 
----Fans a post-scoped change out: a public author's changes broadcast to every phone; a private
+---Fans a post-scoped change out: a public author's changes broadcast to every watching phone; a private
 ---author's go only to the author's + accepted followers' phones.
 ---@param author string post author's handle
 ---@param event string client event suffix
@@ -252,6 +300,11 @@ end
 ---here, which a loop over recipients pays once per recipient for invariant values
 local function notify(recipient, kind, actor, postId, preview, ctx)
     if recipient == actor or recipient == '' then return end
+    -- Un-liking does not delete the row, so re-liking would otherwise mint a permanent duplicate
+    -- on every flip. Comments and mentions are genuinely new each time and are never deduped.
+    if TOGGLE_KINDS[kind] and store.recentNotification(recipient, kind, actor, postId, os.time() - NOTIF_DEDUPE) then
+        return
+    end
     store.insertNotification(store.newId(), recipient, kind, actor, postId, preview, os.time())
 
     local sources = sourcesFor(recipient, ctx and ctx.activeSrcs or nil)
@@ -452,7 +505,7 @@ function actions.post(src, payload)
 end
 
 ---Creates a post from sanitized images with capped caption/location, notifies mentions and
----followers, and pings every phone with a content-free feedChanged.
+---followers, and pings every watching phone with a content-free feedChanged.
 ---@param src integer player server id
 ---@param payload table { images: string[], caption?: string, location?: string }
 ---@return table result { post }
@@ -461,6 +514,7 @@ function actions.create(src, payload)
     local acc = viewerAccount(src)
     if not acc then return fail('Not signed in') end
     local muted = moderation.guard(player.getIdentifier(src), 'photogram'); if muted then return muted end
+    local slow = throttle(src, 'create'); if slow then return slow end
     local me = ensureProfile(acc)
 
     local images = sanitizeImages(payload.images)
@@ -534,6 +588,7 @@ function actions.toggleLike(src, payload)
     payload = type(payload) == 'table' and payload or {}
     local acc = viewerAccount(src)
     if not acc then return fail('Not signed in') end
+    local slow = throttle(src, 'like'); if slow then return slow end
     local row = store.getPostRow(trim(payload.id))
     if not row then return fail('Post not found') end
     if not canInteract(acc.username, row.author) then return fail('This account is private') end
@@ -611,6 +666,7 @@ function actions.addComment(src, payload)
     local acc = viewerAccount(src)
     if not acc then return fail('Not signed in') end
     local muted = moderation.guard(player.getIdentifier(src), 'photogram'); if muted then return muted end
+    local slow = throttle(src, 'comment'); if slow then return slow end
 
     local row = store.getPostRow(trim(payload.postId))
     if not row then return fail('Post not found') end
@@ -759,6 +815,7 @@ function actions.toggleFollow(src, payload)
     if not acc then return fail('Not signed in') end
     local target = trim(payload.handle):lower()
     if target == '' or target == acc.username then return fail('Bad target') end
+    local slow = throttle(src, 'follow'); if slow then return slow end
 
     local tprofile = store.getProfile(target)
     if not tprofile then return fail('Account not found') end
@@ -919,9 +976,15 @@ function actions.addStory(src, payload)
     payload = type(payload) == 'table' and payload or {}
     local acc = viewerAccount(src)
     if not acc then return fail('Not signed in') end
+    local slow = throttle(src, 'story'); if slow then return slow end
     ensureProfile(acc)
     local image = trim(payload.image)
     if image:sub(1, 4) ~= 'http' then return fail('Add a photo') end
+    -- Frames expire on their own after STORY_TTL, so this caps the live window rather than the
+    -- account: a full tray drains back to zero a day later.
+    if store.countActiveStories(acc.username, os.time() - STORY_TTL) >= STORY_CAP then
+        return fail('Your story is full for today')
+    end
     store.insertStory(store.newId(), acc.username, image:sub(1, 512), os.time())
     return ok()
 end
@@ -1057,6 +1120,7 @@ function actions.dmSend(src, payload)
     local acc = viewerAccount(src)
     if not acc then return fail('Not signed in') end
     local muted = moderation.guard(player.getIdentifier(src), 'photogram'); if muted then return muted end
+    local slow = throttle(src, 'dm'); if slow then return slow end
     local to = trim(payload.to):lower()
     if to == '' or to == acc.username then return fail('Bad recipient') end
     if not store.getProfile(to) then return fail('Account not found') end
@@ -1099,11 +1163,12 @@ function actions.dmReact(src, payload)
     payload = type(payload) == 'table' and payload or {}
     local acc = viewerAccount(src)
     if not acc then return fail('Not signed in') end
+    local slow = throttle(src, 'react'); if slow then return slow end
     local row = type(payload.id) == 'string' and store.getDm(payload.id) or nil
     if not row or (row.from_user ~= acc.username and row.to_user ~= acc.username) then return fail('Message not found') end
 
     local emoji = tostring(payload.emoji or '')
-    if emoji == '' or #emoji > 16 then return fail('Invalid reaction') end
+    if not REACTION_SET[emoji] then return fail('Invalid reaction') end
 
     local reactions = store.decodeJson(row.reactions)
     local users = reactions[emoji] or {}

@@ -69,7 +69,7 @@ local function chooseAdd()
             return true
         end
     end
-    if framework.name == 'qb' then
+    if framework.qb then
         return function(src, item, count, metadata)
             local p = player_mod.get(src)
             if not p then return false end
@@ -112,7 +112,7 @@ local function chooseCount()
             return data and (data.count or data.amount) or 0
         end
     end
-    if framework.name == 'qb' then
+    if framework.qb then
         return function(src, item)
             local p = player_mod.get(src); if not p then return 0 end
             local data = p.Functions.GetItemByName(item)
@@ -176,7 +176,7 @@ local function chooseRemove()
             return true
         end
     end
-    if framework.name == 'qb' then
+    if framework.qb then
         return function(src, item, count, _metadata)
             local p = player_mod.get(src); if not p then return false end
             return p.Functions.RemoveItem(item, count)
@@ -227,7 +227,7 @@ local function chooseCanCarry()
             return curW + ((current.weight or 0) * count) <= maxW
         end
     end
-    if framework.name == 'qb' then
+    if framework.qb then
         return function(src, item, count, slot)
             local p = player_mod.get(src); if not p then return false end
             return p.Functions.CanAddItem(item, count, slot)
@@ -263,7 +263,10 @@ local function chooseRegisterUsable()
     if framework.name == 'esx' then
         return function(item, cb) return framework.core.RegisterUsableItem(item, cb) end
     end
-    if framework.name == 'qb' then
+    if framework.name == 'qbx' then
+        return function(item, cb) return exports.qbx_core:CreateUseableItem(item, cb) end
+    end
+    if framework.qb then
         return function(item, cb) return framework.core.Functions.CreateUseableItem(item, cb) end
     end
 
@@ -292,9 +295,10 @@ local function chooseLabel()
         return function(itemName) return exports[OG]:GetItemLabel(itemName) or itemName end
     end
 
-    if framework.name == 'qb' then
+    if framework.qb then
         return function(itemName)
-            local item = framework.core.Shared.Items[itemName]
+            local shared = framework.core and framework.core.Shared
+            local item = shared and shared.Items and shared.Items[itemName]
             return item and item.label or itemName
         end
     end
@@ -355,7 +359,7 @@ local function slotBackend()
         return OX
     end
     if active then return active end
-    if framework.name == 'qb' then return QBCORE end
+    if framework.qb then return QBCORE end
     return nil
 end
 

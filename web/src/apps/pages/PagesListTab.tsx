@@ -35,7 +35,7 @@ export function PagesListTab({ posts, onCreate, onOpen, onMessage, onCall, onEma
                 </button>
             </div>
 
-            <SearchBar value={query} onChange={setQuery} placeholder={t('pages.searchPlaceholder','Search for posts or numbers')} className="mx-4 mb-2 mt-1" />
+            <SearchBar value={query} onChange={setQuery} placeholder={t('pages.searchPlaceholder','Find a post or a poster')} className="mx-4 mb-2 mt-1" />
 
             <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar px-4 pb-6">
                 {list.length === 0 ? (

@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Find Friends config (configs/friends.lua): MaxFriends cap + push interval.
 local config  = require 'configs.friends'
 ---@type table Find Friends persistence (server.friends.store): directed share-edge CRUD.
@@ -13,10 +16,10 @@ local watchers = {}
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:friends]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('friends', err)
         return
     end
-    print('^2[sd-phone:friends]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- Roster callbacks: thin delegates into server.friends.actions; payloads are coerced to tables here.

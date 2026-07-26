@@ -42,7 +42,9 @@ local function chooseBackend()
 
     if framework.name == 'esx' then
         return function(data) framework.core.ShowNotification(data.description) end
-    elseif framework.name == 'qb' then
+    elseif framework.name == 'qbx' then
+        return function(data) exports.qbx_core:Notify(data.description, data.type or 'info') end
+    elseif framework.qb then
         return function(data) framework.core.Functions.Notify(data.description, data.type or 'info') end
     end
 

@@ -158,6 +158,23 @@ function actions.register(source, payload)
     local app = payload.app
     if not DIRECT_APPS[app] then return fail('Unknown app') end
     local cid = player.getIdentifier(source); if not cid then return fail('Player not found') end
+    if not util.cooldown(cid, 'accounts:register', 1500) then return fail('Slow down') end
+    -- Failed attempts count too, and a player setting up all four apps hits several of them
+    -- ('username taken', weak password), so the budget has to clear a whole first-session setup.
+    if not util.rateLimit(cid, 'accounts:register', 600000, 30) then
+        return fail('Too many sign-up attempts. Try again shortly')
+    end
+
+    -- Recovery codes are delivered to this number, so a number the caller does not own is
+    -- useless to them. It is also what let one character mint unlimited handles: the per-app
+    -- contact-uniqueness check below only bites once the number has to be their own.
+    local phone = digits(payload.phone)
+    if phone ~= '' then
+        local mine = digits(settings.getPhoneNumber(cid))
+        if mine ~= '' and phone ~= mine then
+            return fail('Use your own phone number so you can recover the account')
+        end
+    end
 
     local res = actions.createAccount(app, payload)
     if not res.success then return res end

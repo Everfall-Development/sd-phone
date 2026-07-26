@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table sd-phone config root (configs/config.lua).
 local config  = require 'configs.config'
 ---@type table Stocks persistence layer (server.stocks.store): schema bootstrap + price rows.
@@ -39,11 +42,11 @@ end)
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:stocks]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('stocks', err)
         return
     end
     engine.init()
-    print('^2[sd-phone:stocks]^0 market ready')
+    boot.schemaReady()
 
     while true do
         Wait((ST.TickSeconds or 5) * 1000)

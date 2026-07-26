@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table sd-phone config root (configs/config.lua).
 local config  = require 'configs.config'
 ---@type table Cookie persistence layer (server.cookie.store): one save row per character.
@@ -12,10 +15,10 @@ local FLUSH_MS = (((config.Cookie or {}).SaveInterval) or 60) * 1000
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:cookie]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('cookie', err)
         return
     end
-    print('^2[sd-phone:cookie]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- Write-behind flush: batches the in-memory autosaves to the DB on a slow interval.

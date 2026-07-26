@@ -9,7 +9,10 @@ local player = {}
 ---raises an error.
 ---@return fun(source: number): any|nil
 local function chooseGet()
-    if framework.name == 'qb' then
+    if framework.name == 'qbx' then
+        return function(src) return exports.qbx_core:GetPlayer(src) end
+    end
+    if framework.qb then
         return function(src) return framework.core.Functions.GetPlayer(src) end
     end
     if framework.name == 'esx' then
@@ -32,7 +35,7 @@ function player.get(source) return resolveGet(source) end
 ---Pick the framework's "extract identifier from player object" call once at module load.
 ---@return fun(p: any): string|nil
 local function chooseIdentifier()
-    if framework.name == 'qb' then
+    if framework.qb then
         return function(p) return p.PlayerData.citizenid end
     end
     if framework.name == 'esx' then
@@ -97,7 +100,7 @@ AddEventHandler('playerDropped', function() player.forget(source) end)
 
 -- Character lifecycle: both edges matter. Load clears a negative entry cached while the player
 -- was still connecting; unload clears the outgoing character before the next one is resolved.
-if framework.name == 'qb' then
+if framework.qb then
     AddEventHandler('QBCore:Server:PlayerLoaded', function(p)
         player.forget(p and p.PlayerData and p.PlayerData.source)
     end)
@@ -132,7 +135,7 @@ function player.getName(source)
     if not p then return 'Unknown' end
 
     if framework.name == 'esx'  then return p.getName() end
-    if framework.name == 'qb' then
+    if framework.qb then
         return ('%s %s'):format(p.PlayerData.charinfo.firstname, p.PlayerData.charinfo.lastname)
     end
     return 'Unknown'
@@ -145,7 +148,7 @@ function player.getJob(source)
     local p = resolveGet(source)
     if not p then return nil end
     if framework.name == 'esx'  then return p.job and p.job.name or nil end
-    if framework.name == 'qb' then return p.PlayerData.job and p.PlayerData.job.name or nil end
+    if framework.qb then return p.PlayerData.job and p.PlayerData.job.name or nil end
     return nil
 end
 
@@ -155,7 +158,7 @@ end
 function player.getGang(source)
     local p = resolveGet(source)
     if not p then return nil end
-    if framework.name == 'qb' then return p.PlayerData.gang and p.PlayerData.gang.name or nil end
+    if framework.qb then return p.PlayerData.gang and p.PlayerData.gang.name or nil end
     return nil
 end
 

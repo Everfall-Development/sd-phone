@@ -1,4 +1,5 @@
 import { fetchNui, isFiveM } from '@/core/nui';
+import { useMocks } from '@/core/demo';
 import { apiCall, apiData as call } from '@/core/api';
 import { formatClockTime } from '@/lib/time';
 import type { MessageDraft } from '@/shared/chat/ChatView';
@@ -22,7 +23,7 @@ function clock(): string {
     return formatClockTime(new Date(), true);
 }
 
-let devLoggedIn = import.meta.env.DEV;
+let devLoggedIn = useMocks;
 
 export interface AuthState { loggedIn: boolean; me: BirdyAuthor | null }
 export interface AuthResult { ok: boolean; me?: BirdyAuthor; message?: string }
@@ -48,6 +49,12 @@ export async function apiLogin(input: { username: string; password: string }): P
 export async function apiLogout(): Promise<void> {
     if (!isFiveM) { devLoggedIn = false; return; }
     await fetchNui('sd-phone:birdy:logout');
+}
+
+/** Subscribe/unsubscribe this phone to the feed push. The server only pushes to watchers, so a
+ * phone that is closed or backgrounded no longer pays to receive and discard one. */
+export function apiWatch(on: boolean): void {
+    if (isFiveM) void fetchNui('sd-phone:birdy:watch', { on });
 }
 
 export async function apiFeed(following: boolean): Promise<BirdyPost[]> {

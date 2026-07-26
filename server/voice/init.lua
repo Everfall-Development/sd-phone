@@ -2,6 +2,8 @@
 local config = require 'configs.config'
 ---@type table Player bridge (bridge.server.player): citizenid/name/phone-number lookups.
 local player = require 'bridge.server.player'
+---@type table Shared server helpers (server.util): rate limiting + client-payload validation.
+local util   = require 'server.util'
 
 ---@type table Voice config (configs/voice.lua): nearby-capture switches + TURN provisioning.
 local CFG   = config.Voice or {}
@@ -18,8 +20,13 @@ local TURN  = CFG.Turn or {}
 local function enabled() return CFG.RecordNearbyVoices == true end
 
 -- ICE provisioning for the client-to-client WebRTC mesh that captures nearby players' voices.
----@type table<number, { servers: table, expires: number }> Cached ICE servers per player src.
-local iceCache = {}
+-- The Cloudflare credentials are issued per TTL, not per player, so one entry serves the whole
+-- server; a per-src cache let every concurrent caller miss during the first request's yield and
+-- issue its own, so one client could fan a burst of outbound HTTPS calls at Cloudflare.
+---@type { servers: table, expires: number }|nil Shared ICE server list.
+local iceCache = nil
+---@type table|nil In-flight provisioning promise; concurrent callers await it instead of refetching.
+local icePending = nil
 
 ---The always-available STUN portion of an iceServers list, built fresh so callers can append.
 ---@return table servers array of { urls = string }
@@ -57,21 +64,32 @@ local function fetchCloudflareTurn()
     return Citizen.Await(p)
 end
 
----ICE servers for one player: STUN always, TURN appended when the Cloudflare provider is
----configured. Cached per src until a minute before the provisioned credential lapses.
----@param src number player server id
+---@type integer Seconds a failed TURN provisioning is cached for. Short enough that a transient
+---Cloudflare outage heals on its own, long enough that it can never become a request loop.
+local ICE_FAILURE_TTL = 60
+
+---ICE servers: STUN always, TURN appended when the Cloudflare provider is configured. Cached
+---server-wide until a minute before the provisioned credential lapses, with one shared flight.
 ---@return table servers iceServers array for RTCPeerConnection
-local function iceServersFor(src)
-    local cached = iceCache[src]
-    if cached and cached.expires > os.time() then return cached.servers end
+local function iceServers()
+    if iceCache and iceCache.expires > os.time() then return iceCache.servers end
+    if icePending then return Citizen.Await(icePending) end
+
+    local p = promise.new()
+    icePending = p
 
     local servers = baseStun()
+    local provisioned = true
     if TURN.Provider == 'cloudflare' then
-        local turn = fetchCloudflareTurn()
-        if turn then servers[#servers + 1] = turn end
+        local ok, turn = pcall(fetchCloudflareTurn)
+        if ok and turn then servers[#servers + 1] = turn else provisioned = false end
     end
 
-    iceCache[src] = { servers = servers, expires = os.time() + (tonumber(TURN.TtlSeconds) or 86400) - 60 }
+    local ttl = provisioned and ((tonumber(TURN.TtlSeconds) or 86400) - 60) or ICE_FAILURE_TTL
+    iceCache = { servers = servers, expires = os.time() + ttl }
+    -- Cleared before the resolve so anyone woken by it reads the fresh cache, never a stale flight.
+    icePending = nil
+    p:resolve(servers)
     return servers
 end
 
@@ -126,37 +144,75 @@ local function nearbyTargets(src)
     return out
 end
 
----ICE servers for this client's peer connections. Read-only; rate-bounded by the per-src cache.
-lib.callback.register('sd-phone:server:voice:ice', function(src)
-    return { success = true, data = { iceServers = iceServersFor(src) } }
+---ICE servers for this client's peer connections. Read-only; served from the shared cache.
+lib.callback.register('sd-phone:server:voice:ice', function()
+    return { success = true, data = { iceServers = iceServers() } }
 end)
+
+---@type integer Nearby-lookup budget window in ms.
+local NEARBY_WINDOW = 60000
+---@type integer Lookups allowed per window. The client asks once when a recording starts, so this
+---is far above any human, and it bounds the GetPlayers coord scan the callback pays for.
+local NEARBY_PER_WINDOW = 30
 
 ---Who the recorder can capture right now (+ its ICE servers). Proximity is computed server-side;
----empty when the feature is disabled.
+---empty when the feature is disabled or the caller is over budget.
 lib.callback.register('sd-phone:server:voice:nearby', function(src)
-    if not enabled() then return { success = true, data = { targets = {}, iceServers = iceServersFor(src) } } end
-    return { success = true, data = { targets = nearbyTargets(src), iceServers = iceServersFor(src) } }
+    if not enabled() or not util.rateLimit(player.getIdentifier(src), 'voice:nearby', NEARBY_WINDOW, NEARBY_PER_WINDOW) then
+        return { success = true, data = { targets = {}, iceServers = iceServers() } }
+    end
+    return { success = true, data = { targets = nearbyTargets(src), iceServers = iceServers() } }
 end)
 
+---@type table<string, boolean> Signal kinds the mesh actually sends (web/src/media/nearbyVoice.ts).
+local SIGNAL_KINDS = { offer = true, answer = true, ice = true }
+---@type integer Byte ceiling on one SDP description. The mesh is audio-only, so a real offer runs
+---about 2 KB; this is more than ten times that.
+local SDP_BYTES = 32768
+---@type integer Byte ceiling on one trickled ICE candidate (~200 bytes in practice).
+local CANDIDATE_BYTES = 2048
+---@type integer Signal-relay budget window in ms.
+local SIGNAL_WINDOW = 10000
+---@type integer Candidates allowed per window. Negotiating a full MAXN mesh trickles roughly a
+---hundred, so this leaves several times the worst legitimate burst.
+local CANDIDATES_PER_WINDOW = 400
+---@type integer Descriptions allowed per window. A full MAXN mesh needs about a dozen, and the
+---client only negotiates when a recording starts.
+local SDP_PER_WINDOW = 60
+
 ---Relays one WebRTC signaling message (offer/answer/ICE candidate) to another player. Proximity
----is re-checked on every hop (1.5x RANGE) and `from` is stamped from the trusted source.
+---is re-checked on every hop (1.5x RANGE) and `from` is stamped from the trusted source. Shape
+---and size are validated before the coord lookups so an oversized blob is dropped for free.
 ---@param payload table { to: number, sid?: any, kind?: any, data?: any }
 RegisterNetEvent('sd-phone:server:voice:signal', function(payload)
     local src = source
     if type(payload) ~= 'table' then return end
     local to = tonumber(payload.to)
     if not to or not enabled() then return end
+
+    -- Bounded but never rewritten: both peers key their session map on this exact string, so a
+    -- trim here would silently break the reply hop.
+    local sid = payload.sid
+    if type(sid) ~= 'string' or sid == '' or #sid > 64 then return end
+    if not SIGNAL_KINDS[payload.kind] then return end
+    -- Descriptions and candidates differ by two orders of magnitude in both size and count, so
+    -- they get their own budget; one shared limit would have to be loose enough for the worst of both.
+    local ice = payload.kind == 'ice'
+    -- The mesh sends objects here ({ type, sdp } or a candidate), never bare strings.
+    local data = util.smallTable(payload.data, 16, ice and CANDIDATE_BYTES or SDP_BYTES)
+    if not data then return end
+    local cid = player.getIdentifier(src)
+    if ice then
+        if not util.rateLimit(cid, 'voice:signal:ice', SIGNAL_WINDOW, CANDIDATES_PER_WINDOW) then return end
+    elseif not util.rateLimit(cid, 'voice:signal:sdp', SIGNAL_WINDOW, SDP_PER_WINDOW) then
+        return
+    end
     if not withinRange(src, to, RANGE * 1.5) then return end
 
     TriggerClientEvent('sd-phone:client:voice:signal', to, {
         from = src,
-        sid  = payload.sid,
+        sid  = sid,
         kind = payload.kind,
-        data = payload.data,
+        data = data,
     })
-end)
-
----Drops a departing player's cached ICE credentials.
-AddEventHandler('playerDropped', function()
-    iceCache[source] = nil
 end)

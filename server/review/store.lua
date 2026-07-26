@@ -1,3 +1,6 @@
+---@type table Shared server helpers (server.util): index, column and constraint bootstrap.
+local util = require 'server.util'
+
 ---@type table Store module; the table returned at end of file.
 local store = {}
 
@@ -36,6 +39,11 @@ function store.ensureSchema()
             `updated_at`  BIGINT       NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     ]])
+
+    -- Referential integrity, added on boot so existing installs migrate with no manual SQL.
+    -- Each is a no-op once present; orphaned children are cleared first (they point at a
+    -- parent that is already gone) and a type or collation mismatch is skipped, never fatal.
+    util.ensureForeignKey('phone_review_helpful', 'review_id', 'phone_review_reviews', 'id', 'fk_review_helpful_review')
 end
 
 ---Every saved boss override, one { business_id, hours, blurb, logo } row each. Read-only.

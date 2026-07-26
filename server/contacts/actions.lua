@@ -26,6 +26,17 @@ local colorFor = util.colorFor
 ---@type table<string, boolean> Call directions accepted by logCall; anything else falls back to outgoing.
 local VALID_DIRECTIONS = { incoming = true, outgoing = true, missed = true }
 
+---@type integer Minimum gap between accepted recents writes, per character. One real call ends
+---once, so a second entry inside this window is a script, not a player.
+local LOG_CALL_GAP_MS = 1000
+
+---@type integer Minimum gap between accepted block-list writes, per character.
+local BLOCK_GAP_MS = 500
+
+---@type integer Hard cap on one character's block list. Blocking every number a player ever met
+---would not come close; a loop fills it in seconds.
+local MAX_BLOCKED = 300
+
 
 
 
@@ -357,6 +368,8 @@ function actions.logCall(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return fail('Player not found') end
 
+    if not util.cooldown(cid, 'contacts:logCall', LOG_CALL_GAP_MS) then return fail('Slow down') end
+
     local number = trim(payload.number)
     if number == '' then return fail('A number is required') end
     if #number > cfg.MaxPhoneLength then
@@ -381,7 +394,9 @@ function actions.logCall(source, payload)
     if not store.insertCall(id, cid, call) then return fail('Failed to log call') end
     store.pruneCalls(cid, cfg.MaxRecents)
 
-    if direction == 'missed' then badges.push(source) end
+    -- One indexed missed-call count, not the seven-store snapshot: a logged call can only move
+    -- the Phone badge.
+    if direction == 'missed' then badges.pushApp(source, 'phone') end
 
     return ok(serializeCall({
         id        = id,
@@ -427,7 +442,7 @@ function actions.markCallsSeen(source)
     if not cid then return fail('Player not found') end
 
     store.markMissedSeen(cid)
-    badges.push(source)
+    badges.pushApp(source, 'phone')
     return ok()
 end
 
@@ -440,6 +455,10 @@ function actions.block(source, payload)
     if type(payload) ~= 'table' then payload = {} end
     local cid = player.getIdentifier(source)
     if not cid then return fail('Player not found') end
+    if not util.cooldown(cid, 'contacts:block', BLOCK_GAP_MS) then return fail('Slow down') end
+    if store.blockedCount(cid) >= MAX_BLOCKED then
+        return fail(('You can block at most %d numbers'):format(MAX_BLOCKED))
+    end
     store.blockNumber(cid, payload.number)
     return ok({ blocked = true })
 end
@@ -452,6 +471,7 @@ function actions.unblock(source, payload)
     if type(payload) ~= 'table' then payload = {} end
     local cid = player.getIdentifier(source)
     if not cid then return fail('Player not found') end
+    if not util.cooldown(cid, 'contacts:block', BLOCK_GAP_MS) then return fail('Slow down') end
     store.unblockNumber(cid, payload.number)
     return ok({ blocked = false })
 end

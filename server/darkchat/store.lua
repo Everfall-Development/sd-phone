@@ -83,6 +83,14 @@ function store.ensureSchema()
         ALTER TABLE `darkchat_rooms`
             ADD COLUMN IF NOT EXISTS `code_changed_at` BIGINT NULL
     ]])
+
+    -- Referential integrity, added on boot so existing installs migrate with no manual SQL.
+    -- Each is a no-op once present; orphaned children are cleared first (they point at a
+    -- parent that is already gone) and a type or collation mismatch is skipped, never fatal.
+    util.ensureForeignKey('darkchat_members', 'room_id', 'darkchat_rooms', 'id', 'fk_darkchat_members_room')
+    util.ensureForeignKey('darkchat_bans', 'room_id', 'darkchat_rooms', 'id', 'fk_darkchat_bans_room')
+    util.ensureForeignKey('darkchat_messages', 'room_id', 'darkchat_rooms', 'id', 'fk_darkchat_messages_room')
+    util.ensureForeignKey('darkchat_reactions', 'message_id', 'darkchat_messages', 'id', 'fk_darkchat_reactions_message')
 end
 
 ---Insert a private room row. Caller guarantees the code (and therefore the 'p-<code>' id) is
@@ -230,6 +238,39 @@ function store.insertMessage(roomId, cid, author, body, ts, kind, meta)
     return MySQL.insert.await(
         'INSERT INTO `darkchat_messages` (room_id, citizenid, author, body, created_at, kind, meta) VALUES (?, ?, ?, ?, ?, ?, ?)',
         { roomId, cid, author, body, ts, kind or 'text', meta })
+end
+
+---Trims every room back to its newest `keepPerRoom` messages, dropping their reactions with them.
+---A periodic sweep rather than a per-insert prune: mirroring the correlated subquery onto every
+---send would add a scan to the hot path. Nothing readable is lost - the app only ever renders
+---the newest DarkChat.HistoryLimit messages of a room.
+---@param keepPerRoom integer newest messages retained per room
+---@return integer removed message rows deleted
+function store.pruneRoomMessages(keepPerRoom)
+    local keep = math.floor(tonumber(keepPerRoom) or 500)
+    if keep < 1 then keep = 1 end
+
+    local rooms = MySQL.query.await(([[
+        SELECT room_id FROM `darkchat_messages` GROUP BY room_id HAVING COUNT(*) > %d
+    ]]):format(keep)) or {}
+
+    local removed = 0
+    for i = 1, #rooms do
+        local roomId = rooms[i].room_id
+        -- The id is AUTO_INCREMENT, so the keep-th newest id is the cutoff every older row is under.
+        local cutoff = MySQL.scalar.await(([[
+            SELECT id FROM `darkchat_messages` WHERE room_id = ? ORDER BY id DESC LIMIT 1 OFFSET %d
+        ]]):format(keep - 1), { roomId })
+        if cutoff then
+            MySQL.update.await([[
+                DELETE FROM `darkchat_reactions`
+                WHERE message_id IN (SELECT id FROM `darkchat_messages` WHERE room_id = ? AND id < ?)
+            ]], { roomId, cutoff })
+            removed = removed + (tonumber(MySQL.update.await(
+                'DELETE FROM `darkchat_messages` WHERE room_id = ? AND id < ?', { roomId, cutoff })) or 0)
+        end
+    end
+    return removed
 end
 
 ---The most recent `limit` messages of a room, returned oldest-first for direct rendering (the

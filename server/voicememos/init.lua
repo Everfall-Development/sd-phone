@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table sd-phone config root (configs/config.lua).
 local config   = require 'configs.config'
 ---@type table Voice-memo persistence layer (server.voicememos.store): per-memo row CRUD.
@@ -32,10 +35,10 @@ AddEventHandler('playerDropped', function() uploading[source] = nil end)
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:voice]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('voice', err)
         return
     end
-    print('^2[sd-phone:voice]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- NUI callbacks: thin delegates into server.voicememos.actions; payloads are type-guarded here.

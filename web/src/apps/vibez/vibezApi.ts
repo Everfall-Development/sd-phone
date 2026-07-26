@@ -48,6 +48,12 @@ function mapNotif(n: SrvNotif): VNotif {
 
 export type FeedTab = 'following' | 'foryou';
 
+/** Subscribe/unsubscribe this phone to the feed, post and live-list pushes. The server only pushes
+ * to watchers, so a phone that is closed or backgrounded no longer pays to receive and discard one. */
+export function apiWatch(on: boolean): void {
+    if (isFiveM) void fetchNui('sd-phone:vibez:watch', { on });
+}
+
 export async function apiFeed(tab: FeedTab): Promise<VPost[]> {
     if (!isFiveM) return tab === 'following' ? DEV_POSTS.filter(p => p.following || p.liked) : DEV_POSTS;
     return (await call<{ posts: SrvPost[] }>('sd-phone:vibez:feed', { tab }))?.posts.map(mapPost) ?? [];

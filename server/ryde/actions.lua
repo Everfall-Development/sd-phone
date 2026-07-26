@@ -36,6 +36,14 @@ local tripViewers  = {}
 ---@type string Client event prefix every Ryde push goes out under.
 local EV = 'sd-phone:client:ryde:'
 
+---@type integer Minimum gap between ride requests from one rider (ms). Long enough to make a
+---request/cancel loop worthless, short enough that re-picking a destination is not a wait.
+local REQUEST_COOLDOWN = 5000
+
+---@type integer Offers one request may hold. A real driver can only bid once (driverActive gates
+---them), so this only bounds the synthetic /rydeoffer cards.
+local MAX_OFFERS = 8
+
 local util = require 'server.util'
 local ok, fail = util.ok, util.fail
 
@@ -87,8 +95,29 @@ local function waitingCount()
     return n
 end
 
----Broadcasts the current waiting-rider count to every player.
+---@type integer Minimum gap between waiting-count broadcasts (ms). The count is a cosmetic badge
+---and this is the one Ryde event that goes to EVERY player on the server.
+local WAITING_MIN_MS = 1000
+
+---@type integer, boolean Last broadcast stamp, and whether a change is still waiting to go out.
+local waitingAt, waitingPending = 0, false
+
+---Broadcasts the current waiting-rider count to every player, at most once per WAITING_MIN_MS.
+---A change raised inside the window is deferred to the end of it, never dropped.
 local function broadcastWaiting()
+    local now  = GetGameTimer()
+    local wait = WAITING_MIN_MS - (now - waitingAt)
+    if wait > 0 then
+        if waitingPending then return end
+        waitingPending = true
+        SetTimeout(wait, function()
+            waitingPending = false
+            waitingAt = GetGameTimer()
+            TriggerClientEvent(EV .. 'waitingCount', -1, { count = waitingCount() })
+        end)
+        return
+    end
+    waitingAt = now
     TriggerClientEvent(EV .. 'waitingCount', -1, { count = waitingCount() })
 end
 
@@ -138,14 +167,6 @@ local function rider(src)
     if not cid then return nil end
     srcCid[src] = cid
     return { cid = cid, name = player.getName(src) }
-end
-
----How many drivers are currently on duty.
----@return integer
-local function onlineCount()
-    local n = 0
-    for _ in pairs(online) do n = n + 1 end
-    return n
 end
 
 ---Straight-line 2D distance in km between two {x, y} points.
@@ -276,6 +297,11 @@ function actions.requestRide(src, payload)
     if not (px and py and dx and dy) then
         return fail('Pick a destination first.')
     end
+    -- Checked after validation so a mis-picked destination never spends the budget. A request/cancel
+    -- loop is otherwise free, and each pass fans out to every driver plus a server-wide broadcast.
+    if not util.cooldown(rdr.cid, 'ryde:request', REQUEST_COOLDOWN) then
+        return fail('You just requested a ride. Give it a moment.')
+    end
 
     local req = {
         id            = store.newId(),
@@ -298,7 +324,6 @@ function actions.requestRide(src, payload)
             notifyRyde(d.cid, ('New ride request from %s near %s'):format(rdr.name, req.pickup.label))
         end
     end
-    print(('^3[sd-phone:ryde]^0 ride request from %s (%s) broadcast to %d online driver(s)'):format(rdr.name, rdr.cid, onlineCount()))
     return ok({ requestId = req.id })
 end
 
@@ -889,6 +914,12 @@ function actions.devOffer(src)
     local reqId = riderActive[cid]
     local req   = reqId and requests[reqId] or nil
     if not req then return 'Request a ride first, then run /rydeoffer to add a test offer.' end
+
+    local offers = 0
+    for _, t in pairs(trips) do
+        if t.requestId == req.id and t.status == 'offered' then offers = offers + 1 end
+    end
+    if offers >= MAX_OFFERS then return 'That request already has the maximum test offers.' end
 
     local d    = DEV_DRIVERS[math.random(#DEV_DRIVERS)]
     local fare = math.random(config.MinFare or 5, math.max((config.MinFare or 5) + 1, 45))

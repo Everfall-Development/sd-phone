@@ -52,7 +52,7 @@ export function Notifications({ onOpenProfile }: { onOpenProfile: (handle?: stri
                         : n.kind === 'repost'
                             ? <Repeat2 className="h-7 w-7" color={REPOST} />
                             : <PersonGlyph className="h-8 w-8" color={BLUE} />;
-                    const text = n.kind === 'follow' ? t('birdy.followedYou', 'followed you') : n.text;
+                    const text = n.kind === 'follow' ? t('birdy.followedYou', 'is now following you') : n.text;
                     const preview = n.kind === 'follow' ? undefined : n.post?.body;
                     return <NotifRow key={n.id} icon={icon} user={n.user} text={text} preview={preview} onOpen={() => onOpenProfile(n.user.handle)} />;
                 })}

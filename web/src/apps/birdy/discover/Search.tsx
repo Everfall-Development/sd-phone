@@ -75,7 +75,7 @@ export function Search({ me, onOpenProfile, onOpenPost, onToggleLike, onToggleRe
                 <SearchBar
                     value={query}
                     onChange={setQuery}
-                    placeholder={t('birdy.searchBirdy', 'Search Birdy')}
+                    placeholder={t('birdy.searchBirdy', 'Search Squawk')}
                     pillClassName="min-w-0 flex-1 gap-2 rounded-[12px] px-3.5 py-[10px]"
                     pillStyle={{ background: PILL }}
                     textClassName="text-[17px] font-medium text-black placeholder:text-black/55"
@@ -132,10 +132,10 @@ export function Search({ me, onOpenProfile, onOpenPost, onToggleLike, onToggleRe
                     <div>
                         <div className="relative flex h-[200px] w-full items-center justify-center overflow-hidden pb-6" style={{ background: BLUE }}>
                             <BirdyBird className="h-28 w-28 text-white" />
-                            <span className="absolute bottom-4 left-4 text-[17px] font-bold text-white">{t('birdy.startSearching', 'Start searching to explore Birdy')}</span>
+                            <span className="absolute bottom-4 left-4 text-[17px] font-bold text-white">{t('birdy.startSearching', 'Start searching to explore Squawk')}</span>
                         </div>
 
-                        <h2 className="px-4 pb-1.5 pt-4 text-[22px] font-extrabold text-black">{t('birdy.trendingHashtags', 'Trending hashtags')}</h2>
+                        <h2 className="px-4 pb-1.5 pt-4 text-[22px] font-extrabold text-black">{t('birdy.trendingHashtags', 'Trending now')}</h2>
                         {trending !== null && (
                             trending.length === 0 ? (
                                 <div className="px-10 py-10 text-center text-[15px]" style={{ color: META }}>{t('birdy.noTrending', 'No trending hashtags right now.')}</div>

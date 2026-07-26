@@ -41,17 +41,39 @@ local function genNumber()
     return ('%s%03d%04d'):format(prefix, math.random(100, 999), math.random(0, 9999))
 end
 
----The persistent number for a booth location, minted on first use. The INSERT IGNORE makes two
----simultaneous first calls from one booth converge on a single row.
+---The already-minted number for a booth location, or nil when that booth has never been used.
+---Read-only, so it is the safe half of numberFor for a caller that must not create a row.
 ---@param location string rounded-coords key
----@return string number
+---@return string|nil number
+function store.lookupNumber(location)
+    return MySQL.scalar.await('SELECT number FROM phone_payphones WHERE location = ?', { location })
+end
+
+---@type integer Hard ceiling on distinct booth rows. The map holds a few hundred payphone props,
+---so this can only be approached by keys no real booth occupies; minting stops rather than letting
+---a new bypass write rows without limit.
+local MAX_BOOTHS = 5000
+---@type integer|nil Row count, read once on the first mint and tracked locally afterwards.
+local boothCount = nil
+
+---The persistent number for a booth location, minted on first use. The INSERT IGNORE makes two
+---simultaneous first calls from one booth converge on a single row. Nil once the table is at its
+---ceiling: the caller treats that booth as having no number rather than growing the table.
+---@param location string rounded-coords key
+---@return string|nil number
 function store.numberFor(location)
-    local existing = MySQL.scalar.await('SELECT number FROM phone_payphones WHERE location = ?', { location })
+    local existing = store.lookupNumber(location)
     if existing then return existing end
+
+    if not boothCount then
+        boothCount = tonumber(MySQL.scalar.await('SELECT COUNT(*) FROM phone_payphones')) or 0
+    end
+    if boothCount >= MAX_BOOTHS then return nil end
 
     local number = genNumber()
     MySQL.insert.await('INSERT IGNORE INTO phone_payphones (location, number) VALUES (?, ?)', { location, number })
-    return MySQL.scalar.await('SELECT number FROM phone_payphones WHERE location = ?', { location }) or number
+    boothCount = boothCount + 1
+    return store.lookupNumber(location) or number
 end
 
 ---The booth location owning a number, or nil when it isn't a payphone number. Read-only.

@@ -28,36 +28,27 @@ end
 ---@param cb fun(url: string|nil, err: string|nil)
 function uploader.uploadMedia(base64Image, filename, cb)
     local key = mediaKey()
-    print(('^2[sd-phone:photos]^0 [UP 1] uploadMedia — key set=%s keylen=%d')
-        :format(tostring(key ~= ''), #key))
 
     if key == '' then
-        print('^1[sd-phone:photos]^0 [UP 2] aborting — no Fivemanage key configured')
+        print('^1[sd-phone:photos]^0 aborting — no Fivemanage key configured')
         cb(nil, 'No Fivemanage key configured. Set FivemanageMedia in configs/server/apikeys.lua.')
         return
     end
 
     if type(base64Image) ~= 'string' or base64Image == '' then
-        print('^1[sd-phone:photos]^0 [UP 3] aborting — empty image payload')
+        print('^1[sd-phone:photos]^0 aborting — empty image payload')
         cb(nil, 'Empty image payload')
         return
     end
 
-    print(('^2[sd-phone:photos]^0 [UP 4] base64 len=%d head=%s')
-        :format(#base64Image, base64Image:sub(1, 48)))
 
     local body = json.encode({
         base64   = base64Image,
         filename = filename or ('sdphone-%d.jpg'):format(os.time()),
     })
 
-    print(('^2[sd-phone:photos]^0 [UP 5] POST -> %s (body bytes=%d)'):format(UPLOAD_URL, #body))
 
     PerformHttpRequest(UPLOAD_URL, function(status, responseBody, _headers)
-        local respLen = responseBody and #responseBody or 0
-        print(('^2[sd-phone:photos]^0 [UP 6] response status=%s bodylen=%d'):format(tostring(status), respLen))
-        print(('^2[sd-phone:photos]^0 [UP 7] response body: %s')
-            :format(tostring(responseBody and responseBody:sub(1, 800) or '(none)')))
 
         if status ~= 200 and status ~= 201 then
             cb(nil, ('Fivemanage upload failed: HTTP %s'):format(tostring(status)))
@@ -76,7 +67,6 @@ function uploader.uploadMedia(base64Image, filename, cb)
         end
 
         local url = type(decoded.data) == 'table' and decoded.data.url or nil
-        print(('^2[sd-phone:photos]^0 [UP 8] parsed data.url=%s'):format(tostring(url)))
         if type(url) ~= 'string' or url == '' then
             cb(nil, 'Fivemanage returned no URL')
             return

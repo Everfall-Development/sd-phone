@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Clock persistence layer (server.clock.store): alarm + timer-recents tables.
 local store   = require 'server.clock.store'
 ---@type table Authoritative clock handlers (server.clock.actions): validation + clamping.
@@ -7,10 +10,10 @@ local actions = require 'server.clock.actions'
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:clock]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('clock', err)
         return
     end
-    print('^2[sd-phone:clock]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- NUI callbacks: thin delegates into server.clock.actions; delete/add unwrap their single payload field.

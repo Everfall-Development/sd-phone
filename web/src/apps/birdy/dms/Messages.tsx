@@ -53,7 +53,7 @@ export function MessagesList({ conversations, onOpen, onOpenProfile, onCompose }
                 <SearchBar
                     value={query}
                     onChange={setQuery}
-                    placeholder={t('birdy.searchDirectMessages', 'Search direct messages')}
+                    placeholder={t('birdy.searchDirectMessages', 'Find a conversation')}
                     pillClassName="min-w-0 flex-1 gap-2 rounded-[12px] px-3.5 py-[10px]"
                     pillStyle={{ background: PILL }}
                     textClassName="text-[17px] font-medium text-black placeholder:text-black/55"

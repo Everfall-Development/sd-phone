@@ -109,6 +109,11 @@ function store.ensureSchema()
     -- uq_cherry_pair leads on `a`, so matchesFor's `WHERE a = ? OR b = ?` had no index for the
     -- `b` half and fell back to a full scan on every Cherry open.
     util.ensureIndex('phone_cherry_matches', 'idx_cherry_match_b', '(b)')
+
+    -- Referential integrity, added on boot so existing installs migrate with no manual SQL.
+    -- Each is a no-op once present; orphaned children are cleared first (they point at a
+    -- parent that is already gone) and a type or collation mismatch is skipped, never fatal.
+    util.ensureForeignKey('phone_cherry_messages', 'match_id', 'phone_cherry_matches', 'id', 'fk_cherry_messages_match')
 end
 
 ---A profile row by username (nil if none).

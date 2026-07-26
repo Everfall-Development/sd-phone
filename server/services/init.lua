@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Services prefs store (server.services.store): per-(character, job) toggle rows.
 local store     = require 'server.services.store'
 ---@type table Company inbox store (server.services.msgstore): shared (job, customer) message rows.
@@ -26,10 +29,10 @@ CreateThread(function()
         invoicestore.ensureSchema()
     end)
     if not ok then
-        print(('^1[sd-phone:services]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('services', err)
         return
     end
-    print('^2[sd-phone:services]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- Reconciles phone-managed offline job changes when a player loads in (actions.reconcileJobs).

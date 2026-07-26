@@ -170,7 +170,7 @@ export function MailDetail({ msg, backLabel, prevId, nextId, onBack, onOpenSibli
             {confirmDelete && (
                 <AlertDialog
                     title={t('mail.deleteEmail', 'Delete Email')}
-                    message={t('mail.deleteEmailConfirm', 'Are you sure you want to delete this email?')}
+                    message={t('mail.deleteEmailConfirm', 'Delete this email?')}
                     confirmLabel={t('mail.delete', 'Delete')}
                     cancelLabel={t('mail.cancel', 'Cancel')}
                     destructive

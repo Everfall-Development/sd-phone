@@ -10,6 +10,10 @@ import { fetchFeaturedGifs, fetchGifCategories, searchGifs, type GifCategory, ty
 
 type View = 'browse' | 'featured' | 'search';
 
+// Every keystroke used to be its own GIPHY search; let the typing settle first. Kept above the
+// 300 ms server-side cooldown so a settled search is never answered with the previous payload.
+const SEARCH_DEBOUNCE_MS = 350;
+
 function tileGradient(seed: string): string {
     let h = 0;
     for (let i = 0; i < seed.length; i++) h = (Math.imul(h, 31) + seed.charCodeAt(i)) | 0;
@@ -26,6 +30,8 @@ export function GifPickerSheet({ onSelect, onClose, forceDark = false }: {
     const isDark = forceDark || theme === 'dark';
 
     const [query,      setQuery]      = useState('');
+    // What the search actually runs on: `query` follows the keystrokes, `term` only settles.
+    const [term,       setTerm]       = useState('');
     const [view,       setView]       = useState<View>('browse');
     const [categories, setCategories] = useState<GifCategory[] | null | undefined>(undefined);
     const [gifs,       setGifs]       = useState<GifItem[]>([]);
@@ -38,20 +44,25 @@ export function GifPickerSheet({ onSelect, onClose, forceDark = false }: {
         if (view === 'browse') return;
         let active = true;
         setLoading(true);
-        const run = view === 'featured' ? fetchFeaturedGifs() : searchGifs(query.trim());
+        const run = view === 'featured' ? fetchFeaturedGifs() : searchGifs(term);
         void run.then(res => { if (active) { setGifs(res); setLoading(false); } });
         return () => { active = false; };
-    }, [view, query]);
+    }, [view, term]);
+
+    useEffect(() => () => clearTimeout(debounce.current), []);
 
     function onType(value: string) {
         clearTimeout(debounce.current);
         setQuery(value);
-        if (!value.trim()) { setView('browse'); return; }
-        debounce.current = setTimeout(() => setView('search'), 350);
+        const next = value.trim();
+        if (!next) { setView('browse'); return; }
+        debounce.current = setTimeout(() => { setTerm(next); setView('search'); }, SEARCH_DEBOUNCE_MS);
     }
 
-    function openCategory(term: string) { setQuery(term); setView('search'); }
-    function openFeatured() { setQuery('Featured'); setView('featured'); }
+    // Both cancel a pending debounce: a tile tapped a keystroke later must not be overridden by
+    // the half-typed term still in flight.
+    function openCategory(value: string) { clearTimeout(debounce.current); setQuery(value); setTerm(value); setView('search'); }
+    function openFeatured() { clearTimeout(debounce.current); setQuery('Featured'); setView('featured'); }
 
     const col0 = gifs.filter((_, i) => i % 2 === 0);
     const col1 = gifs.filter((_, i) => i % 2 !== 0);

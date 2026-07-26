@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Pages persistence layer (server.pages.store): post row CRUD.
 local store = require 'server.pages.store'
 ---@type table Authoritative pages handlers (server.pages.actions).
@@ -9,10 +12,10 @@ local watchers = require('server.watchers').of('pages')
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:pages]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('pages', err)
         return
     end
-    print('^2[sd-phone:pages]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- Callbacks: thin delegates into server.pages.actions.

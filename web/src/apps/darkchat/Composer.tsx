@@ -85,7 +85,7 @@ export function Composer({ onSend, reply, onCancelReply }: {
                 <div className="flex items-center gap-2 px-4 pt-2 pb-1">
                     <div className="w-[3px] self-stretch rounded-full bg-[#007AFF]" />
                     <div className="min-w-0 flex-1">
-                        <div className="text-[12px] font-semibold text-[#007AFF]">{t('darkchat.replyTo', 'Reply to {name}', { name: reply.name })}</div>
+                        <div className="text-[12px] font-semibold text-[#007AFF]">{t('darkchat.replyTo', 'In reply to {name}', { name: reply.name })}</div>
                         <div className="truncate text-[13px] text-white/55">{reply.body}</div>
                     </div>
                     <button

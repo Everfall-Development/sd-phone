@@ -53,6 +53,40 @@ local function clampNum(v)
     return v
 end
 
+---@type integer Pairs read from a client-sent owned map / achievement list. The shipped game has
+---fourteen upgrades and twenty-two achievements, so real saves are nowhere near this.
+local MAX_ENTRIES = 200
+---@type integer Byte cap on one upgrade / achievement id.
+local MAX_ID = 40
+
+---Sanitises the client's owned map (upgrade id -> count): short string keys, clamped numeric
+---counts, no nesting. The walk is bounded by pairs SEEN, so junk keys cannot extend it.
+---@param t any raw client value
+---@return table<string, number> owned
+local function sanitizeOwned(t)
+    local out = {}
+    if type(t) ~= 'table' then return out end
+    local seen = 0
+    for k, v in pairs(t) do
+        seen = seen + 1
+        if seen > MAX_ENTRIES then break end
+        if type(k) == 'string' and #k <= MAX_ID and type(v) == 'number' then out[k] = clampNum(v) end
+    end
+    return out
+end
+
+---Sanitises the client's unlocked-achievement array: short string ids only.
+---@param t any raw client value
+---@return string[] ids
+local function sanitizeIds(t)
+    local out = {}
+    if type(t) ~= 'table' then return out end
+    for i = 1, math.min(#t, MAX_ENTRIES) do
+        local v = t[i]
+        if type(v) == 'string' and #v <= MAX_ID then out[#out + 1] = v end
+    end
+    return out
+end
 
 ---Decodes a stored JSON column: nil, non-strings and garbage collapse to {}.
 ---@param raw any stored column value
@@ -92,8 +126,8 @@ function actions.load(src)
     } }
 end
 
----Autosaves into memory only; the periodic flush batches DB writes. Numbers are clamped, table
----fields type-checked, the caller's name snapshotted, and src -> citizenid recorded.
+---Autosaves into memory only; the periodic flush batches DB writes. Numbers are clamped, the two
+---table fields rebuilt entry by entry, the caller's name snapshotted, and src -> citizenid recorded.
 ---@param src integer player server id
 ---@param payload table { cookies, earned, owned, achievements, rainOn }
 ---@return table result
@@ -106,8 +140,8 @@ function actions.save(src, payload)
         name    = player.getName(src),
         cookies = clampNum(payload.cookies),
         earned  = clampNum(payload.earned),
-        owned   = type(payload.owned) == 'table' and payload.owned or {},
-        ach     = type(payload.achievements) == 'table' and payload.achievements or {},
+        owned   = sanitizeOwned(payload.owned),
+        ach     = sanitizeIds(payload.achievements),
         rainOn  = payload.rainOn ~= false,
         dirty   = true,
     }

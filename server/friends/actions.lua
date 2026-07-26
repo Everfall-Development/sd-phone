@@ -23,6 +23,13 @@ local PALETTE = {
 local util = require 'server.util'
 local digits, flag = util.digits, util.truthy
 
+---@type integer Minimum gap between accepted roster edits from one character (ms).
+local EDIT_GAP     = 750
+---@type integer Accepted roster edits from one character inside EDIT_WINDOW.
+local EDIT_MAX     = 40
+---@type integer Rolling window the roster-edit budget is measured over (ms).
+local EDIT_WINDOW  = 60000
+
 ---Stable per-character key (citizenid via the player bridge). The acting player's identity always
 ---comes from src - never from the payload.
 ---@param src number player server id
@@ -190,6 +197,10 @@ end
 function actions.add(src, phone)
     local owner = cidOf(src)
     if not owner then return { success = false } end
+    if not util.cooldown(owner, 'friends:edit', EDIT_GAP)
+        or not util.rateLimit(owner, 'friends:edit', EDIT_WINDOW, EDIT_MAX) then
+        return { success = false, message = 'Slow down' }
+    end
 
     local number = digits(phone)
     if number == '' then return { success = false, message = 'Enter a number' } end
@@ -213,8 +224,12 @@ function actions.add(src, phone)
     store.add(owner, fcid, os.date('!%Y-%m-%dT%H:%M:%S.000Z'), true)
     invalidateRoster(owner, fcid)
 
-    messages.appMessage(src, number, 'locrequest', 'Location sharing request',
-        { requested = true, requestStatus = 'pending' })
+    -- One card per still-open request, not per accepted add, and scoped to the target's own copy
+    -- so deleting your own thread cannot re-open the flood or block a genuine re-ask.
+    if not messages.findRequestCopy(fcid, myNumber) then
+        messages.appMessage(src, number, 'locrequest', 'Location sharing request',
+            { requested = true, requestStatus = 'pending' })
+    end
 
     return { success = true, data = actions.snapshot(src) }
 end
@@ -308,6 +323,10 @@ end
 function actions.remove(src, id)
     local owner = cidOf(src)
     if not owner or type(id) ~= 'string' or id == '' then return { success = false } end
+    if not util.cooldown(owner, 'friends:edit', EDIT_GAP)
+        or not util.rateLimit(owner, 'friends:edit', EDIT_WINDOW, EDIT_MAX) then
+        return { success = false, message = 'Slow down' }
+    end
     store.remove(owner, id)
     invalidateRoster(owner, id)
     return { success = true, data = actions.snapshot(src) }

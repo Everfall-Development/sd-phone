@@ -236,7 +236,7 @@ export function MatchChat({ match, onBack, onSend, onReact, onPayRequest, onUnma
                     <div className="flex items-center gap-2 px-4 pt-2 pb-1">
                         <div className="w-[3px] self-stretch rounded-full" style={{ background: CHERRY.pink }} />
                         <div className="min-w-0 flex-1">
-                            <div className="text-[12px] font-semibold" style={{ color: CHERRY.pink }}>{t('cherry.replyTo', 'Reply to {name}', { name: replyName(replyTo) })}</div>
+                            <div className="text-[12px] font-semibold" style={{ color: CHERRY.pink }}>{t('cherry.replyTo', 'In reply to {name}', { name: replyName(replyTo) })}</div>
                             <div className="truncate text-[13px] text-black/55">{msgPreview(replyTo)}</div>
                         </div>
                         <button

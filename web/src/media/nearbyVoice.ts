@@ -86,6 +86,7 @@ class PeerSession {
     private pendingIce: RTCIceCandidateInit[] = [];
     private remoteSet = false;
     private closed = false;
+    private everConnected = false;
 
     private constructor(
         sid: string, peerId: number, ice: RTCIceServer[],
@@ -106,9 +107,13 @@ class PeerSession {
         };
         this.pc.onconnectionstatechange = () => {
             const st = this.pc.connectionState;
+            if (st === 'connected') this.everConnected = true;
             if (st === 'failed' || st === 'closed' || st === 'disconnected') this.close();
         };
     }
+
+    get peer(): number { return this.peerId; }
+    get connected(): boolean { return this.everConnected; }
 
     static recv(sid: string, peerId: number, ice: RTCIceServer[], onRemote: (s: MediaStream) => void, onGone: (s: MediaStream | null) => void): PeerSession {
         return new PeerSession(sid, peerId, ice, { onRemote, onGone });
@@ -179,8 +184,20 @@ class PeerSession {
 }
 
 
+// Ceilings on sessions a remote player can make us open. A recorder captures at most
+// MaxNearbyVoices (6) peers and opens exactly one session with each, so anyone recording us needs
+// one slot; the second absorbs a restart whose stale session has not timed out yet.
+const INBOUND_MAX = 10;
+const INBOUND_PER_PEER = 2;
+// A real audio-only handshake connects in seconds. Anything still unconnected after this never
+// will, and would otherwise hold its slot until the peer disconnects.
+const INBOUND_CONNECT_MS = 30000;
+
 class VoiceHub {
     private sessions = new Map<string, PeerSession>();
+    // Sessions opened by someone else's offer, sid to peer id, oldest first. Ours are excluded so
+    // a flood of offers can never evict the mesh we started ourselves.
+    private inbound = new Map<string, number>();
     private ice: RTCIceServer[] | null = null;
 
     setIce(ice?: RTCIceServer[] | null) { if (ice && ice.length) this.ice = ice; }
@@ -202,7 +219,21 @@ class VoiceHub {
         const s = this.sessions.get(sid);
         if (!s) return;
         this.sessions.delete(sid);
+        this.inbound.delete(sid);
         s.close();
+    }
+
+    // Frees whatever slots `peerId` needs before a new inbound session is opened for them, oldest
+    // first: their own over-quota sessions always, plus the oldest of all once the hub is full.
+    private evictInbound(peerId: number) {
+        let mine = 0;
+        for (const id of this.inbound.values()) if (id === peerId) mine += 1;
+        for (const [sid, id] of this.inbound) {
+            const overPeer = id === peerId && mine >= INBOUND_PER_PEER;
+            if (!overPeer && this.inbound.size < INBOUND_MAX) continue;
+            if (id === peerId) mine -= 1;
+            this.drop(sid);
+        }
     }
 
     async handleIncoming(msg: SignalIn | undefined) {
@@ -211,10 +242,24 @@ class VoiceHub {
         if (!s) {
             if (msg.kind !== 'offer' || msg.from == null) return;
             const ice = await this.getIce();
-            gateAcquire();
-            s = PeerSession.send(msg.sid, msg.from, ice, () => { this.sessions.delete(msg.sid); gateRelease(); });
-            this.sessions.set(msg.sid, s);
+            // Re-read after the yield: a burst on one sid must not open a peer connection each.
+            s = this.sessions.get(msg.sid);
+            if (!s) {
+                const sid = msg.sid, from = msg.from;
+                this.evictInbound(from);
+                gateAcquire();
+                s = PeerSession.send(sid, from, ice, () => { this.sessions.delete(sid); this.inbound.delete(sid); gateRelease(); });
+                this.sessions.set(sid, s);
+                this.inbound.set(sid, from);
+                window.setTimeout(() => {
+                    const cur = this.sessions.get(sid);
+                    if (cur && cur.peer === from && !cur.connected) this.drop(sid);
+                }, INBOUND_CONNECT_MS);
+            }
         }
+        // Only the peer the session belongs to may drive it, so a third party cannot inject into
+        // someone else's negotiation by guessing the sid.
+        if (msg.from != null && msg.from !== s.peer) return;
         void s.onSignal(msg);
     }
 }

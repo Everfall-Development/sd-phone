@@ -42,6 +42,16 @@ local PMIN     = PI.MinAmount or 1
 local PMAX     = PI.MaxAmount or 1000000
 ---@type integer Cap on a sender's outstanding pending personal invoices.
 local PMAXPEND = PI.MaxPending or 10
+---@type integer Cap on pending invoices one sender may have out to a single target. A cap counting
+---only pending rows is reset by cancelling, so it bounds the banner flood, not the row count.
+local MAXPEND_TARGET = 8
+---@type integer Rolling window for the per-character create budgets, in ms.
+local CREATE_WINDOW = 3600000
+---@type integer Business invoices one employee may raise per hour. Bounds the row growth a
+---create-then-cancel loop leaves behind, which a pending-only cap cannot.
+local CREATE_MAX = 120
+---@type integer Personal invoices one character may raise per hour.
+local PCREATE_MAX = 30
 
 ---@type table<string, table> Company config entry by job name, for O(1) directory-metadata lookups.
 local byJob = {}
@@ -251,6 +261,13 @@ function invoices.create(src, payload)
         targetName = tsrc and player.getName(tsrc) or (society.namesByCids({ targetCid })[targetCid])
     end
 
+    if store.countPendingByJobTarget(myJob, targetCid) >= MAXPEND_TARGET then
+        return fail('They already have unpaid invoices from you')
+    end
+    if not util.rateLimit(cid, 'services:invoiceCreate', CREATE_WINDOW, CREATE_MAX) then
+        return fail("You've raised too many invoices, try again later")
+    end
+
     local note  = trim(payload.note):sub(1, 140)
     local label = labelOf(myJob)
 
@@ -389,6 +406,14 @@ function invoices.personalCreate(src, payload)
     end
 
     if store.countPendingPersonal(cid) >= PMAXPEND then return fail('You have too many unpaid invoices out') end
+    if store.countPendingPersonalTo(cid, targetCid) >= MAXPEND_TARGET then
+        return fail('They already have unpaid invoices from you')
+    end
+    -- The pending cap above resets on cancel, so the row count and the banner flood need their
+    -- own bound: a create-then-cancel loop is otherwise free.
+    if not util.rateLimit(cid, 'services:personalInvoiceCreate', CREATE_WINDOW, PCREATE_MAX) then
+        return fail("You've raised too many invoices, try again later")
+    end
 
     local note       = trim(payload.note):sub(1, 140)
     local senderName = player.getName(src)

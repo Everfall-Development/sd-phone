@@ -84,11 +84,18 @@ function actions.uninstall(source, payload)
     if not cid then return fail('Player not found') end
 
     local id = payload.id
+    if type(id) ~= 'string' or not DOWNLOADABLE[id] then
+        return fail('That app can\'t be uninstalled')
+    end
+
     local installed = sanitize(settings.getInstalledApps(cid))
     local remaining = {}
     for _, existing in ipairs(installed) do
         if existing ~= id then remaining[#remaining + 1] = existing end
     end
+    -- Nothing was removed: skip the write AND the teardown fan-out, which costs an online-player
+    -- map plus several queries in every listening module.
+    if #remaining == #installed then return ok({ installed = installed }) end
     settings.setInstalledApps(cid, remaining)
 
     -- First-party hook: lets stateful apps (groups, etc.) tear down their per-player data.
@@ -106,6 +113,10 @@ function actions.saveLayout(source, payload)
     if type(payload) ~= 'table' then payload = {} end
     local cid = player.getIdentifier(source)
     if not cid then return fail('Player not found') end
+
+    -- The home screen already debounces a rearrange into one save every 500ms, so this only ever
+    -- bites a script: a 16KB TEXT column rewrite is the most expensive write the phone can ask for.
+    if not util.rateLimit(cid, 'apps:saveLayout', 10000, 30) then return fail('Too many changes at once') end
 
     local layout = payload.layout
     if type(layout) ~= 'string' or #layout > 16000 then return fail('Invalid layout') end

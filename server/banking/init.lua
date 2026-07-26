@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table sd-phone config root (configs/config.lua): Banking.TransactionLimit is the default export row cap.
 local config = require 'configs.config'
 ---@type table Banking persistence layer (server.banking.store): phone_bank_transactions rows.
@@ -41,10 +44,10 @@ end)
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:banking]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('banking', err)
         return
     end
-    print('^2[sd-phone:banking]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- Authoritative NUI-facing callbacks: thin delegates into server.banking.actions.

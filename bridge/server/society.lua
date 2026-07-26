@@ -177,9 +177,12 @@ end
 function society.getGrades(jobName)
     local out = {}
 
-    if framework.name == 'qb' then
+    if framework.qb then
         local def
-        if framework.core and framework.core.Shared and framework.core.Shared.Jobs then
+        if framework.name == 'qbx' then
+            pcall(function() def = exports.qbx_core:GetJob(jobName) end)
+        end
+        if not def and framework.core and framework.core.Shared and framework.core.Shared.Jobs then
             def = framework.core.Shared.Jobs[jobName]
         end
         if not def then
@@ -226,7 +229,7 @@ end
 function society.listEmployees(jobName)
     local out = {}
 
-    if framework.name == 'qb' then
+    if framework.qb then
         local ok, rows = pcall(function()
             return MySQL.query.await([[
                 SELECT citizenid, charinfo, job FROM players
@@ -279,7 +282,7 @@ function society.namesByCids(cids)
     for i = 1, #cids do placeholders[i] = '?' end
     local inClause = table.concat(placeholders, ',')
 
-    if framework.name == 'qb' then
+    if framework.qb then
         local ok, rows = pcall(function()
             return MySQL.query.await(('SELECT citizenid, charinfo FROM players WHERE citizenid IN (%s)'):format(inClause), cids)
         end)

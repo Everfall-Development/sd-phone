@@ -94,8 +94,6 @@ end
 ---@param url string http(s) URL of the hosted media
 ---@return table result { success, data = { photo } }
 function actions.saveFromUrl(source, url)
-    print(('^2[sd-phone:photos]^0 saveFromUrl source=%d, url=%s')
-        :format(source, tostring(url):sub(1, 80)))
 
     local cid = player.getIdentifier(source)
     if not cid then
@@ -121,7 +119,6 @@ function actions.saveFromUrl(source, url)
     end
 
     store.pruneOldest(cid, photosCfg.MaxPhotosPerPlayer)
-    print(('^2[sd-phone:photos]^0 saved photo id=%s for cid=%s'):format(id, cid))
 
     ---Fires the first-party photos:added hook once per saved photo; server-local and synchronous.
     TriggerEvent('sd-phone:server:photos:added', { source = source, citizenid = cid, id = id, url = url })

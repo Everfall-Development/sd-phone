@@ -102,6 +102,28 @@ function store.countPendingPersonal(senderCid)
         { senderCid })) or 0
 end
 
+---How many pending invoices a business already has out to one target. Read-only.
+---@param job string
+---@param targetCid string
+---@return number
+function store.countPendingByJobTarget(job, targetCid)
+    if not job or job == '' or not targetCid or targetCid == '' then return 0 end
+    return tonumber(MySQL.scalar.await(
+        "SELECT COUNT(*) FROM phone_service_invoices WHERE job = ? AND target_cid = ? AND status = 'pending'",
+        { job, targetCid })) or 0
+end
+
+---How many pending personal invoices a sender already has out to one target. Read-only.
+---@param senderCid string
+---@param targetCid string
+---@return number
+function store.countPendingPersonalTo(senderCid, targetCid)
+    if not senderCid or senderCid == '' or not targetCid or targetCid == '' then return 0 end
+    return tonumber(MySQL.scalar.await(
+        "SELECT COUNT(*) FROM phone_service_invoices WHERE job IS NULL AND sender_cid = ? AND target_cid = ? AND status = 'pending'",
+        { senderCid, targetCid })) or 0
+end
+
 ---Invoices addressed to a player: pending first (newest first), then settled history. Read-only.
 ---@param targetCid string
 ---@param limit? number row cap (default 50)

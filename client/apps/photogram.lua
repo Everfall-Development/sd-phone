@@ -8,7 +8,7 @@ local ACTIONS = {
     'comments', 'addComment', 'toggleCommentLike', 'profile', 'profilePosts', 'updateProfile',
     'toggleFollow', 'respondFollow', 'followRequests', 'followList', 'search',
     'stories', 'addStory', 'markStorySeen', 'activity', 'counts', 'dismissNotification',
-    'dmList', 'dmThread', 'dmSend', 'dmReact', 'deleteAccount',
+    'dmList', 'dmThread', 'dmSend', 'dmReact', 'deleteAccount', 'watch',
     'liveStart', 'liveJoin', 'liveLeave', 'liveEnd', 'liveComment', 'liveHeart',
 }
 

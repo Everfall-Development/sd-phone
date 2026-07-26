@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Marketplace persistence layer (server.marketplace.store): listing row CRUD.
 local store = require 'server.marketplace.store'
 ---@type table Authoritative marketplace handlers (server.marketplace.actions).
@@ -9,10 +12,10 @@ local watchers = require('server.watchers').of('marketplace')
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:marketplace]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('marketplace', err)
         return
     end
-    print('^2[sd-phone:marketplace]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- Callbacks: thin delegates into server.marketplace.actions.

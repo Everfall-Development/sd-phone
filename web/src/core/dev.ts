@@ -1,9 +1,15 @@
 import type { OpenPayload } from './types';
+import { isDemo } from './demo';
 
 
 export function devInjectMockData(): () => void {
-    document.documentElement.style.setProperty('background', '#0a0a0a', 'important');
-    document.body.style.setProperty('background', '#0a0a0a', 'important');
+    // The dev server needs a dark canvas to see the phone against. The demo
+    // build is embedded in a page that draws its own, so painting one here
+    // would show as a black slab around the device.
+    if (!isDemo) {
+        document.documentElement.style.setProperty('background', '#0a0a0a', 'important');
+        document.body.style.setProperty('background', '#0a0a0a', 'important');
+    }
     document.body.style.minHeight = '100vh';
 
     const payload: OpenPayload = {
@@ -33,7 +39,7 @@ export function devInjectMockData(): () => void {
             { id: 'health',   label: 'Health',    icon: 'health',   route: '/health',   accent: '#ff2d55', base: true },
             { id: 'documents', label: 'Files',    icon: 'documents', route: '/documents', accent: '#3478F6', base: true },
             { id: 'groups',   label: 'Groups',    icon: 'groups',   route: '/groups',   accent: '#6C63FF' },
-            { id: 'birdy',    label: 'Birdy',     icon: 'birdy',    route: '/birdy',    accent: '#1d9bf0' },
+            { id: 'birdy',    label: 'Squawk',    icon: 'birdy',    route: '/birdy',    accent: '#1d9bf0' },
             { id: 'services', label: 'Services',  icon: 'services', route: '/services', accent: '#16B8A6' },
             { id: 'pages',    label: 'Pages',     icon: 'pages',    route: '/pages',    accent: '#FBC02D' },
             { id: 'marketplace', label: 'Marketplace', icon: 'marketplace', route: '/marketplace', accent: '#0a84ff' },
@@ -73,19 +79,47 @@ export function devInjectMockData(): () => void {
         data:   { startMs: Date.now() - (2 * 3600 + 17 * 60) * 1000 },
     }, '*');
 
+    // Base apps only: these land on a phone that has just been set up, before
+    // anything has been installed from the App Store.
     const seedNotifs = [
-        { id: 'seed-vibez',    app: 'vibez',    appId: 'vibez',    title: 'Marcus',         body: 'hey',                                        time: '11 Jun' },
-        { id: 'seed-messages', app: 'messages', appId: 'messages', title: 'Tommy V',        body: 'Sure Thing!',                                time: '13:15'  },
-        { id: 'seed-garages',  app: 'garages',  appId: 'garages',  title: 'Vehicle Update', body: 'Your vehicle (ABC 123) is ready for pickup', time: '15:14'  },
+        { id: 'seed-mail',     app: 'mail',     appId: 'mail',     title: 'Marcus Baker', body: 'Sent over the paperwork you asked for.', time: '11 Jun' },
+        { id: 'seed-messages', app: 'messages', appId: 'messages', title: 'Tommy V',      body: 'Sure Thing!',                            time: '13:15'  },
+        { id: 'seed-bank',     app: 'bank',     appId: 'bank',     title: 'Maze Bank',    body: 'Payment received: $2,500',               time: '15:14'  },
     ];
-    const seedTimers = seedNotifs.map((n, i) =>
-        window.setTimeout(() => window.postMessage({ action: 'sd-phone:notification', data: n }, '*'), 400 + i * 350),
-    );
+    const seedTimers: number[] = [];
+    function seedNotifications(): void {
+        seedNotifs.forEach((n, i) => seedTimers.push(
+            window.setTimeout(() => window.postMessage({ action: 'sd-phone:notification', data: n }, '*'), 400 + i * 350),
+        ));
+        seedTimers.push(window.setTimeout(
+            () => window.postMessage({ action: 'sd-phone:badges', data: { messages: 2, phone: 3, mail: 5, groups: 1 } }, '*'),
+            400,
+        ));
+    }
 
-    seedTimers.push(window.setTimeout(
-        () => window.postMessage({ action: 'sd-phone:badges', data: { messages: 2, phone: 3, mail: 5, groups: 1 } }, '*'),
-        400,
-    ));
+    // Setup is a full-screen takeover, so a seeded notification lands with no
+    // visible banner but an audible tone. Hold them until the flow is done.
+    // Only reachable outside FiveM, where a player in setup gets no traffic.
+    function setupPending(): boolean {
+        try {
+            const raw = window.localStorage.getItem('sd-phone:setup:v1');
+            return !!raw && (JSON.parse(raw) as { completed?: boolean }).completed === false;
+        } catch {
+            return false;
+        }
+    }
+
+    let setupWatch = 0;
+    if (setupPending()) {
+        setupWatch = window.setInterval(() => {
+            if (setupPending()) return;
+            window.clearInterval(setupWatch);
+            setupWatch = 0;
+            seedNotifications();
+        }, 400);
+    } else {
+        seedNotifications();
+    }
 
     let battery = payload.battery;
     const tick = window.setInterval(() => {
@@ -140,6 +174,7 @@ export function devInjectMockData(): () => void {
         window.clearInterval(tick);
         window.clearInterval(weatherTick);
         window.clearInterval(healthTick);
+        if (setupWatch) window.clearInterval(setupWatch);
         seedTimers.forEach(window.clearTimeout);
     };
 }

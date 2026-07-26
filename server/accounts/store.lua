@@ -67,6 +67,11 @@ function store.ensureSchema()
     util.ensureCollation('phone_app_accounts')
     util.ensureCollation('phone_app_sessions')
     util.ensureCollation('phone_passwords')
+
+    -- Referential integrity, added on boot so existing installs migrate with no manual SQL.
+    -- Each is a no-op once present; orphaned children are cleared first (they point at a
+    -- parent that is already gone) and a type or collation mismatch is skipped, never fatal.
+    util.ensureForeignKey('phone_app_sessions', 'account_id', 'phone_app_accounts', 'id', 'fk_app_sessions_account')
 end
 
 ---Maps a phone_app_accounts row to the camelCase account shape, passwordHash included.

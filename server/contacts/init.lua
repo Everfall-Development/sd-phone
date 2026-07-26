@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Player bridge (bridge.server.player): citizenid lookups for the number-scoped exports.
 local player  = require 'bridge.server.player'
 ---@type table Contacts persistence layer (server.contacts.store): table DDL + row CRUD.
@@ -17,10 +20,10 @@ share.registerHandler('contact', actions.deliverShare)
 CreateThread(function()
     local success, err = pcall(store.ensureSchema)
     if not success then
-        print(('^1[sd-phone:contacts]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('contacts', err)
         return
     end
-    print('^2[sd-phone:contacts]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- Authoritative contact/recents callbacks: thin delegates into server.contacts.actions.

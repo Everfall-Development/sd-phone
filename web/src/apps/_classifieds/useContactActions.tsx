@@ -42,7 +42,7 @@ export function useContactActions(): {
         dialog = (
             <AlertDialog
                 title={t('classifieds.call', 'Call')}
-                message={t('classifieds.callConfirm', 'Are you sure you want to call {number}?', { number: formatPhone(dlg.number) })}
+                message={t('classifieds.callConfirm', 'Call {number}?', { number: formatPhone(dlg.number) })}
                 cancelLabel={t('classifieds.cancel', 'Cancel')}
                 confirmLabel={t('classifieds.call', 'Call')}
                 onCancel={() => setDlg(null)}

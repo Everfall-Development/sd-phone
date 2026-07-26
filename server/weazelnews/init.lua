@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Weazel News persistence layer (server.weazelnews.store): article + ticker row CRUD.
 local store   = require 'server.weazelnews.store'
 ---@type table Authoritative Weazel News handlers (server.weazelnews.actions): staff gating,
@@ -8,10 +11,26 @@ local actions = require 'server.weazelnews.actions'
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:weazelnews]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('weazelnews', err)
         return
     end
-    print('^2[sd-phone:weazelnews]^0 schema ready')
+    boot.schemaReady()
+end)
+
+-- Batched view counts: article reads buffer in memory and land in one pass per minute.
+CreateThread(function()
+    while true do
+        Wait(60000)
+        local ok, err = pcall(actions.flushViews)
+        if not ok then print(('^1[sd-phone:weazelnews]^0 view flush failed: %s'):format(err)) end
+    end
+end)
+
+---Flushes the buffered view counts once on resource stop. Guarded to this resource only.
+---@param resource string name of the resource that stopped
+AddEventHandler('onResourceStop', function(resource)
+    if resource ~= GetCurrentResourceName() then return end
+    pcall(actions.flushViews)
 end)
 
 -- NUI callbacks: thin delegates into server.weazelnews.actions; shims normalize non-table payloads.

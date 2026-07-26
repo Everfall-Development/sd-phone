@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Accounts persistence layer (server.accounts.store): schema bootstrap + legacy migration.
 local store   = require 'server.accounts.store'
 ---@type table Authoritative account handlers (server.accounts.actions): validation + all mutation.
@@ -8,14 +11,14 @@ local actions = require 'server.accounts.actions'
 CreateThread(function()
     local okSchema, err = pcall(store.ensureSchema)
     if not okSchema then
-        print(('^1[sd-phone:accounts]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('accounts', err)
         return
     end
     local okMig, merr = pcall(store.migrateLegacy)
     if not okMig then
-        print(('^1[sd-phone:accounts]^0 legacy migration failed: %s'):format(merr))
+        boot.schemaFailed('accounts', merr)
     end
-    print('^2[sd-phone:accounts]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- Authoritative account callbacks: thin delegates into server.accounts.actions.

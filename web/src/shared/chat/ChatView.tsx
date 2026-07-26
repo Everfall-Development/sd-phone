@@ -434,7 +434,7 @@ export function ChatView({ conv, totalUnread, contacts, myNumber, onBack, onSend
                     <div className="flex items-center gap-2 px-4 pt-2 pb-1">
                         <div className="w-[3px] self-stretch rounded-full bg-[#007AFF]" />
                         <div className="min-w-0 flex-1">
-                            <div className="text-[12px] font-semibold text-[#007AFF]">{t('messages.replyTo', 'Reply to {name}', { name: replyName(replyTo) })}</div>
+                            <div className="text-[12px] font-semibold text-[#007AFF]">{t('messages.replyTo', 'In reply to {name}', { name: replyName(replyTo) })}</div>
                             <div className="truncate text-[13px] text-black/55 dark:text-white/55">{msgPreview(replyTo)}</div>
                         </div>
                         <button
@@ -639,7 +639,7 @@ export function ChatView({ conv, totalUnread, contacts, myNumber, onBack, onSend
                     title={callConfirm === 'video' ? t('messages.videoCall', 'Video Call') : t('messages.call', 'Call')}
                     message={callConfirm === 'video'
                         ? t('messages.confirmVideoCall', 'Are you sure you want to video call {name}?', { name })
-                        : t('messages.confirmCall', 'Are you sure you want to call {name}?', { name })}
+                        : t('messages.confirmCall', 'Call {name}?', { name })}
                     cancelLabel={t('common.cancel', 'Cancel')}
                     confirmLabel={callConfirm === 'video' ? t('messages.videoCall', 'Video Call') : t('messages.call', 'Call')}
                     onCancel={() => setCallConfirm(null)}

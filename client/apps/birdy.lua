@@ -30,6 +30,7 @@ proxyCallback('sd-phone:birdy:dmList',        'sd-phone:server:birdy:dmList')
 proxyCallback('sd-phone:birdy:dmThread',      'sd-phone:server:birdy:dmThread')
 proxyCallback('sd-phone:birdy:dmSend',        'sd-phone:server:birdy:dmSend')
 proxyCallback('sd-phone:birdy:dmReact',       'sd-phone:server:birdy:dmReact')
+proxyCallback('sd-phone:birdy:watch',         'sd-phone:server:birdy:watch')
 
 ---Server push: relays a DM that arrived for our logged-in Birdy account.
 ---@param data table DM record from server/birdy/init.lua

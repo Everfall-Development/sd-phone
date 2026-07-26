@@ -2,6 +2,8 @@
 local config = require 'configs.config'
 ---@type table Server-wide helpers (server.util).
 local util = require 'server.util'
+---@type table Post-0.9.0 column back-fills (server.migrations).
+local migrations = require 'server.migrations'
 ---@type fun(v: any): boolean Boolean coercion for oxmysql TINYINT columns.
 local isTruthy = util.truthy
 
@@ -20,20 +22,6 @@ end
 ---@return string number ten raw digits
 local function genNumber()
     return ('%03d%03d%04d'):format(math.random(200, 989), math.random(100, 999), math.random(0, 9999))
-end
-
----Returns true if a column already exists on the given table (information_schema probe).
----@param tbl string table name
----@param name string column name
----@return boolean exists
-local function columnExists(tbl, name)
-    local row = MySQL.single.await([[
-        SELECT COUNT(*) AS n FROM information_schema.columns
-        WHERE table_schema = DATABASE()
-          AND table_name = ?
-          AND column_name = ?
-    ]], { tbl, name })
-    return row ~= nil and tonumber(row.n) > 0
 end
 
 ---Returns a varchar column's declared character cap, or nil when the column is missing or not
@@ -92,6 +80,9 @@ function store.ensureSchema()
             phone_align        VARCHAR(16) NULL,
             hour24             TINYINT(1)   NULL,
             reopen_app         TINYINT(1)   NULL,
+            setup_done         TINYINT(1)   NULL,
+            theme              VARCHAR(8)   NULL,
+            dark_theme         VARCHAR(16)  NULL,
             ringtone_volume    TINYINT UNSIGNED NULL,
             call_volume        TINYINT UNSIGNED NULL,
             locale             VARCHAR(8)   NULL,
@@ -101,97 +92,9 @@ function store.ensureSchema()
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
 
-    if not columnExists('phone_settings', 'airplane_mode') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN airplane_mode TINYINT(1) NOT NULL DEFAULT 0')
-    end
-    if not columnExists('phone_settings', 'hour24') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN hour24 TINYINT(1) NULL')
-    end
-    if not columnExists('phone_settings', 'reopen_app') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN reopen_app TINYINT(1) NULL')
-    end
-    if not columnExists('phone_settings', 'setup_done') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN setup_done TINYINT(1) NULL')
-    end
-    for _, col in ipairs({
-        { 'card_name',    'VARCHAR(64) NULL'  },
-        { 'card_avatar',  'VARCHAR(512) NULL' },
-        { 'card_email',   'VARCHAR(128) NULL' },
-        { 'card_address', 'VARCHAR(128) NULL' },
-    }) do
-        if not columnExists('phone_settings', col[1]) then
-            MySQL.query.await(('ALTER TABLE phone_settings ADD COLUMN %s %s'):format(col[1], col[2]))
-        end
-    end
-    if not columnExists('phone_settings', 'phone_number') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN phone_number VARCHAR(20) NULL AFTER citizenid')
-    end
-    if not columnExists('phone_settings', 'ringtone') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN ringtone VARCHAR(64) NULL')
-    end
-    if not columnExists('phone_settings', 'notification_tone') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN notification_tone VARCHAR(64) NULL')
-    end
-    if not columnExists('phone_settings', 'installed_apps') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN installed_apps TEXT NULL')
-    end
-    if not columnExists('phone_settings', 'home_layout') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN home_layout TEXT NULL')
-    end
-    if not columnExists('phone_settings', 'lock_clock') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN lock_clock TEXT NULL')
-    end
-    if not columnExists('phone_settings', 'wallpaper') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN wallpaper VARCHAR(512) NULL')
-    elseif (columnLength('phone_settings', 'wallpaper') or 0) < 512 then
-        -- Older installs created the column at 255; photo URLs are capped at 512 (phone_photos.url).
-        MySQL.query.await('ALTER TABLE phone_settings MODIFY wallpaper VARCHAR(512) NULL')
-    end
-    if not columnExists('phone_settings', 'custom_wallpapers') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN custom_wallpapers TEXT NULL')
-    end
-    if not columnExists('phone_settings', 'wallpaper_home') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN wallpaper_home VARCHAR(512) NULL')
-    end
-    if not columnExists('phone_settings', 'blur_lock') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN blur_lock TINYINT(1) NULL')
-    end
-    if not columnExists('phone_settings', 'blur_home') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN blur_home TINYINT(1) NULL')
-    end
-    if not columnExists('phone_settings', 'passcode') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN passcode VARCHAR(8) NULL')
-    end
-    if not columnExists('phone_settings', 'face_id') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN face_id TINYINT(1) NOT NULL DEFAULT 0')
-    end
-    if not columnExists('phone_settings', 'chat_text_scale') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN chat_text_scale DECIMAL(3,2) NULL')
-    end
-    if not columnExists('phone_settings', 'phone_scale') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN phone_scale TINYINT UNSIGNED NULL')
-    end
-    if not columnExists('phone_settings', 'brightness') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN brightness TINYINT UNSIGNED NULL')
-    end
-    if not columnExists('phone_settings', 'phone_align') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN phone_align VARCHAR(16) NULL')
-    end
-    if not columnExists('phone_settings', 'ringtone_volume') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN ringtone_volume TINYINT UNSIGNED NULL')
-    end
-    if not columnExists('phone_settings', 'call_volume') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN call_volume TINYINT UNSIGNED NULL')
-    end
-    if not columnExists('phone_settings', 'locale') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN locale VARCHAR(8) NULL')
-    end
-    if not columnExists('phone_settings', 'dark_theme') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN dark_theme VARCHAR(16) NULL')
-    end
-    if not columnExists('phone_settings', 'theme') then
-        MySQL.query.await('ALTER TABLE phone_settings ADD COLUMN theme VARCHAR(8) NULL')
-    end
+    -- Columns added since v0.9.0 live in server/migrations.lua; everything above is the current
+    -- shape, which every fresh install gets from the CREATE TABLE directly.
+    migrations.apply('phone_settings')
 
     MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_custom_ringtones (
@@ -204,9 +107,6 @@ function store.ensureSchema()
             PRIMARY KEY (citizenid, id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
-    if not columnExists('phone_custom_ringtones', 'kind') then
-        MySQL.query.await("ALTER TABLE phone_custom_ringtones ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'ringtone' AFTER id")
-    end
 
     MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_notif_prefs (
@@ -254,17 +154,30 @@ function store.getNotifPref(citizenid, app)
     return row.enabled == true or tonumber(row.enabled) == 1
 end
 
----Persists a player's notification preference for an app (upsert); no-op for an unusable app id.
+---@type integer Cap on stored notification overrides per character. Only a muted app keeps a row,
+---so this sits far above the phone's whole app list, custom apps included.
+local MAX_NOTIF_PREFS = 64
+
+---Persists a player's notification preference for an app; no-op for an unusable app id. Enabled
+---is what getNotifPref falls back to, so re-enabling drops the row instead of storing the
+---default - the app id is client-supplied and would otherwise be an uncapped primary key.
 ---@param citizenid string framework per-character id
 ---@param app string app slug
 ---@param on boolean whether notifications are enabled
 function store.setNotifPref(citizenid, app, on)
     local a = sanitizeApp(app)
     if not citizenid or citizenid == '' or not a then return end
+    if on == true then
+        MySQL.update.await('DELETE FROM phone_notif_prefs WHERE citizenid = ? AND app = ?', { citizenid, a })
+        return
+    end
+    local countRow = MySQL.single.await(
+        'SELECT COUNT(*) AS n FROM phone_notif_prefs WHERE citizenid = ?', { citizenid })
+    if countRow and tonumber(countRow.n) >= MAX_NOTIF_PREFS then return end
     MySQL.update.await([[
-        INSERT INTO phone_notif_prefs (citizenid, app, enabled) VALUES (?, ?, ?)
+        INSERT INTO phone_notif_prefs (citizenid, app, enabled) VALUES (?, ?, 0)
         ON DUPLICATE KEY UPDATE enabled = VALUES(enabled)
-    ]], { citizenid, a, on == true and 1 or 0 })
+    ]], { citizenid, a })
 end
 
 ---Trims a string and clamps it to `n` chars; nil / non-string / empty becomes nil.

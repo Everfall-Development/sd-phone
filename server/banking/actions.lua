@@ -26,6 +26,26 @@ local function cidOf(src) return player.getIdentifier(src) end
 local util = require 'server.util'
 local digits, initialsFor, formatNumber = util.digits, util.initialsFor, util.formatNumber
 
+---@type integer Rolling window both send budgets are measured over, in ms.
+local SEND_WINDOW = 60000
+---@type integer Transfers one character may send per window, to anyone.
+local SEND_MAX = 20
+---@type integer Transfers one character may send per window to the same number. Each one banners
+---the recipient, so this is what bounds a flood aimed at one player.
+local SEND_MAX_PEER = 6
+---@type integer Transaction rows kept per character; the tail past this is unreadable.
+local KEEP_ROWS = 2000
+---@type integer Smallest gap between two prunes of the same character's log, in ms.
+local PRUNE_GAP = 300000
+
+---Trims a character's transaction log, at most once per PRUNE_GAP. Called after a write, so a log
+---that stopped growing is never re-scanned.
+---@param citizenid string
+local function pruneLog(citizenid)
+    if not util.cooldown(citizenid, 'bank:prune', PRUNE_GAP) then return end
+    store.prune(citizenid, KEEP_ROWS)
+end
+
 ---@return string iso UTC ISO-8601 timestamp ("2026-01-01T00:00:00Z") from unix seconds
 local function iso(ts)    return os.date('!%Y-%m-%dT%H:%M:%SZ', ts) end
 
@@ -148,6 +168,11 @@ function actions.send(src, payload)
     local rcid = settings.getCitizenByNumber(number)
     if not rcid then return { success = false, message = 'No one owns that number' } end
 
+    if not util.rateLimit(cid, 'bank:send', SEND_WINDOW, SEND_MAX)
+        or not util.rateLimit(cid, 'bank:send:' .. number, SEND_WINDOW, SEND_MAX_PEER) then
+        return { success = false, message = 'Too many transfers, try again in a minute' }
+    end
+
     local balance = bank.getBalance(src) or 0
     if balance < amount then return { success = false, message = 'Insufficient funds' } end
 
@@ -177,6 +202,8 @@ function actions.send(src, payload)
     local senderLabel = note ~= '' and note or ('Sent to %s'):format(number)
     store.insert(cid,  senderLabel,                          -amount, 'transfer', number,   ts)
     store.insert(rcid, ('Received from %s'):format(myNumber), amount, 'transfer', myNumber, ts)
+    pruneLog(cid)
+    pruneLog(rcid)
 
     ---First-party hook: fires once per settled transfer; toSource is nil for an offline credit.
     TriggerEvent('sd-phone:server:banking:transfer', {
@@ -226,6 +253,7 @@ function actions.addExternal(identifier, data)
     local counterparty = data.counterparty and (tostring(data.counterparty)):sub(1, 64) or nil
     local ts           = os.time()
     store.insert(identifier, label, amount, category, counterparty, ts)
+    pruneLog(identifier)
 
     local src = player.getSourceByIdentifier(identifier)
     ---First-party hook: fires once per logged external transaction; source is nil while offline.

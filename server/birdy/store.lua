@@ -154,6 +154,14 @@ function store.ensureSchema()
         MySQL.update.await('UPDATE phone_birdy_notifications SET seen = 1')
     end
     util.ensureIndex('phone_birdy_notifications', 'idx_birdy_notifs_unseen', '(recipient_cid, seen)')
+    util.ensureIndex('phone_birdy_notifications', 'idx_birdy_notifs_dedupe', '(recipient_cid, kind, actor_cid, post_id)')
+
+    -- Referential integrity, added on boot so existing installs migrate with no manual SQL.
+    -- Each is a no-op once present; orphaned children are cleared first (they point at a
+    -- parent that is already gone) and a type or collation mismatch is skipped, never fatal.
+    util.ensureForeignKey('phone_birdy_likes', 'post_id', 'phone_birdy_posts', 'id', 'fk_birdy_likes_post')
+    util.ensureForeignKey('phone_birdy_reposts', 'post_id', 'phone_birdy_posts', 'id', 'fk_birdy_reposts_post')
+    util.ensureForeignKey('phone_birdy_notifications', 'post_id', 'phone_birdy_posts', 'id', 'fk_birdy_notifications_post')
 end
 
 ---Decodes a JSON column into a Lua table, tolerating nil / empty / corrupt values (always
@@ -168,6 +176,13 @@ function store.decodeJson(value)
         if ok and type(decoded) == 'table' then return decoded end
     end
     return {}
+end
+
+---Backslash-escapes LIKE wildcards in a literal.
+---@param s string
+---@return string
+local function escapeLike(s)
+    return (s:gsub('[%%_\\]', '\\%0'))
 end
 
 ---Reshapes a raw profile row, normalising every TINYINT flag to a boolean.
@@ -214,16 +229,18 @@ function store.getProfileByHandle(handle)
     ))
 end
 
----Searches accounts by handle or display name (substring), excluding the viewer.
+---Searches accounts by handle or display name (substring), excluding the viewer. Wildcards in
+---the client's text are escaped, so a bare '%' searches for a literal percent instead of
+---scanning the whole table.
 ---@param query string
 ---@param viewerCid string
 ---@param limit number
 ---@return table[] {citizenid, handle, displayName, verified}
 function store.searchProfiles(query, viewerCid, limit)
-    local like = '%' .. query .. '%'
+    local like = '%' .. escapeLike(query) .. '%'
     local rows = MySQL.query.await([[
         SELECT citizenid, handle, display_name, verified, avatar FROM phone_birdy_profiles
-        WHERE (handle LIKE ? OR display_name LIKE ?) AND citizenid <> ?
+        WHERE (handle LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\') AND citizenid <> ?
         ORDER BY created_at DESC LIMIT ?
     ]], { like, like, viewerCid or '', limit }) or {}
     local out = {}
@@ -386,6 +403,7 @@ function store.deleteAccount(citizenid)
     MySQL.update.await('DELETE FROM phone_birdy_dms WHERE from_cid = ? OR to_cid = ?', { citizenid, citizenid })
     MySQL.update.await('DELETE FROM phone_birdy_notifications WHERE recipient_cid = ? OR actor_cid = ?', { citizenid, citizenid })
     MySQL.update.await('DELETE FROM phone_birdy_profiles WHERE citizenid = ?', { citizenid })
+    store.invalidateTrending()
 end
 
 ---Overwrites an existing profile's editable fields and signs it in.
@@ -516,13 +534,6 @@ local TRENDING_TTL = 60
 ---@type integer Most-recent posts scanned per trending computation.
 local TRENDING_SCAN_CAP = 500
 
----Backslash-escapes LIKE wildcards in a literal.
----@param s string
----@return string
-local function escapeLike(s)
-    return (s:gsub('[%%_\\]', '\\%0'))
-end
-
 ---Distinct lowercased hashtags in a body; optionally tallies raw casings into `casings`.
 ---@param body string
 ---@param casings table<string, table<string, number>>|nil
@@ -541,7 +552,9 @@ local function extractTags(body, casings)
     return seen
 end
 
----Drops the cached trending list so the next read recomputes.
+---Drops the cached trending list so the next read recomputes. Deliberately NOT called from
+---posting: any player's post used to zero the cache, which turned the 60 s TTL off and let two
+---cheap callbacks force the 500-row hashtag rescan back to back.
 function store.invalidateTrending()
     trendingCache.at, trendingCache.data = 0, nil
 end
@@ -759,13 +772,18 @@ function store.insertDm(id, fromCid, toCid, kind, body, meta)
     ]], { id, fromCid, toCid, kind or 'text', body or '', metaJson }) ~= nil
 end
 
----Every message involving a player, oldest-first, with `created_ms` added.
+---A player's most recent messages, oldest-first, with `created_ms` added. The inbox derives one
+---conversation head per peer from these, so it only needs the recent tail; without the cap a
+---flooded mailbox pulls every row it has ever held into Lua on each app open.
 ---@param cid string
 ---@return table[]
 function store.listMessagesFor(cid)
     local rows = MySQL.query.await([[
-        SELECT id, from_cid, to_cid, body, kind, meta, reactions, read_flag, UNIX_TIMESTAMP(created_at) AS created_s
-        FROM phone_birdy_dms WHERE from_cid = ? OR to_cid = ? ORDER BY created_at ASC
+        SELECT * FROM (
+            SELECT id, from_cid, to_cid, body, kind, meta, reactions, read_flag,
+                   created_at, UNIX_TIMESTAMP(created_at) AS created_s
+            FROM phone_birdy_dms WHERE from_cid = ? OR to_cid = ? ORDER BY created_at DESC LIMIT 5000
+        ) recent ORDER BY created_at ASC
     ]], { cid, cid }) or {}
     for i = 1, #rows do rows[i].created_ms = (tonumber(rows[i].created_s) or 0) * 1000 end
     return rows
@@ -781,16 +799,20 @@ function store.markThreadRead(viewerCid, otherCid)
         { viewerCid, otherCid })
 end
 
----Messages between two players (both directions), oldest-first, with `created_ms` added.
+---The newest 500 messages between two players (both directions), oldest-first, with `created_ms`
+---added.
 ---@param cidA string
 ---@param cidB string
 ---@return table[]
 function store.listThread(cidA, cidB)
     local rows = MySQL.query.await([[
-        SELECT id, from_cid, to_cid, body, kind, meta, reactions, UNIX_TIMESTAMP(created_at) AS created_s
-        FROM phone_birdy_dms
-        WHERE (from_cid = ? AND to_cid = ?) OR (from_cid = ? AND to_cid = ?)
-        ORDER BY created_at ASC
+        SELECT * FROM (
+            SELECT id, from_cid, to_cid, body, kind, meta, reactions,
+                   created_at, UNIX_TIMESTAMP(created_at) AS created_s
+            FROM phone_birdy_dms
+            WHERE (from_cid = ? AND to_cid = ?) OR (from_cid = ? AND to_cid = ?)
+            ORDER BY created_at DESC LIMIT 500
+        ) recent ORDER BY created_at ASC
     ]], { cidA, cidB, cidB, cidA }) or {}
     for i = 1, #rows do rows[i].created_ms = (tonumber(rows[i].created_s) or 0) * 1000 end
     return rows
@@ -815,6 +837,28 @@ end
 function store.updateDmReactions(id, reactions)
     local rjson = (type(reactions) == 'table' and next(reactions) ~= nil) and json.encode(reactions) or nil
     MySQL.update.await('UPDATE phone_birdy_dms SET reactions = ? WHERE id = ?', { rjson, id })
+end
+
+---True when the same actor already raised this kind of notification on the same post for the
+---same recipient inside the last `withinSecs`. Lets the caller drop the duplicate a like, repost
+---or follow toggle would otherwise mint on every flip. The postless kinds are matched through
+---IFNULL because SQL treats two NULL post_ids as distinct, which is also why this is not a
+---UNIQUE key.
+---@param recipientCid string
+---@param kind string
+---@param actorCid string
+---@param postId string|nil
+---@param withinSecs integer age limit in seconds
+---@return boolean exists
+function store.recentNotification(recipientCid, kind, actorCid, postId, withinSecs)
+    local n = MySQL.scalar.await([[
+        SELECT 1 FROM phone_birdy_notifications
+        WHERE recipient_cid = ? AND kind = ? AND actor_cid = ?
+          AND IFNULL(post_id, '') = ?
+          AND created_at > NOW() - INTERVAL ? SECOND
+        LIMIT 1
+    ]], { recipientCid, kind, actorCid, postId or '', withinSecs })
+    return n ~= nil
 end
 
 ---@param id string

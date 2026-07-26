@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Player bridge (bridge.server.player): identity + display names from a server-trusted src.
 local player  = require 'bridge.server.player'
 ---@type table Money bridge (bridge.server.money): framework-agnostic bank account read/credit/debit.
@@ -50,6 +53,56 @@ local function titleOf(game) return (configs[game] and configs[game].title) or g
 local function currencyOf(game) return (configs[game] and configs[game].currency) or 'bank' end
 
 local sanitizeWager = util.wholeAmount
+
+---@type integer, integer, integer Budget for one relayed move/relay payload: nodes walked, nesting
+---depth and total string bytes. Wordle's grid (six rows of five cells, nested three deep) is the
+---largest payload any shipped game sends, so this sits far above real play.
+local PAYLOAD_NODES, PAYLOAD_DEPTH, PAYLOAD_BYTES = 512, 5, 4096
+
+---@type integer, integer Rolling budget for move + relay calls: a shot in battleship costs two,
+---and every other game is one per human action, so this cannot be reached by hand.
+local RELAY_WINDOW, RELAY_MAX = 10000, 60
+
+---@type integer, integer Walk accumulators, reset by boundedPayload. Safe as upvalues because the
+---walk never yields.
+local walkNodes, walkBytes = 0, 0
+
+---Walks a client table against the shared node, depth and byte budget.
+---@param tbl table
+---@param depth integer current nesting level, 1 at the root
+---@return boolean ok
+local function walkPayload(tbl, depth)
+    if depth > PAYLOAD_DEPTH then return false end
+    for k, v in pairs(tbl) do
+        walkNodes = walkNodes + 1
+        if walkNodes > PAYLOAD_NODES then return false end
+        if type(k) == 'string' then walkBytes = walkBytes + #k end
+        local vt = type(v)
+        if vt == 'table' then
+            if not walkPayload(v, depth + 1) then return false end
+        elseif vt == 'string' then
+            walkBytes = walkBytes + #v
+        elseif vt == 'function' or vt == 'thread' then
+            return false
+        end
+        if walkBytes > PAYLOAD_BYTES then return false end
+    end
+    return true
+end
+
+---True when an opaque client payload is small enough to serialise on to the opponent. Only tables
+---and strings can carry size, so everything else passes; a table is walked rather than encoded, so
+---nesting can never blow the encoder's stack.
+---@param v any raw client value
+---@return boolean ok
+local function boundedPayload(v)
+    local t = type(v)
+    if t == 'string' then return #v <= PAYLOAD_BYTES end
+    if t == 'function' or t == 'thread' then return false end
+    if t ~= 'table' then return true end
+    walkNodes, walkBytes = 0, 0
+    return walkPayload(v, 1)
+end
 
 ---Read a player's balance in the game's wager currency: the shared casino chip wallet when the
 ---game sets currency = 'chips', bank cash otherwise. Read-only.
@@ -336,6 +389,10 @@ lib.callback.register('sd-phone:server:games:inviteLobby', function(src, payload
     if target == src then return fail("You can't invite yourself") end
     if not online(target) then return fail('That player is not online') end
     if busy(target) then return fail('That player is busy') end
+    -- Checked last so a mistyped server id never spends the budget, and gated on the TARGET as
+    -- well as the host so colluding lobbies still cannot flood one player's notifications.
+    if not util.cooldown(cidOf(src), 'games:invite', 3000) then return fail('Slow down') end
+    if not util.cooldown(cidOf(target), 'games:invited', 10000) then return fail('That player was just invited') end
     invites[target] = { lobbyId = lobby.id, fromName = lobby.hostName }
     pushClient(target, lobby.game, 'invited', { fromSrc = tostring(src), fromName = lobby.hostName, lobbyId = lobby.id })
     local title = titleOf(lobby.game)
@@ -531,6 +588,8 @@ lib.callback.register('sd-phone:server:games:move', function(src, payload)
     if not g then return fail('Game over') end
     local mySide = sideOf(g, src)
     if not mySide then return fail('Not your game') end
+    if not boundedPayload(payload.move) then return fail('Bad move') end
+    if not util.rateLimit(cidOf(src), 'games:relay', RELAY_WINDOW, RELAY_MAX) then return fail('Slow down') end
     if configs[g.game] and configs[g.game].freeRelay then
         local opp = opponentOf(g, src)
         if online(opp) then pushClient(opp, g.game, 'move', { gameId = payload.gameId, move = payload.move }) end
@@ -561,6 +620,8 @@ lib.callback.register('sd-phone:server:games:relay', function(src, payload)
     local g = games[payload.gameId]
     if not g then return ok() end
     if not sideOf(g, src) then return ok() end
+    if not boundedPayload(payload.data) then return ok() end
+    if not util.rateLimit(cidOf(src), 'games:relay', RELAY_WINDOW, RELAY_MAX) then return ok() end
     local opp = opponentOf(g, src)
     if online(opp) then pushClient(opp, g.game, 'relay', { gameId = payload.gameId, data = payload.data }) end
     return ok()
@@ -615,10 +676,13 @@ lib.callback.register('sd-phone:server:games:report', function(src, payload)
     if not g or not g.wager or g.wager <= 0 or g.settled then return ok() end
     local opp = opponentOf(g, src)
     if not opp then return ok() end
-    g.reports[src] = payload.result
-    if payload.result == 'loss' then
+    -- Whitelisted rather than stored raw: the only reads compare against these three, so an
+    -- arbitrary client value would only pin itself in memory for the session's lifetime.
+    local result = (payload.result == 'win' or payload.result == 'loss' or payload.result == 'draw') and payload.result or nil
+    g.reports[src] = result
+    if result == 'loss' then
         settlePot(g, opp); endGame(payload.gameId)
-    elseif payload.result == 'draw' and g.reports[opp] == 'draw' then
+    elseif result == 'draw' and g.reports[opp] == 'draw' then
         settlePot(g, nil); endGame(payload.gameId)
     elseif not g.deadline then
         g.deadline = true
@@ -683,7 +747,7 @@ end
 -- One-shot boot thread: creates the shared stats schema.
 CreateThread(function()
     local good, err = pcall(stats.ensureSchema)
-    if not good then print(('^1[sd-phone:games]^0 stats schema bootstrap failed: %s'):format(err)) end
+    if good then boot.schemaReady() else boot.schemaFailed('games:stats', err) end
 end)
 
 return engine

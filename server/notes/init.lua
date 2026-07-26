@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Notes persistence layer (server.notes.store): per-citizenid note row CRUD.
 local store   = require 'server.notes.store'
 ---@type table Authoritative Notes handlers (server.notes.actions): citizenid scoping, input
@@ -13,10 +16,10 @@ share.registerHandler('note', actions.deliverShare)
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:notes]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('notes', err)
         return
     end
-    print('^2[sd-phone:notes]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- NUI callbacks: thin delegates into server.notes.actions; shims normalize non-table payloads.

@@ -36,6 +36,25 @@ local MAX_ATTACHMENT_NAME_LEN = 80
 ---@type integer Attached note body cap (chars).
 local MAX_ATTACHMENT_NOTE_LEN = 5000
 
+---@type integer Minimum gap between accepted sends, per character. A send rewrites the whole
+---messages blob once per recipient, so this is the only thing bounding that cost per second.
+local SEND_GAP_MS = 2000
+---@type integer Minimum gap between accepted draft saves, per character. Saving a draft is a
+---button, not an autosave, so a real composer never comes close.
+local DRAFT_GAP_MS = 1000
+---@type integer Minimum gap between accepted sign-ups, per character.
+local SIGNUP_GAP_MS = 30000
+
+---@type integer Accounts one character may ever create. MaxAccountsPerPlayer only caps how many
+---are signed in at once, and signing out leaves the row behind, so the loop re-arms it forever.
+local MAX_ACCOUNTS_CREATED = 10
+
+---@type integer Rolling window over the per-message mailbox writes, and the calls allowed inside
+---it. Each one decodes and re-encodes the whole messages blob, so the byte ceiling alone leaves
+---the rate unbounded. A gap would break the list pages, which fire one call per selected mail:
+---this sits above a select-all delete of a full MaxMessagesPerAccount mailbox.
+local MUTATE_WINDOW_MS, MUTATE_PER_WINDOW = 60000, 300
+
 local util = require 'server.util'
 local ok, fail, trim = util.ok, util.fail, util.trim
 
@@ -294,6 +313,13 @@ function actions.signUp(source, payload)
     local password, pe = validatePassword(payload.password); if not password then return fail(pe) end
     local displayName, ne = validateDisplayName(payload.displayName); if not displayName then return fail(ne) end
 
+    if not util.cooldown(me.cid, 'mail:signUp', SIGNUP_GAP_MS) then
+        return fail('Please wait before creating another account')
+    end
+    if store.countAccountsCreatedBy(me.cid) >= MAX_ACCOUNTS_CREATED then
+        return fail(('You can create at most %d accounts'):format(MAX_ACCOUNTS_CREATED))
+    end
+
     local phone = (tostring(payload.phone or '')):gsub('%D', '')
     if phone ~= '' and (#phone < 7 or #phone > 15) then
         return fail('That phone number looks invalid')
@@ -311,7 +337,7 @@ function actions.signUp(source, payload)
         return fail(('You can have at most %d accounts signed in'):format(mailCfg.MaxAccountsPerPlayer))
     end
 
-    if not store.insertAccount(email, store.hashPassword(password), displayName) then
+    if not store.insertAccount(email, store.hashPassword(password), displayName, me.cid) then
         return fail('Failed to create account')
     end
     store.addSession(email, me.cid)
@@ -392,6 +418,8 @@ end
 function actions.send(source, payload)
     payload = payload or {}
     local me = whois(source); if not me then return fail('Player not found') end
+
+    if not util.cooldown(me.cid, 'mail:send', SEND_GAP_MS) then return fail('Slow down') end
 
     local fromEmail = trim(payload.fromEmail):lower()
     if fromEmail == '' then return fail('Sender account is required') end
@@ -595,6 +623,8 @@ function actions.saveDraft(source, payload)
     payload = payload or {}
     local me = whois(source); if not me then return fail('Player not found') end
 
+    if not util.cooldown(me.cid, 'mail:saveDraft', DRAFT_GAP_MS) then return fail('Slow down') end
+
     local fromEmail = trim(payload.fromEmail):lower()
     if fromEmail == '' then return fail('Sender account is required') end
 
@@ -651,6 +681,11 @@ end
 local function requireOwnership(source, accountEmail)
     local me = whois(source); if not me then return nil, fail('Player not found') end
     if type(accountEmail) ~= 'string' or accountEmail == '' then return nil, fail('Account email is required') end
+    -- Gated here rather than per action: getAccount below is the whole-blob decode every one of
+    -- these mutators pays twice, and markRead/toggleFlag/move are reachable at unlimited rate.
+    if not util.rateLimit(me.cid, 'mail:mutate', MUTATE_WINDOW_MS, MUTATE_PER_WINDOW) then
+        return nil, fail('Slow down')
+    end
     local acc = store.getAccount(accountEmail); if not acc then return nil, fail('Account not found') end
     for i = 1, #acc.logged_in_citizens do
         if acc.logged_in_citizens[i] == me.cid then return me.cid, nil end

@@ -124,7 +124,7 @@ export function EditProfile({ profile, onCancel, onSaved, onSignOut, onDeleted }
 
             {confirmSignOut && (
                 <AlertDialog
-                    title={t('birdy.signOutTitle', 'Sign out of Birdy?')}
+                    title={t('birdy.signOutTitle', 'Sign out of Squawk?')}
                     message={t('birdy.signOutMessage', 'You can sign back in anytime.')}
                     confirmLabel={t('birdy.signOut', 'Sign Out')}
                     onCancel={() => setConfirmSignOut(false)}

@@ -201,7 +201,7 @@ export function NoteEditor({ note, onBack, onChange, onDelete, animateIn = true 
                 </button>
 
                 <span className="text-[17px] font-medium text-ios-gray">
-                    {t('notes.lastEdited', 'Last Edited: {date}', { date: formatLastEdited(note.updatedAt) })}
+                    {t('notes.lastEdited', 'Edited {date}', { date: formatLastEdited(note.updatedAt) })}
                 </span>
 
                 <button

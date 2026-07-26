@@ -222,7 +222,7 @@ export function PostCard({ post, onLike, onDoubleLike, onSave, onComment, onOpen
                     <span className="font-semibold">{post.user.handle}</span> {post.caption}
                 </div>
                 <button type="button" onClick={onComment} className="mt-[5px] block text-left text-[18px] active:opacity-50" style={{ color: '#555555' }}>
-                    {post.comments > 0 ? t('photogram.viewAllComments', 'View all {count} comments', { count: post.comments }) : t('photogram.beFirstToComment', 'Be the first to comment…')}
+                    {post.comments > 0 ? t('photogram.viewAllComments', 'See all {count} comments', { count: post.comments }) : t('photogram.beFirstToComment', 'Be the first to comment…')}
                 </button>
                 <div className="mt-[6px] text-[13px] uppercase tracking-wide" style={{ color: '#6a6a6a' }}>{post.time}</div>
             </div>

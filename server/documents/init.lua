@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Documents persistence layer (server.documents.store): table DDL + folder/doc CRUD.
 local store         = require 'server.documents.store'
 ---@type table Authoritative Documents handlers (server.documents.actions): validation + scoping.
@@ -22,10 +25,10 @@ share.registerHandler('signature-request', actions.deliverSignRequest)
 CreateThread(function()
     local success, err = pcall(store.ensureSchema)
     if not success then
-        print(('^1[sd-phone:documents]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('documents', err)
         return
     end
-    print('^2[sd-phone:documents]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- NUI callbacks: thin delegates into server.documents.actions.

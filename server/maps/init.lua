@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Maps persistence layer (server.maps.store): one JSON row per citizenid.
 local store   = require 'server.maps.store'
 ---@type table Authoritative Maps handlers (server.maps.actions): sanitize + cap + scope.
@@ -12,10 +15,10 @@ share.registerHandler('pin', actions.deliverShare)
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:maps]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('maps', err)
         return
     end
-    print('^2[sd-phone:maps]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- NUI callbacks: thin delegates into server.maps.actions.

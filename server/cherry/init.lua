@@ -1,3 +1,6 @@
+---@type table Boot reporter (server.boot): one console summary instead of per-module prints.
+local boot = require 'server.boot'
+
 ---@type table Cherry persistence layer (server.cherry.store): schema bootstrap + row CRUD.
 local store   = require 'server.cherry.store'
 ---@type table Authoritative Cherry handlers (server.cherry.actions): validation + world mutation.
@@ -9,10 +12,10 @@ require 'server.cherry.seed'
 CreateThread(function()
     local ok, err = pcall(store.ensureSchema)
     if not ok then
-        print(('^1[sd-phone:cherry]^0 schema bootstrap failed: %s'):format(err))
+        boot.schemaFailed('cherry', err)
         return
     end
-    print('^2[sd-phone:cherry]^0 schema ready')
+    boot.schemaReady()
 end)
 
 -- App callbacks: thin delegates into server.cherry.actions.
