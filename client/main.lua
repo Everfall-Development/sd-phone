@@ -25,6 +25,10 @@ end
 local weatherBridge = require 'bridge.client.weather'
 ---@type table Custom third-party app registry (client.customapps): add/remove/message + lifecycle.
 local customApps = require 'client.customapps'
+---@type table Hold pose and hand prop (client.pose): owns which clip is held and re-asserts it.
+local pose = require 'client.pose'
+---@type table Scripted phone camera (client.phonecam): owns the frame-a-shot movement lock.
+local phonecam = require 'client.phonecam'
 
 -- Loaded for side effects: each app module registers its own NUI callbacks, net events and
 -- server proxies.
@@ -122,8 +126,6 @@ local pushWeather
 ---@type fun()|nil Phone close (assigned further down).
 local ClosePhone
 
----@type integer|nil Handle of the attached phone prop, nil while stowed.
-local phoneProp
 ---@type table<integer, {obj: integer, color: string}> Server id -> local phone-prop copy welded
 ---onto that remote holder's ped.
 local remoteProps = {}
@@ -131,6 +133,10 @@ local remoteProps = {}
 local flashlightOn = false
 ---@type boolean True while the Camera app's native cell-cam owns the pose and controls.
 local cameraActive = false
+---@type string Which surface owns the cell-cam while active: 'camera' or 'video' (FaceTime).
+local cameraSurface = 'camera'
+---@type boolean True while the Camera app has handed the mouse to the game to aim the lens.
+local cameraCursorFree = false
 ---@type boolean True while a UI text field is focused.
 local typingInPhone = false
 ---@type boolean True while the focused field is digit-only (PIN pads, dialers): keep-input
@@ -139,89 +145,33 @@ local typingNumeric = false
 ---@type boolean True while the hold-to-look keybind has released the cursor for camera control.
 local lookMode = false
 
----Returns whether the hold pose should apply: phone open or flashlight on, and the Camera app
----not live.
+---Returns whether the live cell-cam has to freeze the game, i.e. its own surface has movement
+---turned off. An absent config key reads as on, so servers on an older configs/phone.lua still
+---get the fix.
 ---@return boolean
-local function shouldHold()
-    return (phoneState.open or flashlightOn) and not cameraActive
-end
-
----Creates a colour-matched local phone prop, disables its collision, and rigidly welds it to the
----ped's hand bone.
----@param ped integer ped to attach the prop to
----@param color string frame colour; must be a key of FRAME_COLORS
----@return integer? prop the welded prop entity, or nil if the model wouldn't stream
-local function createHandProp(ped, color)
-    local model = joaat(config.Phone.PropPrefix .. color)
-    RequestModel(model)
-    local started = GetGameTimer()
-    while not HasModelLoaded(model) and GetGameTimer() - started < 1000 do Wait(0) end
-    if not HasModelLoaded(model) then return nil end
-    local coords = GetEntityCoords(ped)
-    local prop = CreateObject(model, coords.x, coords.y, coords.z, false, true, true)
-    SetEntityCollision(prop, false, false)
-    local off, rot = config.Phone.PropOffset, config.Phone.PropRot
-    AttachEntityToEntity(prop, ped, GetPedBoneIndex(ped, config.Phone.PropBone),
-        off.x, off.y, off.z, rot.x, rot.y, rot.z, false, false, false, false, 2, true)
-    SetModelAsNoLongerNeeded(model)
-    return prop
-end
-
----Attaches our own hand prop in the current frame colour. No-op if one is already attached or
----the model won't stream.
----@param ped integer player ped handle
-local function attachPhoneProp(ped)
-    if phoneProp and DoesEntityExist(phoneProp) then return end
-    phoneProp = createHandProp(ped, currentFrameColor)
-end
-
----Delete the attached phone prop, if any. Idempotent.
-local function removePhoneProp()
-    if phoneProp and DoesEntityExist(phoneProp) then DeleteObject(phoneProp) end
-    phoneProp = nil
-end
-
----Plays the looping upper-body hold anim and attaches the prop. No-op when
----config.Phone.HoldAnimation is off.
-local function startPose()
-    if not config.Phone.HoldAnimation then return end
-    -- Load the dict and play the pose on its own thread: the anim is cosmetic and must never
-    -- gate the phone opening. Blocking here (up to 1s waiting on the dict) used to stall the
-    -- NUI reveal since OpenPhone runs this synchronously before focusing the UI.
-    CreateThread(function()
-        RequestAnimDict(config.Phone.AnimDict)
-        local started = GetGameTimer()
-        while not HasAnimDictLoaded(config.Phone.AnimDict) and GetGameTimer() - started < 1000 do Wait(0) end
-        -- The player may have closed the phone (or the camera took the pose) during the load.
-        if not shouldHold() then return end
-        local ped = PlayerPedId()
-        if not IsEntityPlayingAnim(ped, config.Phone.AnimDict, config.Phone.AnimName, 3) then
-            TaskPlayAnim(ped, config.Phone.AnimDict, config.Phone.AnimName, 6.0, -1.0, -1, 49, 0.0, false, false, false)
-        end
-        attachPhoneProp(ped)
-    end)
-end
-
----Stop the hold anim (only when it's actually our clip playing) and remove the prop.
-local function stopPose()
-    local ped = PlayerPedId()
-    if config.Phone.HoldAnimation and IsEntityPlayingAnim(ped, config.Phone.AnimDict, config.Phone.AnimName, 3) then
-        StopAnimTask(ped, config.Phone.AnimDict, config.Phone.AnimName, 1.0)
-    end
-    removePhoneProp()
+local function cameraFrozen()
+    if not cameraActive then return false end
+    if cameraSurface == 'video' then return config.Phone.AllowMovementInVideoCall == false end
+    return config.Phone.AllowMovementInCamera == false
 end
 
 ---Broadcasts the hold state via the replicated `sdPhone` player statebag: frame colour while
 ---holding, false otherwise. No-op when cross-player visibility is off.
 local function broadcastHoldState()
     if not config.Phone.PropVisibleToOthers then return end
-    local color = (config.Phone.HoldAnimation and shouldHold()) and currentFrameColor or false
+    local color = pose.shouldHold() and currentFrameColor or false
     LocalPlayer.state:set('sdPhone', color, true)
 end
 
----Starts or stops the pose per current state and broadcasts it.
+---Pushes the current state into the pose module, which starts or stops the held clip to match,
+---then broadcasts the result.
 local function updatePose()
-    if shouldHold() then startPose() else stopPose() end
+    pose.refresh({
+        open   = phoneState.open,
+        torch  = flashlightOn,
+        camera = cameraActive,
+        color  = currentFrameColor,
+    })
     broadcastHoldState()
 end
 
@@ -237,9 +187,11 @@ local function startMovementThread()
         while phoneState.open do
             if IsPauseMenuActive() then
                 if ClosePhone then ClosePhone() end
-            elseif (not typingInPhone or typingNumeric) and not cameraActive then
+            elseif (not typingInPhone or typingNumeric) and not cameraFrozen() then
                 DisablePlayerFiring(PlayerId(), true)
-                if not lookMode then
+                -- The Camera app's Alt toggle hands the mouse to the game to aim the lens, so
+                -- leave mouse-look alone while it has: suppressing it makes the lens immovable.
+                if not lookMode and not cameraCursorFree then
                     DisableControlAction(0, 1, true)
                     DisableControlAction(0, 2, true)
                 end
@@ -286,15 +238,16 @@ end
 ---AllowMovement on.
 local function syncKeepInput()
     if phoneState.open and config.Phone.AllowMovement then
-        SetNuiFocusKeepInput((not typingInPhone or typingNumeric) and not cameraActive)
+        SetNuiFocusKeepInput((not typingInPhone or typingNumeric) and not cameraFrozen())
     end
 end
 
 ---Enters look mode: releases the NUI cursor so the mouse rotates the camera while the phone stays
----on screen. Only fires with the phone open in movement mode and not typing or in the camera view.
+---on screen. Only fires with the phone open in movement mode and not typing or in a frozen camera
+---view. This is how a walking player aims the lens during a FaceTime.
 local function enterLookMode()
     if lookMode or not phoneState.open or not config.Phone.AllowMovement then return end
-    if typingInPhone or cameraActive then return end
+    if typingInPhone or cameraFrozen() then return end
     lookMode = true
     SetNuiFocus(false, false)
 end
@@ -303,7 +256,9 @@ end
 local function exitLookMode()
     if not lookMode then return end
     lookMode = false
-    if phoneState.open then
+    -- Never grab the cursor back while the Camera app has deliberately released it, or its own
+    -- cursorOn flag desyncs and the viewfinder's key relays go dead.
+    if phoneState.open and not cameraCursorFree then
         SetNuiFocus(true, true)
         syncKeepInput()
     end
@@ -312,11 +267,23 @@ end
 ---Tracks the Camera app's cell-cam state, then re-syncs the pose and keep-input. Payload coerced
 ---to a strict boolean.
 ---@param on any truthy while the cell-cam view is live
-AddEventHandler('sd-phone:client:cameraMode', function(on)
-    cameraActive = on and true or false
+---@param surface string|nil which surface owns it: 'video' for FaceTime, otherwise the Camera app
+AddEventHandler('sd-phone:client:cameraMode', function(on, surface)
+    cameraActive  = on and true or false
+    cameraSurface = surface == 'video' and 'video' or 'camera'
+    if not cameraActive then cameraCursorFree = false end
     updatePose()
     syncKeepInput()
 end)
+
+---Tracks whether the Camera app is holding the NUI cursor or has handed the mouse to the game to
+---aim the lens, and re-asserts keep-input since SetNuiFocus is what moved.
+---@param on any truthy while the NUI cursor is showing
+AddEventHandler('sd-phone:client:cameraCursor', function(on)
+    cameraCursorFree = not (on and true or false)
+    syncKeepInput()
+end)
+
 
 ---Opens the phone NUI onto the lockscreen, loads installed apps, focuses the NUI, and pushes a
 ---weather snapshot plus the session-start timestamp. Refuses while dead, swimming, or disabled.
@@ -481,6 +448,29 @@ RegisterCommand('+sdphone_look', enterLookMode, false)
 RegisterCommand('-sdphone_look', exitLookMode, false)
 RegisterKeyMapping('+sdphone_look', 'Phone: Hold to look around', 'keyboard', config.Phone.LookKeybind)
 
+-- Angle lock: stops the body turning with the selfie lens, so the shot can swing around the player
+-- for something other than head-on. Walking is untouched. toggleLock returns nil on the outward
+-- lens, which frames the world and gains nothing from it.
+RegisterCommand('sdphone_camlock', function()
+    if not cameraActive then return end
+    local locked = phonecam.toggleLock()
+    if locked == nil then return end
+    -- The viewfinder's own hint carries the state, so it flips to "Unlock Angle" rather than a
+    -- toast interrupting the shot.
+    SendNUIMessage({ action = 'sd-phone:camera:lock', data = { on = locked } })
+end, false)
+RegisterKeyMapping('sdphone_camlock', 'Phone: Move the selfie camera instead of yourself', 'keyboard', config.Phone.CameraLockKeybind)
+
+-- Head tracking: turns the face back toward the lens so an angled selfie still looks at the camera.
+-- Opt-in, because it reads as posed rather than candid and not every shot wants that.
+RegisterCommand('sdphone_camface', function()
+    if not cameraActive then return end
+    local facing = phonecam.toggleFaceCam()
+    if facing == nil then return end
+    SendNUIMessage({ action = 'sd-phone:camera:faceCam', data = { on = facing } })
+end, false)
+RegisterKeyMapping('sdphone_camface', 'Phone: Look at the selfie camera', 'keyboard', config.Phone.CameraFaceKeybind)
+
 ---Opens the phone after a phone item is used, adopting the item variant's frame colour when it
 ---passes the FRAME_COLORS whitelist.
 ---@param color string|nil frame colour of the used item variant
@@ -524,11 +514,10 @@ RegisterNetEvent('sd-phone:client:simState', function(state)
     if state.color and FRAME_COLORS[state.color] then
         if state.color ~= currentFrameColor then
             currentFrameColor = state.color
-            if shouldHold() then
-                removePhoneProp()
-                attachPhoneProp(PlayerPedId())
-                broadcastHoldState()
-            end
+            -- Push the colour first, then re-weld: a prop already in hand keeps the old model
+            -- otherwise, since attaching no-ops while one exists.
+            updatePose()
+            pose.reweld()
         end
         -- ALWAYS forwarded (even while closed, even when the client already believed this
         -- colour): the NUI boots with its own default and has no other pre-open sync point,
@@ -694,19 +683,6 @@ CreateThread(function()
     end
 end)
 
--- Re-applies the hold pose on a 500ms poll if the game clears it.
-CreateThread(function()
-    while true do
-        if shouldHold() then
-            local ped = PlayerPedId()
-            if config.Phone.HoldAnimation and not IsEntityPlayingAnim(ped, config.Phone.AnimDict, config.Phone.AnimName, 3) then
-                startPose()
-            end
-        end
-        Wait(500)
-    end
-end)
-
 ---Deletes a remote holder's welded prop copy, if any. Idempotent.
 ---@param source integer server id of the remote holder
 local function removeRemoteProp(source)
@@ -741,7 +717,7 @@ if config.Phone.PropVisibleToOthers then
         local entry = remoteProps[source]
         if entry and entry.color == value and DoesEntityExist(entry.obj) then return end
         removeRemoteProp(source)
-        local obj = createHandProp(ped, value)
+        local obj = pose.createProp(ped, value)
         if obj then remoteProps[source] = { obj = obj, color = value } end
         debugPrint(('remote prop for %s -> %s'):format(source, value))
     end)
@@ -842,6 +818,12 @@ end
 RegisterNetEvent('QBCore:Client:OnPlayerLoaded', pushCharacterLoaded)
 RegisterNetEvent('esx:playerLoaded', pushCharacterLoaded)
 
+---Server-side settings appeared after the UI had already hydrated, so pull them again. The
+---lb-phone import writes phone_settings partway through boot, long after the resource-start
+---hydrate below has run - without this the player's wallpaper, theme and tones stay stock until
+---the resource is restarted a second time.
+RegisterNetEvent('sd-phone:client:rehydrate', pushCharacterLoaded)
+
 ---Resource restart with the character already in: the framework load events above won't
 ---re-fire, but the freshly reloaded NUI still needs the character signal and a SIM snapshot
 ---(closed-shell frame colour before the first open). On a fresh join this fires before any
@@ -857,13 +839,9 @@ end)
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
     if phoneState.open then SetNuiFocus(false, false) end
-    removePhoneProp()
+    pose.stop()
     if config.Phone.PropVisibleToOthers then LocalPlayer.state:set('sdPhone', false, true) end
     for source in pairs(remoteProps) do removeRemoteProp(source) end
-    local ped = PlayerPedId()
-    if config.Phone.HoldAnimation and IsEntityPlayingAnim(ped, config.Phone.AnimDict, config.Phone.AnimName, 3) then
-        StopAnimTask(ped, config.Phone.AnimDict, config.Phone.AnimName, 1.0)
-    end
 end)
 
 require 'client.compat.lbphone'

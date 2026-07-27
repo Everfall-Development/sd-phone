@@ -137,6 +137,12 @@ const RETAIN_CAP = RECENTS_CAP;
 
 const ALARM_TEST_ID = '__alarm_test__';
 
+// Anything that swallows a keystroke as text rather than as a shortcut.
+function isTextEntry(el: EventTarget | null): boolean {
+    const t = el as HTMLElement | null;
+    return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+}
+
 export function App() {
     return (
         <ThemeProvider>
@@ -1064,10 +1070,6 @@ function AppContent() {
 
     useEffect(() => {
         if (!isFiveM) return;
-        const isText = (el: EventTarget | null) => {
-            const t = el as HTMLElement | null;
-            return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
-        };
         // Digit-only inputs take the numeric typing tier: the player keeps moving while the
         // field is focused (client/main.lua suppresses the digit weapon binds instead).
         const isNumeric = (el: EventTarget | null) => {
@@ -1075,14 +1077,30 @@ function AppContent() {
             return !!t && t.tagName === 'INPUT'
                 && (['numeric', 'tel', 'decimal'].includes(t.inputMode) || ['number', 'tel'].includes(t.type));
         };
-        const onFocus = (e: FocusEvent) => { if (isText(e.target)) void fetchNui('sd-phone:typing', { typing: true, numeric: isNumeric(e.target) }); };
-        const onBlur  = (e: FocusEvent) => { if (isText(e.target)) void fetchNui('sd-phone:typing', { typing: false }); };
+        const onFocus = (e: FocusEvent) => { if (isTextEntry(e.target)) void fetchNui('sd-phone:typing', { typing: true, numeric: isNumeric(e.target) }); };
+        const onBlur  = (e: FocusEvent) => { if (isTextEntry(e.target)) void fetchNui('sd-phone:typing', { typing: false }); };
         document.addEventListener('focusin', onFocus);
         document.addEventListener('focusout', onBlur);
         return () => {
             document.removeEventListener('focusin', onFocus);
             document.removeEventListener('focusout', onBlur);
         };
+    }, []);
+
+    // Jump stays enabled while the phone is open (client/main.lua deliberately leaves control 22
+    // alone), so under keep-input every jump also lands on the page. Cancelling the keydown stops
+    // the button activation Chromium would otherwise dispatch on the matching keyup.
+    // Only the native activation: this does not stop propagation, so a component with its own
+    // Space handler still has to opt out for itself the way Lockscreen does.
+    useEffect(() => {
+        if (!isFiveM) return;
+        function blockSpace(e: KeyboardEvent) {
+            if (e.key !== ' ' && e.code !== 'Space') return;
+            if (isTextEntry(e.target)) return;
+            e.preventDefault();
+        }
+        window.addEventListener('keydown', blockSpace, true);
+        return () => window.removeEventListener('keydown', blockSpace, true);
     }, []);
 
     const resetNonce = usePhoneReset(s => s.nonce);

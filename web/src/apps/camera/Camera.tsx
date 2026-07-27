@@ -11,6 +11,7 @@ import { NearbyVoiceCapture, registerGatedMic, unregisterGatedMic, gateAcquire, 
 import { isVideoUrl } from '@/core/photosApi';
 import { getGameRender, type GameRender } from '@/render';
 import { useDeckActive } from '@/shell/deckActive';
+import { useStatusBarLight } from '@/shell/useStatusBarLight';
 import { useLaunchIntent } from '@/shell/launchIntent';
 import { t } from '@/i18n';
 import { formatDuration } from '@/lib/time';
@@ -24,21 +25,51 @@ function playShutter() {
     } catch { /* audio unavailable — silent */ }
 }
 
-const CONTROL_HINTS: { keys: string[]; label: string }[] = [
+type HintCorner = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
+
+interface HintConfig {
+    enabled: boolean;
+    corner:  HintCorner;
+    columns: number;
+}
+
+// Matches configs/phone.lua CameraHints, and stands in until Lua answers so the list does not
+// jump from one corner to another on open.
+const HINT_DEFAULTS: HintConfig = { enabled: true, corner: 'top-right', columns: 2 };
+
+const HINT_CORNER_CLASS: Record<HintCorner, string> = {
+    'top-right':    'right-4 top-4',
+    'top-left':     'left-4 top-4',
+    'bottom-right': 'right-4 bottom-4',
+    'bottom-left':  'left-4 bottom-4',
+};
+
+// `selfieOnly` hints stay mounted and collapse instead of unmounting, so they can animate out.
+const CONTROL_HINTS: { keys: string[]; label: string; selfieOnly?: boolean }[] = [
     { keys: ['Enter'],     label: 'Take Photo' },
     { keys: ['↑'],         label: 'Flip Camera' },
     { keys: ['E'],         label: 'Flash' },
     { keys: ['←', '→'],    label: 'Change Mode' },
     { keys: ['Alt'],       label: 'Toggle Cursor' },
+    { keys: ['↓'],         label: 'Angle', selfieOnly: true },
+    { keys: ['R Shift'],   label: 'Face', selfieOnly: true },
 ];
 
-function hintLabel(label: string): string {
+function hintLabel(label: string, angleLocked: boolean, facingCam: boolean): string {
     switch (label) {
         case 'Take Photo':    return t('camera.hintTakePhoto', 'Take Photo');
         case 'Flip Camera':   return t('camera.hintFlipCamera', 'Flip Camera');
         case 'Flash':         return t('camera.hintFlash', 'Flash');
         case 'Change Mode':   return t('camera.hintChangeMode', 'Change Mode');
         case 'Toggle Cursor': return t('camera.hintToggleCursor', 'Toggle Cursor');
+        // Labels what the mouse will control after the press, not the state it is in: "Lock Angle"
+        // read equally well as "the angle is locked", which is what made it feel inverted.
+        case 'Angle':         return angleLocked
+            ? t('camera.hintMoveYourself', 'Move Yourself')
+            : t('camera.hintMoveCamera', 'Move Camera');
+        case 'Face':          return facingCam
+            ? t('camera.hintLookAhead', 'Look Ahead')
+            : t('camera.hintFaceCamera', 'Face Camera');
         default:              return label;
     }
 }
@@ -49,7 +80,18 @@ interface Photo {
     createdAt: string;
 }
 
-const ZOOM_OPTIONS = ['0.5', '1×', '2', '5'] as const;
+const ZOOM_PRESETS = [1, 2, 5] as const;
+const ZOOM_MIN = ZOOM_PRESETS[0];
+const ZOOM_MAX = ZOOM_PRESETS[ZOOM_PRESETS.length - 1];
+// Wheel zoom is multiplicative so a notch changes the framing by the same proportion at every
+// magnification; a fixed step crawls at 5× and lurches at 0.5×.
+const ZOOM_WHEEL_RATE = 0.0015;
+const ZOOM_KEY_STEP   = 1.15;
+
+const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+
+// Labels drop the trailing zero the way iOS does: 1× not 1.0×, but 1.5× keeps its decimal.
+const zoomLabel = (z: number) => `${Number.isInteger(z) ? z : z.toFixed(1)}×`;
 const MODE_OPTIONS = ['VIDEO', 'PHOTO', 'LANDSCAPE'] as const;
 
 const CAPTURE_TIMEOUT_MS = 8000;
@@ -75,7 +117,7 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
 }) {
     const [photos,  setPhotos]  = useState<Photo[]>([]);
     const [pending, setPending] = useState(false);
-    const [zoom,    setZoom]    = useState<typeof ZOOM_OPTIONS[number]>('1×');
+    const [zoom,    setZoom]    = useState<number>(1);
     const [mode,    setMode]    = useState<typeof MODE_OPTIONS[number]>('PHOTO');
     const [feedReady, setFeedReady] = useState(false);
     const [showGrid,  setShowGrid]  = useState(false);
@@ -84,6 +126,13 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
     const [recSecs,   setRecSecs]   = useState(0);
     const [flash,     setFlash]     = useState(false);
     const [selfie,    setSelfie]    = useState(false);
+    // Mirror the selfie state held in Lua so the hints can describe what pressing each key does now.
+    const [angleLocked, setAngleLocked] = useState(false);
+    const [facingCam,   setFacingCam]   = useState(false);
+    // True only when the native cell cam took the view, i.e. the server froze the player while
+    // framing. Decides whether the selfie crop bias applies.
+    const [nativeCam, setNativeCam] = useState(false);
+    const [hintCfg,   setHintCfg]   = useState<HintConfig>(HINT_DEFAULTS);
 
     const { setHideHomeIndicator } = useTheme('setHideHomeIndicator');
 
@@ -93,6 +142,11 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
     // backgrounded (switcher open / pool) so nothing burns behind the blur, and
     // re-acquire on foreground.
     const deckActive = useDeckActive();
+
+    // The viewfinder is a live canvas, so nothing in the DOM tells auto-contrast how dark it is and
+    // the home pill renders dark against the game view. The other canvas apps declare this the same
+    // way; the hook scopes itself to the active deck entry, so it cannot leak under keep-alive.
+    useStatusBarLight(true);
 
     const landscape = mode === 'LANDSCAPE';
 
@@ -169,7 +223,13 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
     useEffect(() => {
         if (!deckActive) return;
         let stopped = false;
-        void fetchNui('sd-phone:camera:open');
+        void fetchNui<{ walkable?: boolean; hints?: Partial<HintConfig> }>('sd-phone:camera:open').then((res) => {
+            if (stopped) return;
+            setNativeCam(res?.walkable === false);
+            // Dev has no Lua behind it, so an absent payload keeps the defaults rather than blanking
+            // the list.
+            setHintCfg({ ...HINT_DEFAULTS, ...(res?.hints ?? {}) });
+        });
 
         void getGameRender().then((render) => {
             if (stopped || !render || !canvasRef.current) return;
@@ -197,11 +257,16 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
 
     useEffect(() => {
         if (!feedReady) return;
-        renderRef.current?.setZoom(parseFloat(zoom));
-    }, [zoom, feedReady]);
+        // The scripted cam zooms optically, so the game renders the tighter view at full resolution
+        // and the crop stays at its base framing. The native cell cam has no FOV we can set, so
+        // that path still magnifies the rendered frame and softens as it goes.
+        renderRef.current?.setZoom(nativeCam ? zoom : 1);
+        void fetchNui('sd-phone:camera:zoom', { zoom });
+    }, [zoom, nativeCam, feedReady]);
 
     useEffect(() => {
         onLandscapeChange?.(landscape);
+        void fetchNui('sd-phone:camera:landscape', { on: landscape });
     }, [landscape, onLandscapeChange]);
 
     useEffect(() => {
@@ -209,13 +274,18 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
         renderRef.current?.setOrientation(landscape ? 'landscape' : 'portrait');
     }, [landscape, feedReady]);
 
-    // Front camera frames the ped off-centre; bias the viewfinder crop to re-centre them.
+    // Only the NATIVE front camera frames the ped off-centre, so only it needs the re-centring
+    // crop bias. The scripted cam points itself at the head, and biasing that pushes the player
+    // off to the right by the same amount it was meant to correct.
     useEffect(() => {
         if (!feedReady) return;
-        renderRef.current?.setSelfie(selfie);
-    }, [selfie, feedReady]);
+        renderRef.current?.setSelfie(selfie && nativeCam);
+    }, [selfie, nativeCam, feedReady]);
 
-    useEffect(() => () => onLandscapeChange?.(false), [onLandscapeChange]);
+    useEffect(() => () => {
+        onLandscapeChange?.(false);
+        void fetchNui('sd-phone:camera:landscape', { on: false });
+    }, [onLandscapeChange]);
 
     useEffect(() => {
         void fetchNui('sd-phone:camera:flash', { on: recording && flash });
@@ -232,6 +302,21 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
         return () => ro.disconnect();
     }, []);
 
+    useNuiEvent('sd-phone:camera:lock', (data) => {
+        setAngleLocked(!!data?.on);
+    });
+
+    useNuiEvent('sd-phone:camera:faceCam', (data) => {
+        setFacingCam(!!data?.on);
+    });
+
+    // Lua clears both on every lens flip, so drop them here on the same event rather than waiting to
+    // be told; otherwise a hint would describe behaviour the lens is no longer doing.
+    useEffect(() => {
+        setAngleLocked(false);
+        setFacingCam(false);
+    }, [selfie]);
+
     useNuiEvent('sd-phone:camera:key', (data) => {
         switch (data?.key) {
             case 'shutter':  handleShutter(); break;
@@ -242,6 +327,10 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
                 break;
             }
             case 'flash':    setFlash(f => !f); break;
+            // Relayed from Lua only while the viewfinder has handed the mouse to the game, where
+            // the page sees no wheel events of its own.
+            case 'zoomIn':   setZoom(z => clampZoom(z * ZOOM_KEY_STEP)); break;
+            case 'zoomOut':  setZoom(z => clampZoom(z / ZOOM_KEY_STEP)); break;
             case 'modePrev': if (!photoOnly) setMode(m => MODE_OPTIONS[(MODE_OPTIONS.indexOf(m) + MODE_OPTIONS.length - 1) % MODE_OPTIONS.length]); break;
             case 'modeNext': if (!photoOnly) setMode(m => MODE_OPTIONS[(MODE_OPTIONS.indexOf(m) + 1) % MODE_OPTIONS.length]); break;
         }
@@ -442,26 +531,66 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
 
     const hints = photoOnly ? CONTROL_HINTS.filter(h => h.label !== 'Change Mode') : CONTROL_HINTS;
 
+    // The column nearest the chosen edge fills first and the overflow sits inboard of it, so the
+    // list reads outward-in. Rendering order is left-to-right, hence the flip when anchored right.
+    const hintEdgeRight = hintCfg.corner.endsWith('right');
+    const hintColumns: typeof hints[] = (() => {
+        if (hintCfg.columns < 2) return [hints];
+        const split = Math.ceil(hints.length / 2);
+        const edge  = hints.slice(0, split);
+        const inner = hints.slice(split);
+        return hintEdgeRight ? [inner, edge] : [edge, inner];
+    })();
+
     return (
         <div className="absolute inset-0 z-10 flex flex-col text-white">
-            {createPortal(
+            {hintCfg.enabled && createPortal(
                 <div
-                    className="pointer-events-none fixed right-4 top-4 z-[2147483647] flex flex-col items-end gap-1.5"
+                    // Row spacing lives on the rows, not as a gap here: a collapsed row would keep
+                    // its gap and leave a hole where the hidden hint used to be.
+                    className={`pointer-events-none fixed z-[2147483647] flex items-start gap-x-5 ${HINT_CORNER_CLASS[hintCfg.corner]}`}
                     style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}
                 >
-                    {hints.map(hint => (
-                        <div key={hint.label} className="flex items-center gap-2">
-                            <span className="text-[13px] font-medium text-white">{hintLabel(hint.label)}</span>
-                            <span className="flex gap-1">
-                                {hint.keys.map(k => (
-                                    <kbd
-                                        key={k}
-                                        className="flex h-6 min-w-[26px] items-center justify-center rounded-[6px] border border-white/25 bg-black/55 px-1.5 text-[12px] font-semibold text-white backdrop-blur-sm"
+                    {hintColumns.map((column, columnIndex) => (
+                        <div
+                            key={columnIndex}
+                            className={`flex flex-col ${hintEdgeRight ? 'items-end' : 'items-start'}`}
+                        >
+                            {column.map(hint => {
+                                // Selfie-only hints stay mounted and collapse their own height, so
+                                // they slide and fade both ways instead of appearing from nothing.
+                                const shown = !hint.selfieOnly || selfie;
+                                return (
+                                    <div
+                                        key={hint.label}
+                                        className="flex items-center gap-2 overflow-hidden transition-all duration-200 ease-out"
+                                        style={{
+                                            opacity: shown ? 1 : 0,
+                                            maxHeight: shown ? 24 : 0,
+                                            marginBottom: shown ? 6 : 0,
+                                            // Slides in from whichever edge it is anchored to.
+                                            transform: shown
+                                                ? 'translateX(0)'
+                                                : `translateX(${hintEdgeRight ? 8 : -8}px)`,
+                                        }}
+                                        aria-hidden={!shown}
                                     >
-                                        {k}
-                                    </kbd>
-                                ))}
-                            </span>
+                                        <span className="whitespace-nowrap text-[13px] font-medium text-white">
+                                            {hintLabel(hint.label, angleLocked, facingCam)}
+                                        </span>
+                                        <span className="flex gap-1">
+                                            {hint.keys.map(k => (
+                                                <kbd
+                                                    key={k}
+                                                    className="flex h-6 min-w-[26px] items-center justify-center rounded-[6px] border border-white/25 bg-black/55 px-1.5 text-[12px] font-semibold text-white backdrop-blur-sm"
+                                                >
+                                                    {k}
+                                                </kbd>
+                                            ))}
+                                        </span>
+                                    </div>
+                                );
+                            })}
                         </div>
                     ))}
                 </div>,
@@ -499,7 +628,15 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
                 </div>
             </div>
 
-            <div ref={viewportRef} className="relative flex-1 min-h-0 overflow-hidden bg-black">
+            <div
+                ref={viewportRef}
+                className="relative flex-1 min-h-0 overflow-hidden bg-black"
+                onWheel={(e) => {
+                    // deltaY is negative scrolling up, which reads as zooming in. Exponential so a
+                    // notch is the same proportional change at 0.5× as at 5×.
+                    setZoom(z => clampZoom(z * Math.exp(-e.deltaY * ZOOM_WHEEL_RATE)));
+                }}
+            >
                 <canvas
                     ref={canvasRef}
                     className="absolute"
@@ -538,17 +675,47 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
                     </div>
                 )}
 
-                {pending && (
-                    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/25">
-                        <div className="text-[14px] font-medium text-white/90">
-                            {t('camera.saving', 'Saving…')}
-                        </div>
+                {/* Stays mounted so it fades both ways. The scrim ramps its blur radius and its own
+                    background alpha rather than the element's opacity: a backdrop-filter under an
+                    opacity transition flickers in CEF. */}
+                <div
+                    className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3.5 transition-all duration-200 ease-out"
+                    style={{
+                        backgroundColor:        pending ? 'rgba(0,0,0,0.72)' : 'rgba(0,0,0,0)',
+                        backdropFilter:         pending ? 'blur(6px)' : 'blur(0px)',
+                        WebkitBackdropFilter:   pending ? 'blur(6px)' : 'blur(0px)',
+                        pointerEvents:          pending ? 'auto' : 'none',
+                    }}
+                    aria-hidden={!pending}
+                    aria-busy={pending}
+                >
+                    <div
+                        className="flex flex-col items-center gap-3.5 transition-opacity duration-200 ease-out"
+                        style={{ opacity: pending ? 1 : 0 }}
+                    >
+                        {/* Upload progress is not reported back, so the ring spins rather than
+                            claiming a percentage it cannot know. */}
+                        <svg className="h-11 w-11 animate-spin" viewBox="0 0 44 44" fill="none">
+                            <circle cx="22" cy="22" r="19" stroke="rgba(255,255,255,0.18)" strokeWidth="3" />
+                            <circle
+                                cx="22" cy="22" r="19"
+                                stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round"
+                                strokeDasharray="119.4" strokeDashoffset="90"
+                            />
+                        </svg>
+                        <span className="text-[14px] font-medium text-white/90">
+                            {t('camera.uploading', 'Uploading…')}
+                        </span>
                     </div>
-                )}
+                </div>
 
                 <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/60 px-2 py-1.5 backdrop-blur">
-                    {ZOOM_OPTIONS.map(z => {
-                        const isActive = z === zoom;
+                    {ZOOM_PRESETS.map(z => {
+                        // Scrolling lands between presets, so the nearest one carries the highlight
+                        // and shows the live figure; that pill is the readout as well as the button.
+                        const isActive = ZOOM_PRESETS.reduce(
+                            (best, p) => (Math.abs(p - zoom) < Math.abs(best - zoom) ? p : best),
+                        ) === z;
                         return (
                             <button
                                 key={z}
@@ -561,7 +728,7 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
                                         : 'text-white/85 hover:text-white',
                                 ].join(' ')}
                             >
-                                {z}
+                                {isActive ? zoomLabel(zoom) : zoomLabel(z)}
                             </button>
                         );
                     })}
@@ -591,7 +758,9 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
                     </div>
                 )}
 
-                <div className={`flex items-center justify-center gap-10 px-6 pb-7 ${photoOnly ? 'pt-4' : 'pt-1'}`}>
+                {/* pb clears the home indicator: its pill sits 5-10px off the bottom inside a 21px
+                    hit area, so pb-7 left the shutter ring almost against it. */}
+                <div className={`flex items-center justify-center gap-10 px-6 pb-11 ${photoOnly ? 'pt-4' : 'pt-1'}`}>
                     {photoOnly ? (
                         <button
                             type="button"

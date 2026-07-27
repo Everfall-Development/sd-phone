@@ -40,6 +40,18 @@ return {
     -- player while the phone is out (the classic behaviour).
     AllowMovement = true,
 
+    -- Keep that movement alive while the Camera app's viewfinder owns the
+    -- screen. The mouse still drives the on-screen controls (shutter, zoom,
+    -- mode strip), so aim the lens by holding LookKeybind, or by pressing Left
+    -- Alt to hand the mouse over until you press it again. Set false to freeze
+    -- the player while framing a shot. Needs AllowMovement.
+    AllowMovementInCamera = true,
+
+    -- The same, for a FaceTime video call. The mouse keeps driving the call
+    -- buttons, so hold LookKeybind to steer while you walk. Set false to freeze
+    -- the player for the length of the video call. Needs AllowMovement.
+    AllowMovementInVideoCall = true,
+
     -- Hold this key/button (while the phone is open) to free the mouse for
     -- camera rotation without closing the phone. Releasing it returns to the
     -- on-screen cursor. Combat stays suppressed, so you can look around but not
@@ -49,6 +61,40 @@ return {
     -- mouse? Rebind it in FiveM's Key Bindings. Only active when AllowMovement
     -- is on.
     LookKeybind = 'MOUSE_EXTRABTN1',
+
+    -- Press this in SELFIE mode to move the camera instead of yourself: the lens
+    -- then swings around you rather than turning you with it, so you can frame
+    -- yourself from the side instead of head-on every time. Press again to go
+    -- back to turning your character. Walking works either way; only the body's
+    -- rotation is held. Does nothing on the outward lens, which frames the world.
+    -- Defaults to the down arrow: the viewfinder already owns that cluster (up
+    -- flips the lens, left and right change mode), every keyboard has one, and
+    -- nothing else binds it. X is deliberately avoided because it is the
+    -- hands-up key on most servers. Rebind it in FiveM's Key Bindings.
+    CameraLockKeybind = 'DOWN',
+
+    -- Press this in SELFIE mode to turn your character's head toward the lens,
+    -- so an angled shot still has them looking at the camera instead of past it.
+    -- Press again to let the head sit with the body. Defaults to right shift:
+    -- every keyboard has one, left shift is sprint but right shift is almost
+    -- never bound, and the viewfinder's arrow cluster is already spoken for.
+    -- Rebind it in FiveM's Key Bindings.
+    CameraFaceKeybind = 'RSHIFT',
+
+    -- The keybind hints drawn over the game while the viewfinder is up.
+    CameraHints = {
+        -- Show them at all. False hides the list entirely; the keys still work.
+        Enabled = true,
+
+        -- Which screen corner they sit in: 'top-right', 'top-left',
+        -- 'bottom-right' or 'bottom-left'. Anything else falls back to
+        -- top-right. They align and slide in from whichever edge you pick.
+        Corner = 'top-right',
+
+        -- 1 or 2 columns. Two fills the column nearest your chosen edge first
+        -- and puts the overflow inboard of it, so the list reads outward-in.
+        Columns = 2,
+    },
 
     -- Third-person "holding a phone" pose + prop, shown to other players while
     -- the phone is out. Looping upper-body anim so the player can still walk.
@@ -68,6 +114,14 @@ return {
     -- a custom sd_phone_<colour> model has its origin off the grip point.
     PropOffset = vec3(0.0, 0.0, 0.0),
     PropRot    = vec3(0.0, 0.0, 0.0),
+
+    -- Where the prop sits while the Camera app is in LANDSCAPE mode. Landscape
+    -- plays its own clip, which turns the wrist so the phone already lies on its
+    -- side, so these match the portrait transform above: rolling the prop as well
+    -- would turn it twice. Nudge them only if a custom model sits off the grip in
+    -- that pose.
+    PropLandscapeOffset = vec3(0.0, 0.0, 0.0),
+    PropLandscapeRot    = vec3(0.0, 0.0, 0.0),
 
     -- Let other players see the phone in your hand. When true, your ped broadcasts a replicated
     -- statebag while the phone is out and every nearby client spawns its own LOCAL welded copy of
