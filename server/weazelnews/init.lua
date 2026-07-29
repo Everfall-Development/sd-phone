@@ -72,3 +72,10 @@ end)
 exports('setBreakingTicker', function(lines)
     return actions.replaceTicker(lines)
 end)
+
+---Read-only shared-device feed for native city portals.
+---@param source number player server id
+---@return table result envelope
+exports('getNewsFeed', function(source)
+    return actions.feed(source)
+end)

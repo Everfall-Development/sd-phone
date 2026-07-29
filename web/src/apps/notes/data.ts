@@ -20,6 +20,12 @@ export interface NotesState {
     notes: Note[];
 }
 
+export interface NoteChange {
+    operation: 'upsert' | 'delete';
+    note?: Note;
+    id: string;
+}
+
 const empty: NotesState = { notes: [] };
 
 export function loadState(): NotesState {
@@ -29,6 +35,21 @@ export function loadState(): NotesState {
 
 export function saveState(s: NotesState): void {
     writeJson(STORAGE_KEY, s);
+}
+
+export function applyNoteChange(state: NotesState, change: NoteChange): NotesState {
+    if (change.operation === 'delete') {
+        return { notes: state.notes.filter(note => note.id !== change.id) };
+    }
+    if (!change.note) return state;
+
+    const incoming = change.note;
+    if (!state.notes.some(note => note.id === incoming.id)) {
+        return { notes: [incoming, ...state.notes] };
+    }
+    return {
+        notes: state.notes.map(note => note.id === incoming.id ? incoming : note),
+    };
 }
 
 export { newId } from '@/lib/format';

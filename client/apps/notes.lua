@@ -12,3 +12,7 @@ proxy('sd-phone:notes:share',  'sd-phone:server:notes:share')
 RegisterNetEvent('sd-phone:client:notes:added', function(note)
     SendNUIMessage({ action = 'sd-phone:notes:added', data = note })
 end)
+
+RegisterNetEvent('sd-phone:client:notes:changed', function(change)
+    SendNUIMessage({ action = 'sd-phone:notes:changed', data = change })
+end)

@@ -30,6 +30,7 @@ local MAX_IMAGE_BYTES = 512
 ---pause in typing, so even a hunt-and-peck typist tops out near 170 writes a minute; 300 sits
 ---clear of that yet cuts a scripted flood by three orders of magnitude.
 local SAVE_WINDOW, SAVE_MAX = 60000, 300
+local DEFAULT_COLOR = '#f4dfa1'
 
 ---The acting player's citizenid, resolved from src via the player bridge.
 ---@param src integer player server id
@@ -67,6 +68,134 @@ local function decodeArr(raw)
     return {}
 end
 
+---@param value any client-supplied text
+---@param maximum integer byte limit
+---@return string text
+local function sanitizeText(value, maximum)
+    if type(value) ~= 'string' then return '' end
+    if #value > maximum then return value:sub(1, maximum) end
+    return value
+end
+
+---@param value any client-supplied note colour
+---@return string color
+local function sanitizeColor(value)
+    if type(value) == 'string' and value:match('^#[%da-fA-F][%da-fA-F][%da-fA-F][%da-fA-F][%da-fA-F][%da-fA-F]$') then
+        return value
+    end
+    return DEFAULT_COLOR
+end
+
+---@param body string phone editor body where the first line is the title
+---@return string title
+---@return string content
+local function splitPhoneBody(body)
+    local newline = body:find('\n', 1, true)
+    if not newline then return sanitizeText(body, 128), '' end
+    return sanitizeText(body:sub(1, newline - 1), 128), body:sub(newline + 1)
+end
+
+---@param title string
+---@param content string
+---@return string body
+local function composePhoneBody(title, content)
+    if title == '' then return content end
+    if content == '' then return title end
+    return title .. '\n' .. content
+end
+
+---@param row table database row
+---@return table note shared-device note
+local function sharedNote(row)
+    local title = row.title or ''
+    local content = row.body or ''
+    if title == '' then title, content = splitPhoneBody(content) end
+    return {
+        id        = row.id,
+        title     = title,
+        content   = content,
+        color     = sanitizeColor(row.color),
+        sketches  = decodeArr(row.sketches),
+        images    = decodeArr(row.images),
+        createdAt = row.created_at,
+        updatedAt = row.updated_at,
+    }
+end
+
+---@param note table shared-device note
+---@return table note phone-shaped note
+local function phoneNote(note)
+    return {
+        id        = note.id,
+        body      = composePhoneBody(note.title, note.content),
+        sketches  = note.sketches,
+        images    = note.images,
+        createdAt = note.createdAt,
+        updatedAt = note.updatedAt,
+    }
+end
+
+---@param source integer player server id
+---@param operation 'upsert'|'delete'
+---@param note table|nil shared-device note
+---@param id string note id
+local function notifyChanged(source, operation, note, id)
+    TriggerClientEvent('sd-phone:client:notes:changed', source, {
+        operation = operation,
+        note = note and phoneNote(note) or nil,
+        id = id,
+    })
+    TriggerClientEvent('sd-phone:client:device:dataChanged', source, {
+        domain = 'notes',
+        operation = operation,
+        id = id,
+    })
+end
+
+---@param src integer player server id
+---@param payload table canonical shared-device note
+---@return table result envelope
+local function saveShared(src, payload)
+    local cid = cidOf(src)
+    if not cid then return { success = false, message = 'Player not found' } end
+    if type(payload) ~= 'table' then payload = {} end
+
+    local id = payload.id
+    if type(id) ~= 'string' or id == '' or #id > 40 then
+        return { success = false, message = 'Bad note id' }
+    end
+    if not util.rateLimit(cid, 'notes:save', SAVE_WINDOW, SAVE_MAX) then
+        return { success = false, message = 'Slow down a moment' }
+    end
+    if not store.exists(cid, id) and store.countFor(cid) >= N.MaxNotesPerPlayer then
+        return { success = false, message = 'Note limit reached' }
+    end
+
+    local title = sanitizeText(payload.title, 128)
+    local content = sanitizeText(payload.content, N.MaxBodyLength)
+    local color = sanitizeColor(payload.color)
+    local sketches = sanitizeList(payload.sketches, N.MaxSketches, MAX_SKETCH_BYTES)
+    local images = sanitizeList(payload.images, N.MaxImages, MAX_IMAGE_BYTES)
+    local sketchesJson = json.encode(sketches)
+    local imagesJson = json.encode(images)
+    if #sketchesJson > MAX_MEDIA_JSON or #imagesJson > MAX_MEDIA_JSON then
+        return { success = false, message = 'Note is too large' }
+    end
+
+    local createdAt = type(payload.createdAt) == 'string' and #payload.createdAt <= 40 and payload.createdAt
+        or os.date('!%Y-%m-%dT%H:%M:%S.000Z')
+    local updatedAt = type(payload.updatedAt) == 'string' and #payload.updatedAt <= 40 and payload.updatedAt
+        or createdAt
+
+    store.upsert(cid, id, title, content, color, sketchesJson, imagesJson, createdAt, updatedAt)
+    local note = {
+        id = id, title = title, content = content, color = color, sketches = sketches, images = images,
+        createdAt = createdAt, updatedAt = updatedAt,
+    }
+    notifyChanged(src, 'upsert', note, id)
+    return { success = true, data = { note = note } }
+end
+
 ---All of the caller's notes, newest-edited first, scoped to the caller's citizenid. Read-only.
 ---@param src integer player server id
 ---@return table result envelope with { notes }
@@ -76,14 +205,7 @@ function actions.list(src)
 
     local out = {}
     for _, row in ipairs(store.forPlayer(cid)) do
-        out[#out + 1] = {
-            id        = row.id,
-            body      = row.body or '',
-            sketches  = decodeArr(row.sketches),
-            images    = decodeArr(row.images),
-            createdAt = row.created_at,
-            updatedAt = row.updated_at,
-        }
+        out[#out + 1] = phoneNote(sharedNote(row))
     end
     return { success = true, data = { notes = out } }
 end
@@ -94,39 +216,39 @@ end
 ---@param payload any client-supplied note { id, body?, sketches?, images?, createdAt?, updatedAt? }
 ---@return table result envelope
 function actions.save(src, payload)
-    local cid = cidOf(src)
-    if not cid then return { success = false } end
     if type(payload) ~= 'table' then payload = {} end
+    local title, content = splitPhoneBody(type(payload.body) == 'string' and payload.body or '')
+    local result = saveShared(src, {
+        id = payload.id,
+        title = title,
+        content = content,
+        color = payload.color,
+        sketches = payload.sketches,
+        images = payload.images,
+        createdAt = payload.createdAt,
+        updatedAt = payload.updatedAt,
+    })
+    if result.success then result.data = nil end
+    return result
+end
 
-    local id = payload.id
-    if type(id) ~= 'string' or id == '' or #id > 40 then return { success = false, message = 'Bad note id' } end
+---Lists canonical shared notes for another owned device UI.
+---@param src integer player server id
+---@return table result envelope with { notes }
+function actions.listShared(src)
+    local cid = cidOf(src)
+    if not cid then return { success = false, message = 'Player not found', data = { notes = {} } } end
+    local notes = {}
+    for _, row in ipairs(store.forPlayer(cid)) do notes[#notes + 1] = sharedNote(row) end
+    return { success = true, data = { notes = notes } }
+end
 
-    if not util.rateLimit(cid, 'notes:save', SAVE_WINDOW, SAVE_MAX) then
-        return { success = false, message = 'Slow down a moment' }
-    end
-
-    if not store.exists(cid, id) and store.countFor(cid) >= N.MaxNotesPerPlayer then
-        return { success = false, message = 'Note limit reached' }
-    end
-
-    local body = type(payload.body) == 'string' and payload.body or ''
-    if #body > N.MaxBodyLength then body = body:sub(1, N.MaxBodyLength) end
-
-    local sketches     = sanitizeList(payload.sketches, N.MaxSketches, MAX_SKETCH_BYTES)
-    local images       = sanitizeList(payload.images, N.MaxImages, MAX_IMAGE_BYTES)
-    local sketchesJson = json.encode(sketches)
-    local imagesJson   = json.encode(images)
-    if #sketchesJson > MAX_MEDIA_JSON or #imagesJson > MAX_MEDIA_JSON then
-        return { success = false, message = 'Note is too large' }
-    end
-
-    local createdAt = type(payload.createdAt) == 'string' and #payload.createdAt <= 40 and payload.createdAt
-        or os.date('!%Y-%m-%dT%H:%M:%S.000Z')
-    local updatedAt = type(payload.updatedAt) == 'string' and #payload.updatedAt <= 40 and payload.updatedAt
-        or createdAt
-
-    store.upsert(cid, id, body, sketchesJson, imagesJson, createdAt, updatedAt)
-    return { success = true }
+---Saves a canonical shared note from another owned device UI.
+---@param src integer player server id
+---@param payload table shared-device note
+---@return table result envelope
+function actions.saveShared(src, payload)
+    return saveShared(src, payload)
 end
 
 ---Deletes one of the caller's notes, scoped to citizenid + id. A missing id deletes nothing.
@@ -138,6 +260,7 @@ function actions.delete(src, id)
     if not cid then return { success = false } end
     if type(id) ~= 'string' or id == '' then return { success = false, message = 'Bad note id' } end
     store.delete(cid, id)
+    notifyChanged(src, 'delete', nil, id)
     return { success = true, data = { id = id } }
 end
 
@@ -188,10 +311,14 @@ function actions.deliverShare(targetSrc, payload)
 
     local now = os.date('!%Y-%m-%dT%H:%M:%S.000Z')
     local id  = ('shr%d%d'):format(os.time(), math.random(100000, 999999))
-    store.upsert(tcid, id, body, sketchesJson, imagesJson, now, now)
+    local title, content = splitPhoneBody(body)
+    store.upsert(tcid, id, title, content, DEFAULT_COLOR, sketchesJson, imagesJson, now, now)
 
     TriggerClientEvent('sd-phone:client:notes:added', targetSrc, {
         id = id, body = body, sketches = sketches, images = images, createdAt = now, updatedAt = now,
+    })
+    TriggerClientEvent('sd-phone:client:device:dataChanged', targetSrc, {
+        domain = 'notes', operation = 'upsert', id = id,
     })
     return true
 end

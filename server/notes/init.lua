@@ -40,3 +40,16 @@ lib.callback.register('sd-phone:server:notes:share', function(src, payload)
     if type(payload) ~= 'table' then payload = {} end
     return actions.requestShare(src, payload.target, payload)
 end)
+
+---Shared-device interface. All validation, ownership and persistence stay inside this module.
+exports('listSharedNotes', function(source)
+    return actions.listShared(source)
+end)
+
+exports('saveSharedNote', function(source, payload)
+    return actions.saveShared(source, payload)
+end)
+
+exports('deleteSharedNote', function(source, id)
+    return actions.delete(source, id)
+end)

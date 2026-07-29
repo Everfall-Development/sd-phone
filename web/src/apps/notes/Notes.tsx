@@ -5,8 +5,8 @@ import { useDidEnter } from '@/hooks/useDidEnter';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { useNuiQuery } from '@/hooks/useNuiQuery';
 import { useSessionState } from '@/hooks/useSessionState';
-import { loadState, newId, saveState, noteHasContent } from './data';
-import type { Note, NotesState } from './data';
+import { applyNoteChange, loadState, newId, saveState, noteHasContent } from './data';
+import type { Note, NoteChange, NotesState } from './data';
 import { NoteEditor } from './NoteEditor';
 import { NotesList } from './NotesList';
 import { t } from '@/i18n';
@@ -21,6 +21,10 @@ export function Notes({ onClose }: { onClose: () => void }) {
         setState(prev => prev.notes.some(n => n.id === note.id)
             ? prev
             : { notes: [note, ...prev.notes] });
+    }, []));
+
+    useNuiEvent('sd-phone:notes:changed', useCallback((change: NoteChange) => {
+        setState(prev => applyNoteChange(prev, change));
     }, []));
 
     const commit = useCallback((next: NotesState) => {
