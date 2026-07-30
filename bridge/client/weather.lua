@@ -73,4 +73,10 @@ function weather.onChange(cb)
     end
 end
 
+-- Other Everfall interfaces can consume the exact same authoritative snapshot
+-- without mounting or focusing the phone NUI.
+exports('GetWeatherSnapshot', function()
+    return weather.read()
+end)
+
 return weather
