@@ -349,7 +349,9 @@ function actions.deposit(src, payload)
     if not society.available() then return fail('No company bank is available') end
     if (bank.getBalance(src) or 0) < amount then return fail('Insufficient personal funds') end
 
-    bank.removeMoney(src, amount, 'Company deposit')
+    if not bank.removeMoney(src, amount, 'Company deposit') then
+        return fail('Bank transfer was declined')
+    end
     if not society.addMoney(myJob, amount, 'Phone deposit') then
         bank.addMoney(src, amount, 'Deposit refund')
         return fail('Could not reach the company account')
@@ -376,7 +378,10 @@ function actions.withdraw(src, payload)
     if not society.removeMoney(myJob, amount, 'Phone withdrawal') then
         return fail('Could not reach the company account')
     end
-    bank.addMoney(src, amount, 'Company withdrawal')
+    if not bank.addMoney(src, amount, 'Company withdrawal') then
+        society.addMoney(myJob, amount, 'Withdrawal refund')
+        return fail('Could not reach your bank account')
+    end
     return ok({ myCompany = buildMyCompany(src) })
 end
 

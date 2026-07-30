@@ -102,10 +102,14 @@ require 'client.celltowerblips'
 
 ---@type table Phone visibility state: open/locked flags + cosmetic battery percentage.
 local phoneState = {
-    open       = false,  -- true while the NUI is focused on the phone
+    open       = false,  -- true while the phone UI is on screen
     locked     = true,   -- true while the lockscreen is shown
     battery    = config.StatusBar.BatteryStart, -- cosmetic, ticks down while open
 }
+
+-- Match LB Phone's public state-bag contract so other resources can distinguish an on-screen
+-- phone from a temporarily unfocused NUI.
+LocalPlayer.state:set('phoneOpen', false, true)
 
 ---@type boolean True while another resource has disabled the phone.
 local phoneDisabled = false
@@ -308,9 +312,11 @@ end)
 
 
 ---Opens the phone NUI onto the lockscreen, loads installed apps, focuses the NUI, and pushes a
----weather snapshot plus the session-start timestamp. Refuses while dead, swimming, or disabled.
+---weather snapshot plus the session-start timestamp. Refuses while another interface is focused,
+---or while the player is dead, swimming, or phone-disabled.
 local function OpenPhone()
     if phoneState.open then return end
+    if IsNuiFocused() then return end
 
     if phoneDisabled then
         notify.show({ description = 'You can\'t use your phone right now.', type = 'error' })
@@ -330,6 +336,7 @@ local function OpenPhone()
 
     phoneState.open   = true
     phoneState.locked = true
+    LocalPlayer.state:set('phoneOpen', true, true)
 
     CreateThread(function()
         while phoneState.open do
@@ -427,6 +434,7 @@ function ClosePhone()
     TriggerEvent('sd-phone:client:openState', false)
     TriggerServerEvent('sd-phone:server:phone:setOpen', false)
     SetNuiFocus(false, false)
+    LocalPlayer.state:set('phoneOpen', false, true)
     typingInPhone = false
     typingNumeric = false
     lookMode = false
@@ -442,6 +450,7 @@ end
 ---unique phones the server answers with a table carrying the SIM snapshot instead.
 local function TogglePhone()
     if phoneState.open then ClosePhone() return end
+    if IsNuiFocused() then return end
 
     local res = lib.callback.await('sd-phone:server:phone:resolveOpen', false, currentFrameColor)
     if not res then
@@ -914,6 +923,7 @@ end)
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
     if phoneState.open then SetNuiFocus(false, false) end
+    LocalPlayer.state:set('phoneOpen', false, true)
     pose.stop()
     if config.Phone.PropVisibleToOthers then LocalPlayer.state:set('sdPhone', false, true) end
     for source in pairs(remoteProps) do removeRemoteProp(source) end

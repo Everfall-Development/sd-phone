@@ -189,8 +189,8 @@ function actions.post(src, payload)
     local reward = nil
     if CFG.Milestones[current] then
         local amount = CFG.Milestones[current]
-        money.add(src, CFG.RewardAccount, amount, 'Streaks milestone reward')
-        if CFG.RewardAccount == 'bank' then
+        local rewarded = money.add(src, CFG.RewardAccount, amount, 'Streaks milestone reward')
+        if rewarded and CFG.RewardAccount == 'bank' then
             banking.addExternal(cid, {
                 label        = ('Day %d streak milestone'):format(current),
                 amount       = amount,
@@ -199,7 +199,7 @@ function actions.post(src, payload)
                 notify       = ('You received %s for hitting a %d day Streaks milestone!'):format(fmtMoney(amount), current),
             })
         end
-        reward = { day = current, reward = amount }
+        if rewarded then reward = { day = current, reward = amount } end
     end
 
     live.newPost({

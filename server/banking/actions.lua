@@ -178,19 +178,20 @@ function actions.send(src, payload)
 
     local rsrc = player.getSourceByIdentifier(rcid)
     if not rsrc then
-        if not (BK.AllowOffline and bank.balanceIsFramework()) then
+        if not (BK.AllowOffline and bank.canCreditOffline()) then
             return { success = false, message = 'Recipient is offline' }
         end
     end
 
-    bank.removeMoney(src, amount, ('Transfer to %s'):format(number))
+    if not bank.removeMoney(src, amount, ('Transfer to %s'):format(number)) then
+        return { success = false, message = 'Transfer was declined' }
+    end
 
     local credited
     if rsrc then
-        bank.addMoney(rsrc, amount, ('Transfer from %s'):format(myNumber))
-        credited = true
+        credited = bank.addMoney(rsrc, amount, ('Transfer from %s'):format(myNumber))
     else
-        credited = bank.addOffline(rcid, amount)
+        credited = bank.addOffline(rcid, amount, ('Transfer from %s'):format(myNumber))
     end
 
     if not credited then

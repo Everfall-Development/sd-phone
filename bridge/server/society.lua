@@ -4,6 +4,10 @@ local framework = require 'bridge.shared.framework'
 local job       = require 'bridge.server.job'
 ---@type table Player bridge (bridge.server.player): identifier -> online source resolution.
 local player    = require 'bridge.server.player'
+---@type table Everfall banking provider: authoritative society accounts.
+local efBanking = require 'bridge.server.providers.ef_banking'
+---@type table Everfall management provider: authoritative QBox multi-job roster.
+local efManagement = require 'bridge.server.providers.ef_management'
 
 ---@type table Society module; the table returned at end of file. Reads and moves a company's
 ---shared balance and reads its employee roster across the supported money + management resources;
@@ -11,6 +15,7 @@ local player    = require 'bridge.server.player'
 local society = {}
 
 -- Society money provider export shapes:
+--   ef_banking      : GetSocietyBalance / AddSocietyMoney / RemoveSocietyMoney (bare job key)
 --   qb-banking      : GetAccountBalance / AddMoney / RemoveMoney (account, amount, reason)
 --   Renewed-Banking : getAccountMoney / addAccountMoney / removeAccountMoney (account, amount)
 --   qbx_management  : GetAccount / AddMoney / RemoveMoney (account[, amount])
@@ -19,7 +24,7 @@ local society = {}
 --                     { money, addMoney, removeMoney }
 ---@type string[] Society money providers, in detection-priority order.
 local KNOWN = {
-    'qb-banking', 'Renewed-Banking', 'qbx_management', 'qb-management',
+    'ef_banking', 'qb-banking', 'Renewed-Banking', 'qbx_management', 'qb-management',
     'esx_addonaccount', 'esx_society',
 }
 
@@ -74,7 +79,9 @@ function society.getBalance(jobName, override)
     local name = provider()
     local acc  = accName(jobName, override)
 
-    if name == 'qb-banking' then
+    if name == 'ef_banking' then
+        return efBanking.getSocietyBalance(override or jobName) or 0
+    elseif name == 'qb-banking' then
         for _, key in ipairs({ acc, jobName }) do
             local ok, bal = pcall(function() return exports['qb-banking']:GetAccountBalance(key) end)
             if ok and type(bal) == 'number' and bal ~= 0 then return bal end
@@ -118,7 +125,9 @@ function society.addMoney(jobName, amount, reason, override)
     local acc = accName(jobName, override)
     reason = reason or 'Phone society deposit'
 
-    if name == 'qb-banking' then
+    if name == 'ef_banking' then
+        return efBanking.addSocietyMoney(override or jobName, amount, reason)
+    elseif name == 'qb-banking' then
         return try(function() return exports['qb-banking']:AddMoney(acc, amount, reason) end)
     elseif name == 'Renewed-Banking' then
         return try(function() return exports['Renewed-Banking']:addAccountMoney(override or jobName, amount) end)
@@ -149,7 +158,9 @@ function society.removeMoney(jobName, amount, reason, override)
     local acc = accName(jobName, override)
     reason = reason or 'Phone society withdrawal'
 
-    if name == 'qb-banking' then
+    if name == 'ef_banking' then
+        return efBanking.removeSocietyMoney(override or jobName, amount, reason)
+    elseif name == 'qb-banking' then
         return try(function() return exports['qb-banking']:RemoveMoney(acc, amount, reason) end)
     elseif name == 'Renewed-Banking' then
         return try(function() return exports['Renewed-Banking']:removeAccountMoney(override or jobName, amount) end)
@@ -227,6 +238,11 @@ end
 ---@param jobName string
 ---@return { citizenid: string, name: string, grade: number }[]
 function society.listEmployees(jobName)
+    if framework.name == 'qbx' and efManagement.active() then
+        local employees = efManagement.listEmployees(jobName)
+        if employees then return employees end
+    end
+
     local out = {}
 
     if framework.qb then

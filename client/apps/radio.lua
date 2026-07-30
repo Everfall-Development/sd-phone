@@ -1,3 +1,6 @@
+---@type table Radio bridge: ef_radio state ownership with pma-voice fallback.
+local radio = require 'bridge.client.radio'
+
 ---Maps a frequency (1.0-999.9) to an integer pma-voice radio channel: 12.5 -> 125. Anything
 ---below the 1.0 floor returns channel 0.
 ---@param freq number|string|nil user-facing frequency
@@ -21,14 +24,20 @@ local function pushStatus()
     SendNUIMessage({ action = 'sd-phone:radio:status', data = { on = state.on, freq = state.freq, standby = state.standby } })
 end
 
----Applies the session state to pma-voice (volume + channel; channel 0 when off), announces the
----channel to the server, and pushes the status to the NUI. Both exports are pcall'd.
+---Applies the session through the active radio provider, announces the normalised channel to the
+---phone server, and pushes status to the NUI.
 local function applyVoice()
     local channel = state.on and freqToChannel(state.freq) or 0
-    pcall(function() exports['pma-voice']:setRadioVolume(state.volume) end)
-    pcall(function() exports['pma-voice']:setRadioChannel(channel) end)
+    radio.setVolume(state.volume)
+    local applied = radio.setChannel(state.freq, state.on)
+    if state.on and not applied then
+        state.on = false
+        state.standby = false
+        channel = 0
+    end
     TriggerServerEvent('sd-phone:server:radio:presence', channel)
     pushStatus()
+    return applied
 end
 
 ---Fetches the saved frequency/volume once per session; the flag is set before the await and a
@@ -96,10 +105,14 @@ RegisterNUICallback('sd-phone:radio:set', function(payload, cb)
         state.volume = v
     end
 
-    applyVoice()
+    local applied = applyVoice()
     lib.callback('sd-phone:server:radio:save', false, function() end, { frequency = state.freq, volume = state.volume })
 
-    cb({ success = true, data = { on = state.on, freq = state.freq, volume = state.volume } })
+    cb({
+        success = applied or not newOn,
+        message = (not applied and newOn) and 'Radio is not available' or nil,
+        data = { on = state.on, freq = state.freq, volume = state.volume },
+    })
 end)
 
 ---@type fun(nuiAction: string, serverEvent: string) NUI->server pass-through registrar (client.nui).
@@ -129,7 +142,7 @@ end)
 RegisterNetEvent('sd-phone:client:radio:forceoff', function(data)
     state.on = false
     state.standby = false
-    pcall(function() exports['pma-voice']:setRadioChannel(0) end)
+    radio.setChannel(state.freq, false)
     SendNUIMessage({ action = 'sd-phone:radio:forceoff', data = data })
     pushStatus()
 end)

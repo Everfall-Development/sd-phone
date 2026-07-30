@@ -1,5 +1,8 @@
+---@type table Everfall vehicle-key provider: access-checked public lock path.
+local efVehiclekeys = require 'bridge.client.providers.ef_vehiclekeys'
+
 ---@type string[] Supported vehicle-key resources, in detection-priority order.
-local RESOURCES = { 'qbx_vehiclekeys', 'qb-vehiclekeys', 'qs-vehiclekeys', 'vehicles_keys', 'mk_vehiclekeys' }
+local RESOURCES = { 'ef_vehiclekeys', 'qbx_vehiclekeys', 'qb-vehiclekeys', 'qs-vehiclekeys', 'vehicles_keys', 'mk_vehiclekeys' }
 
 ---@type table Vehicle-lock module; the table returned at end of file. Reads and toggles lock
 ---state on the live entity found by plate; returns nil for vehicles not streamed nearby.
@@ -80,14 +83,19 @@ local function fobLights(veh)
 end
 
 ---Lock or unlock the nearby spawned vehicle for a plate, requesting network control first. Fires
----qbx_vehiclekeys' own lock path when active, else the native door lock + hazard flash; nil when
----not streamed nearby.
+---the active Everfall/QBox key resource's own lock path when available, else the native door lock
+---plus hazard flash; nil when not streamed nearby or access is denied.
 ---@param plate string
 ---@param locked boolean true = lock, false = unlock
 ---@return boolean|nil locked the applied state, or nil if no nearby entity
 function M.setLocked(plate, locked)
     local veh = findByPlate(plate)
     if not veh then return nil end
+
+    if M.active() == 'ef_vehiclekeys' then
+        return efVehiclekeys.setLocked(veh, norm(plate), locked)
+    end
+
     if NetworkGetEntityIsNetworked(veh) and not NetworkHasControlOfEntity(veh) then
         NetworkRequestControlOfEntity(veh)
     end

@@ -8,10 +8,9 @@ return {
     MinSend          = 1,           -- smallest allowed transfer
     MaxSend          = 100000000,   -- transfer cap
 
-    -- Allow sending to a character who is currently offline (best-effort credit via a
-    -- direct framework DB write). Only honoured when the active banking resource keeps
-    -- balances in the framework account; own-table resources (wasabi, okok, prism, tgg,
-    -- fd) require the recipient to be online.
+    -- Allow sending to a character who is currently offline. ef_banking uses its authoritative
+    -- identifier export; framework-backed systems use a guarded framework DB update. Other
+    -- own-table resources (wasabi, okok, prism, tgg, fd) require the recipient to be online.
     AllowOffline     = true,
 
     -- Person-to-person invoicing from the Wallet's Invoices tab (business invoicing is

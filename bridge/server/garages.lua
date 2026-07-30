@@ -4,6 +4,8 @@ local config = require 'configs.config'
 local framework = require 'bridge.shared.framework'
 ---@type table Player bridge (bridge.server.player): identifier lookups from a trusted source.
 local player = require 'bridge.server.player'
+---@type table Everfall garages provider: collection shape, waypoints, labels, mileage.
+local efGarages = require 'bridge.server.providers.ef_garages'
 
 ---@type table Garage bridge module; the table returned at end of file. Abstracts the supported
 ---third-party garage systems behind one normalised vehicle list for the Garages app. Read-only -
@@ -23,6 +25,8 @@ local BASE = framework.name == 'esx'
 -- Profile fields: garage/state columns are tried in order, first present wins; `stored`/`impound`
 -- are the state values meaning parked / impounded; `impoundCol` names a separate truthy flag;
 -- storedFallback=false opts out of statusOf's generic 1-means-stored fallback. Storage per system:
+--   ef_garages                                      : player_vehicles
+--       garage=`garage`, state 0 impounded / 1 garaged / 2 seized, mileage stored in kilometres
 --   qb-garages / qbx_garages / jg-advancedgarages : player_vehicles
 --       garage=`garage`, state=`state` (0 out / 1 stored / 2 impound),
 --       fuel=`fuel` (0-100), engine/body=`engine`/`body` (0-1000), props=`mods`
@@ -43,6 +47,7 @@ local DEFAULT_PROFILE = {
 }
 ---@type table<string, table> Exact column profiles, keyed by garage resource name.
 local PROFILES = {
+    ['ef_garages']         = efGarages.profile,
     ['qb-garages']         = { garage = { 'garage' },             state = { 'state' } },
     ['qbx_garages']        = { garage = { 'garage' },             state = { 'state' } },
     ['jg-advancedgarages'] = { garage = { 'garage_id', 'garage' },state = { 'in_garage' }, impoundCol = 'impound' },
@@ -196,21 +201,21 @@ local function spawnedPlates()
     return set
 end
 
----True when jg-vehiclemileage is running. Checked at call time.
+---True when ef_vehicles mileage tracking is running. Checked at call time.
 ---@return boolean
 local function mileageActive()
-    return GetResourceState('jg-vehiclemileage') == 'started'
+    return GetResourceState('ef_vehicles') == 'started'
 end
 
----@type string|nil Mileage display unit ('km' | 'mi'), resolved once from jg-vehiclemileage.
+---@type string|nil Mileage display unit ('km' | 'mi'), resolved once from ef_vehicles.
 local cachedUnit
 
----The mileage display unit from jg-vehiclemileage's own config, cached after the first read
+---The mileage display unit from ef_vehicles, cached after the first read
 ---('km' unless the resource reports miles).
 ---@return string unit 'km' | 'mi'
 local function mileageUnit()
     if cachedUnit then return cachedUnit end
-    local ok, u = pcall(function() return exports['jg-vehiclemileage']:getUnit() end)
+    local ok, u = pcall(function() return exports.ef_vehicles:GetUnit() end)
     cachedUnit = (ok and u == 'miles') and 'mi' or 'km'
     return cachedUnit
 end
@@ -222,7 +227,7 @@ end
 ---@return string|nil unit 'km' | 'mi'
 local function mileageFor(plate)
     if not plate or plate == '' then return nil end
-    local ok, km = pcall(function() return exports['jg-vehiclemileage']:getMileageByPlate(plate) end)
+    local ok, km = pcall(function() return exports.ef_vehicles:GetMileageByPlate(plate) end)
     if not ok or type(km) ~= 'number' then return nil end
     local unit = mileageUnit()
     local val  = unit == 'mi' and km * 0.621371 or km
@@ -247,6 +252,7 @@ local function loadGarageCollection()
     if (now - gcolAt) < MEMO_TTL then return gcolCache end
 
     local ok, data = pcall(function()
+        if ACTIVE == 'ef_garages'          then return efGarages.getCollection() end
         if ACTIVE == 'qbx_garages'        then return exports['qbx_garages']:GetGarages() end
         if ACTIVE == 'qb-garages'         then return exports['qb-garages']:getAllGarages() end
         if ACTIVE == 'jg-advancedgarages' then return exports['jg-advancedgarages']:getAllGarages() end
@@ -276,6 +282,9 @@ end
 local function systemCoords(gcol, row, garageId)
     if not ACTIVE then return nil end
     local ok, c = pcall(function()
+        if ACTIVE == 'ef_garages' then
+            return efGarages.getStoredCoords(gcol, garageId)
+        end
         if ACTIVE == 'op_garages' then
             local idx = row.vehicleGarage or garageId
             if idx == nil then return nil end
@@ -334,6 +343,9 @@ local function isCarDepot(vt) return vt == nil or vt == 'car' or vt == 'all' end
 local function impoundCoords(gcol, row, garageId)
     if not ACTIVE then return nil end
     local ok, c = pcall(function()
+        if ACTIVE == 'ef_garages' then
+            return efGarages.getImpoundCoords(gcol, row, garageId)
+        end
         if ACTIVE == 'op_garages' then
             if row.vehicleImpound == nil then return nil end
             local g = exports['op_garages']:getImpoundByIndex(tostring(row.vehicleImpound))
@@ -392,7 +404,7 @@ end
 function garages.activeSystem() return ACTIVE end
 
 ---Normalised list of the caller's owned vehicles: stored/out/impound status, condition fields,
----waypoints on stored/impounded rows, and mileage while jg-vehiclemileage runs. Read-only.
+---waypoints on stored/impounded rows, and mileage while ef_vehicles runs. Read-only.
 ---@param source number caller server id
 ---@return table[] vehicles (empty when disabled / no character / table missing)
 function garages.list(source)
@@ -409,7 +421,7 @@ function garages.list(source)
         return {}
     end
 
-    local useMileage = mileageActive()
+    local useMileage = ACTIVE == 'ef_garages' or mileageActive()
     local gcol       = loadGarageCollection()
     local spawned    = spawnedPlates()
     local out = {}
@@ -424,6 +436,7 @@ function garages.list(source)
 
         local garageName = pick(row, PROFILE.garage)
         if type(garageName) ~= 'string' or garageName == '' then garageName = nil end
+        local garageLabel = ACTIVE == 'ef_garages' and efGarages.getLabel(gcol, garageName) or garageName
 
         local rawModel = row.vehicle
         if type(rawModel) ~= 'string' or rawModel:sub(1, 1) == '{' then
@@ -436,9 +449,9 @@ function garages.list(source)
             model      = rawModel,
             hash       = row.hash,
             plate      = plate,
-            garage     = garageName or 'Garage',
+            garage     = garageLabel or 'Garage',
             location   = (status == 'impound' and 'Impound')
-                or (status == 'stored' and (garageName or 'Garage'))
+                or (status == 'stored' and (garageLabel or 'Garage'))
                 or 'Out on the street',
             status     = status,
             locked     = status ~= 'out',
@@ -452,7 +465,10 @@ function garages.list(source)
             veh.waypoint = resolveWaypoint(gcol, row, garageName, veh.location, status)
         end
 
-        if useMileage then
+        if ACTIVE == 'ef_garages' then
+            local m, unit = efGarages.getMileage(row)
+            if m then veh.mileage, veh.mileageUnit = m, unit end
+        elseif useMileage then
             local m, unit = mileageFor(plate)
             if m then veh.mileage, veh.mileageUnit = m, unit end
         end

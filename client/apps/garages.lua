@@ -89,8 +89,8 @@ RegisterNUICallback('sd-phone:garages:waypoint', function(payload, cb)
     cb({ success = true })
 end)
 
--- Live mileage (jg-vehiclemileage), resolved on the client.
----@type string|nil Cached 'mi'/'km' from jg-vehiclemileage's getUnit.
+-- Live mileage (ef_vehicles), resolved on the client.
+---@type string|nil Cached 'mi'/'km' from ef_vehicles' GetUnit export.
 local cachedUnit
 
 ---Returns the short unit label for mileage figures, cached after the first successful export
@@ -98,7 +98,7 @@ local cachedUnit
 ---@return string unit 'mi' or 'km'
 local function unitShort()
     if cachedUnit then return cachedUnit end
-    local ok, u = pcall(function() return exports['jg-vehiclemileage']:getUnit() end)
+    local ok, u = pcall(function() return exports.ef_vehicles:GetUnit() end)
     cachedUnit = (ok and u == 'miles') and 'mi' or 'km'
     return cachedUnit
 end
@@ -139,20 +139,20 @@ RegisterNUICallback('sd-phone:garages:setlock', function(payload, cb)
 end)
 
 ---React -> Lua: a vehicle's odometer reading: the live export value when the player sits in
----that vehicle, else the persisted value by plate; converts km -> mi per jg's unit and floors.
+---that vehicle, else the persisted value by plate; converts km -> mi per ef_vehicles' unit and floors.
 RegisterNUICallback('sd-phone:garages:mileage', function(payload, cb)
-    if GetResourceState('jg-vehiclemileage') ~= 'started' then return cb({ success = false }) end
+    if GetResourceState('ef_vehicles') ~= 'started' then return cb({ success = false }) end
     local plate = type(payload) == 'table' and payload.plate or nil
     if type(plate) ~= 'string' or plate == '' then return cb({ success = false }) end
 
     local km
     local veh = GetVehiclePedIsIn(PlayerPedId(), false)
     if veh ~= 0 and plateMatches(GetVehicleNumberPlateText(veh), plate) then
-        local ok, v = pcall(function() return exports['jg-vehiclemileage']:getMileage() end)
+        local ok, v = pcall(function() return exports.ef_vehicles:GetMileage() end)
         if ok and type(v) == 'number' then km = v end
     end
     if km == nil then
-        local ok, v = pcall(function() return exports['jg-vehiclemileage']:getMileageByPlate(plate) end)
+        local ok, v = pcall(function() return exports.ef_vehicles:GetMileageByPlate(plate) end)
         if ok and type(v) == 'number' then km = v end
     end
     if type(km) ~= 'number' then return cb({ success = false }) end

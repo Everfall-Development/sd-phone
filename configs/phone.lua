@@ -7,13 +7,14 @@ return {
     -- Order matters: the keybind opens the first owned variant when the
     -- last-used one isn't held. Set to {} to disable item-based opening.
     Items = {
-        { item = 'phone_black',  color = 'black'  },
-        { item = 'phone_blue',   color = 'blue'   },
-        { item = 'phone_green',  color = 'green'  },
+        { item = 'phone',        color = 'black' },
+        { item = 'phone_black',  color = 'black' },
+        { item = 'phone_blue',   color = 'blue' },
+        { item = 'phone_green',  color = 'green' },
         { item = 'phone_orange', color = 'orange' },
-        { item = 'phone_pink',   color = 'pink'   },
+        { item = 'phone_pink',   color = 'pink' },
         { item = 'phone_purple', color = 'purple' },
-        { item = 'phone_red',    color = 'red'    },
+        { item = 'phone_red',    color = 'red' },
         { item = 'phone_yellow', color = 'yellow' },
     },
 
@@ -51,13 +52,13 @@ return {
 
     -- Default keybind to open / close the phone. Players can rebind
     -- via FiveM's keybinding menu (Settings → Key Bindings → FiveM).
-    Keybind  = 'F1',
+    Keybind = 'M',
 
     -- Hide the phone while the player is dead, swimming, in water,
     -- or carrying a two-handed weapon. The phone is still openable
     -- otherwise - these are just safety blocks against use-on-floor
     -- exploits.
-    BlockWhileDead     = true,
+    BlockWhileDead = true,
     BlockWhileSwimming = true,
 
     -- Let the player walk around while the phone is open (the game keeps
@@ -131,17 +132,17 @@ return {
     -- streamed by the sd-phone-props resource - ensure it's started, or no
     -- prop will attach (the phone itself still works).
     HoldAnimation = true,
-    AnimDict      = 'cellphone@',
-    AnimName      = 'cellphone_text_read_base',
-    PropPrefix    = 'sd_phone_',
-    PropBone      = 28422,   -- SKEL_R_Hand
+    AnimDict = 'cellphone@',
+    AnimName = 'cellphone_text_read_base',
+    PropPrefix = 'sd_phone_',
+    PropBone = 28422, -- SKEL_R_Hand
 
     -- Fine-tune where the prop sits in the hand. The cellphone@ anim is
     -- authored so a phone welded to SKEL_R_Hand at zero offset/rotation lands
     -- in the texting grip (this is what npwd ships), so leave these at 0 unless
     -- a custom sd_phone_<colour> model has its origin off the grip point.
     PropOffset = vec3(0.0, 0.0, 0.0),
-    PropRot    = vec3(0.0, 0.0, 0.0),
+    PropRot = vec3(0.0, 0.0, 0.0),
 
     -- Where the prop sits while the Camera app is in LANDSCAPE mode. Landscape
     -- plays its own clip, which turns the wrist so the phone already lies on its
@@ -162,9 +163,9 @@ return {
     -- Flashlight beam emitted forward from the phone (lockscreen torch button).
     -- A spotlight cast from the player's hand in the direction they're looking.
     Flashlight = {
-        Color      = { 255, 244, 224 },   -- warm white
-        Distance   = 30.0,
+        Color = { 255, 244, 224 }, -- warm white
+        Distance = 30.0,
         Brightness = 1.4,
-        Radius     = 12.0,
+        Radius = 12.0,
     },
 }

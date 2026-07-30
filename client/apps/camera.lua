@@ -5,6 +5,8 @@ local config = require 'configs.config'
 local phonecam = require 'client.phonecam'
 ---@type table Hold pose and hand prop (client.pose): the landscape grip is a prop transform.
 local pose = require 'client.pose'
+---@type table HUD bridge: optional Everfall cinematic suppression.
+local HUD = require 'bridge.client.providers.ef_hud'
 
 ---Flips the active cellphone camera between rear and front (selfie).
 ---The old raw hash (0x2491A93618B7D838) is stale on current builds and threw "invalid native",
@@ -43,9 +45,7 @@ local frontCam = false
 ---@type boolean True while NUI focus (clickable cursor) is on.
 local cursorOn = true
 ---@type boolean True when entry hid the HUD.
-local hidHud   = false
----@type boolean True when entry hid the radar.
-local hidRadar = false
+local hidHUD   = false
 ---@type boolean True while the keyboard-control thread is alive.
 local inputLoopRunning = false
 ---@type boolean Mirror of the phone's open state (sd-phone:client:openState).
@@ -117,9 +117,9 @@ local function startInputLoop()
     end)
 end
 
----Takes the viewfinder view and hides the HUD/radar when they were not hidden already. The
----scripted cam frames it wherever movement is allowed, the native cell cam otherwise. Idempotent
----while already active.
+---Takes the viewfinder view, hides the native HUD when needed, and asks ef_hud to suppress its
+---surfaces. The scripted cam frames it wherever movement is allowed, the native cell cam
+---otherwise. Idempotent while already active.
 local function enterCameraView()
     if active then return end
     active   = true
@@ -139,13 +139,13 @@ local function enterCameraView()
 
     TriggerEvent('sd-phone:client:cameraMode', true, 'camera')
 
-    if not IsHudHidden()   then hidHud   = true; DisplayHud(false)   end
-    if not IsRadarHidden() then hidRadar = true; DisplayRadar(false) end
+    if not IsHudHidden()   then hidHUD   = true; DisplayHud(false)   end
+    HUD.setHUDCinematicMode(true)
 
     startInputLoop()
 end
 
----Hands the view back to whichever camera took it, re-shows the HUD/radar this module hid, and
+---Hands the view back to whichever camera took it, restores the HUD surfaces this module hid, and
 ---re-focuses the NUI. Idempotent while already inactive.
 local function exitCameraView()
     if not active then return end
@@ -162,8 +162,8 @@ local function exitCameraView()
 
     TriggerEvent('sd-phone:client:cameraMode', false, 'camera')
 
-    if hidHud   then DisplayHud(true);   hidHud   = false end
-    if hidRadar then DisplayRadar(true); hidRadar = false end
+    if hidHUD   then DisplayHud(true);   hidHUD   = false end
+    HUD.setHUDCinematicMode(false)
 
     -- The app unmounts behind the phone's close animation, so this can land after the phone is
     -- already gone; re-focusing then would strand a cursor on an empty screen.
@@ -308,6 +308,14 @@ RegisterNUICallback('sd-phone:camera:capture', function(data, cb)
 
     TriggerLatentServerEvent('sd-phone:server:photos:upload', bps, image, kind)
     cb({ success = true })
+end)
+
+---Re-applies suppression if ef_hud is restarted while the camera remains active.
+---@param res string name of the resource that started
+AddEventHandler('onClientResourceStart', function(res)
+    if res == 'ef_hud' and active then
+        HUD.setHUDCinematicMode(true)
+    end
 end)
 
 ---Resource-stop cleanup: stops the flash and exits the cell-cam view.

@@ -4,6 +4,8 @@ local framework = require 'bridge.shared.framework'
 local money     = require 'bridge.server.money'
 ---@type table Player bridge (bridge.server.player): citizenid/identifier lookups from src.
 local player    = require 'bridge.server.player'
+---@type table Everfall banking provider: authoritative personal + society account exports.
+local efBanking = require 'bridge.server.providers.ef_banking'
 
 ---@type table Banking module; the table returned at end of file. Multi-banking adapter: reads and
 ---moves a player's personal bank balance through a dedicated provider path where one exists, else
@@ -11,20 +13,21 @@ local player    = require 'bridge.server.player'
 local banking = {}
 
 -- Dedicated-path export shapes:
+--   ef_banking     : AddPlayerMoney/RemovePlayerMoney(identifier, 'bank', amount, reason, metadata)
 --   wasabi_banking : AddMoney/RemoveMoney/GetAccountBalance(identifier, amount, reason)
 --   omes_banking   : AddBankMoney/RemoveBankMoney/GetBankBalance(source, amount, desc)
 --   prism_banking  : AddBankingTransaction(source, type, amount, spendType, tax, name, desc)
 --   tgg-banking    : GetPersonalAccountByPlayerId(source).balance (read only)
 ---@type string[] Banking resources, in detection-priority order.
 local KNOWN = {
-    'wasabi_banking', 'omes_banking', 'prism_banking', 'tgg-banking', 'okokBanking',
+    'ef_banking', 'wasabi_banking', 'omes_banking', 'prism_banking', 'tgg-banking', 'okokBanking',
     'Renewed-Banking', 'qb-banking', 'esx_banking', 'qs-banking', 'fd_banking',
     'new_banking', 'ps-banking',
 }
 
 ---@type table<string, boolean> Resources that store the personal balance in their own tables.
 local OWN_TABLE = {
-    wasabi_banking = true, okokBanking = true, ['tgg-banking'] = true,
+    ef_banking = true, wasabi_banking = true, okokBanking = true, ['tgg-banking'] = true,
     prism_banking  = true, fd_banking  = true,
 }
 
@@ -55,13 +58,19 @@ function banking.balanceIsFramework()
     return not (name and OWN_TABLE[name])
 end
 
----Runs a provider export call; true only if it didn't error. The provider's return value is
----ignored.
+---True when the active provider can safely credit an offline character. ef_banking exposes an
+---identifier-based transaction path; framework-backed systems use the guarded schema update.
+---@return boolean
+function banking.canCreditOffline()
+    return banking.name == 'ef_banking' or banking.balanceIsFramework()
+end
+
+---Runs a provider export call; true when it did not error or explicitly decline.
 ---@param fn function
 ---@return boolean
 local function try(fn)
-    local ok = pcall(fn)
-    return ok
+    local ok, result = pcall(fn)
+    return ok and result ~= false
 end
 
 ---The player's current bank balance. Read-only. Own-table providers are read through their
@@ -70,7 +79,9 @@ end
 ---@return number
 function banking.getBalance(src)
     local name = banking.name
-    if name == 'wasabi_banking' then
+    if name == 'ef_banking' then
+        return efBanking.getBalance(src)
+    elseif name == 'wasabi_banking' then
         local id = player.getIdentifier(src)
         if id then
             local ok, bal = pcall(function() return exports.wasabi_banking:GetAccountBalance(id) end)
@@ -107,6 +118,22 @@ local function expect(src, amount, minus)
     list[#list + 1] = { amount = math.floor(tonumber(amount) or 0), minus = minus, expires = GetGameTimer() + 3000 }
 end
 
+---Drops the newest matching expectation after a provider declines the mutation.
+---@param src number
+---@param amount number
+---@param minus boolean
+local function discardExpected(src, amount, minus)
+    local list = expected[src]
+    if not list then return end
+    amount = math.floor(tonumber(amount) or 0)
+    for i = #list, 1, -1 do
+        if list[i].amount == amount and list[i].minus == minus then
+            table.remove(list, i)
+            return
+        end
+    end
+end
+
 ---Consumes one matching expected movement; false means the change came from another script.
 ---@param src number
 ---@param amount number
@@ -127,50 +154,67 @@ function banking.consumeExpected(src, amount, minus)
     return false
 end
 
----Credit the player's bank account. A dedicated provider path returns early only when its export
----call didn't error; otherwise the credit lands on the framework bank account.
+---Credit the player's bank account. ef_banking declines never fall through to the framework
+---projection. Other supported providers retain their established framework fallback.
 ---@param src number
 ---@param amount number
 ---@param reason? string
+---@return boolean
 function banking.addMoney(src, amount, reason)
     expect(src, amount, false)
     local name = banking.name
-    if name == 'wasabi_banking' then
+    if name == 'ef_banking' then
+        local applied = efBanking.addMoney(src, amount, reason)
+        if not applied then discardExpected(src, amount, false) end
+        return applied
+    elseif name == 'wasabi_banking' then
         local id = player.getIdentifier(src)
-        if id and try(function() exports.wasabi_banking:AddMoney(id, amount, reason or 'Phone transfer') end) then return end
+        if id and try(function() return exports.wasabi_banking:AddMoney(id, amount, reason or 'Phone transfer') end) then return true end
     elseif name == 'omes_banking' then
-        if try(function() exports['omes_banking']:AddBankMoney(src, amount, reason or 'Phone transfer') end) then return end
+        if try(function() return exports['omes_banking']:AddBankMoney(src, amount, reason or 'Phone transfer') end) then return true end
     elseif name == 'prism_banking' then
-        if try(function() exports['prism_banking']:AddBankingTransaction(src, 'deposit', amount, 'phone', false, reason or 'Phone transfer', reason or '') end) then return end
+        if try(function() return exports['prism_banking']:AddBankingTransaction(src, 'deposit', amount, 'phone', false, reason or 'Phone transfer', reason or '') end) then return true end
     end
-    money.add(src, 'bank', amount, reason)
+    local applied = money.add(src, 'bank', amount, reason)
+    if not applied then discardExpected(src, amount, false) end
+    return applied
 end
 
----Debit the player's bank account. Returns nothing and cannot report a declined debit; callers
----must pre-check getBalance >= amount first.
+---Debit the player's bank account. Returns true only when the provider accepted the debit.
 ---@param src number
 ---@param amount number
 ---@param reason? string
+---@return boolean
 function banking.removeMoney(src, amount, reason)
     expect(src, amount, true)
     local name = banking.name
-    if name == 'wasabi_banking' then
+    if name == 'ef_banking' then
+        local applied = efBanking.removeMoney(src, amount, reason)
+        if not applied then discardExpected(src, amount, true) end
+        return applied
+    elseif name == 'wasabi_banking' then
         local id = player.getIdentifier(src)
-        if id and try(function() exports.wasabi_banking:RemoveMoney(id, amount, reason or 'Phone transfer') end) then return end
+        if id and try(function() return exports.wasabi_banking:RemoveMoney(id, amount, reason or 'Phone transfer') end) then return true end
     elseif name == 'omes_banking' then
-        if try(function() exports['omes_banking']:RemoveBankMoney(src, amount, reason or 'Phone transfer') end) then return end
+        if try(function() return exports['omes_banking']:RemoveBankMoney(src, amount, reason or 'Phone transfer') end) then return true end
     elseif name == 'prism_banking' then
-        if try(function() exports['prism_banking']:AddBankingTransaction(src, 'withdraw', amount, 'phone', false, reason or 'Phone transfer', reason or '') end) then return end
+        if try(function() return exports['prism_banking']:AddBankingTransaction(src, 'withdraw', amount, 'phone', false, reason or 'Phone transfer', reason or '') end) then return true end
     end
-    money.remove(src, 'bank', amount, reason)
+    local applied = money.remove(src, 'bank', amount, reason)
+    if not applied then discardExpected(src, amount, true) end
+    return applied
 end
 
----Best-effort credit to an offline character's framework bank account via a parameterized DB
----write against each framework's default schema. True only when a row was actually updated.
+---Credit an offline character through ef_banking's identifier export, or a guarded framework DB
+---update for framework-backed providers. True only when the credit landed.
 ---@param citizenid string
 ---@param amount number
+---@param reason? string
 ---@return boolean ok
-function banking.addOffline(citizenid, amount)
+function banking.addOffline(citizenid, amount, reason)
+    if banking.name == 'ef_banking' then
+        return efBanking.addOffline(citizenid, amount, reason)
+    end
     if framework.qb then
         local ok, affected = pcall(function()
             return MySQL.update.await(

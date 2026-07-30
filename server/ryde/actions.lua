@@ -540,9 +540,11 @@ function actions.complete(src, payload)
 
     local paid = false
     if riderSrc and money.get(riderSrc, 'bank') >= trip.fare then
-        money.remove(riderSrc, 'bank', trip.fare, 'Ryde fare')
-        if driverSrc then money.add(driverSrc, 'bank', driverEarn, 'Ryde earnings') end
-        paid = true
+        local debited = money.remove(riderSrc, 'bank', trip.fare, 'Ryde fare')
+        if debited and driverSrc then
+            paid = money.add(driverSrc, 'bank', driverEarn, 'Ryde earnings')
+            if not paid then money.add(riderSrc, 'bank', trip.fare, 'Ryde fare refund') end
+        end
     end
 
     if paid then
@@ -637,9 +639,12 @@ function actions.rate(src, payload)
     local tipPaid = 0
     if tip > 0 and driverSrc then
         if money.get(src, 'bank') >= tip then
-            money.remove(src, 'bank', tip, 'Ryde tip')
-            money.add(driverSrc, 'bank', tip, 'Ryde tip')
-            tipPaid = tip
+            local debited = money.remove(src, 'bank', tip, 'Ryde tip')
+            if debited and money.add(driverSrc, 'bank', tip, 'Ryde tip') then
+                tipPaid = tip
+            elseif debited then
+                money.add(src, 'bank', tip, 'Ryde tip refund')
+            end
         end
     end
 
