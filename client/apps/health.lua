@@ -96,18 +96,24 @@ end)
 ---@type boolean True while the phone is on screen (gates the NUI pump below).
 local phoneOpen = false
 
+---Returns the current normalized snapshot for every connected interface.
+---@return { steps: integer, distanceM: number, heartRate: integer, state: string }
+local function snapshot()
+    return {
+        steps     = math.floor(stats.steps),
+        distanceM = stats.distanceM,
+        heartRate = math.floor(stats.heartRate + 0.5),
+        state     = stats.state,
+    }
+end
+
 ---Pushes the current stats snapshot into the NUI; steps floor, heart rate rounds.
 local function pushSnapshot()
-    SendNUIMessage({
-        action = 'sd-phone:health',
-        data = {
-            steps     = math.floor(stats.steps),
-            distanceM = stats.distanceM,
-            heartRate = math.floor(stats.heartRate + 0.5),
-            state     = stats.state,
-        },
-    })
+    SendNUIMessage({ action = 'sd-phone:health', data = snapshot() })
 end
+
+-- Other Everfall interfaces can read the same sampler without mounting the phone NUI.
+exports('GetHealthSnapshot', snapshot)
 
 ---Phone open/close signal from the phone shell; pushes one snapshot immediately on open.
 ---@param open boolean whether the phone is now on screen
