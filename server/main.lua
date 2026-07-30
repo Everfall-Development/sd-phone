@@ -45,6 +45,7 @@ require 'server.devseed'
 pcall(require, 'server.devswap')
 require 'server.notifications.init'
 require 'server.notes.init'
+require 'server.calendar.init'
 require 'server.documents.init'
 require 'server.homes.init'
 require 'server.maps.init'

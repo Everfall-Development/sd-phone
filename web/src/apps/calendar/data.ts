@@ -20,7 +20,12 @@ export interface CalState {
     dayNotes: Record<string, string>;
 }
 
-const empty: CalState = { events: [], dayNotes: {} };
+export type CalendarChange =
+    | { operation: 'upsert'; id: string; event: CalEvent }
+    | { operation: 'delete'; id: string }
+    | { operation: 'note'; dayKey: string; note: string };
+
+export const emptyCalendarState: CalState = { events: [], dayNotes: {} };
 
 export function loadState(): CalState {
     const raw = readJson<Partial<CalState>>(STORAGE_KEY);
@@ -29,11 +34,84 @@ export function loadState(): CalState {
             events:   Array.isArray(raw.events) ? raw.events : [],
             dayNotes: raw.dayNotes && typeof raw.dayNotes === 'object' ? raw.dayNotes : {},
         }
-        : empty;
+        : emptyCalendarState;
 }
 
 export function saveState(s: CalState): void {
     writeJson(STORAGE_KEY, s);
+}
+
+export function applyCalendarChange(state: CalState, change: CalendarChange): CalState {
+    if (change.operation === 'delete') {
+        return { ...state, events: state.events.filter(event => event.id !== change.id) };
+    }
+    if (change.operation === 'note') {
+        const dayNotes = { ...state.dayNotes };
+        if (change.note) dayNotes[change.dayKey] = change.note;
+        else delete dayNotes[change.dayKey];
+        return { ...state, dayNotes };
+    }
+
+    const event = change.event;
+    return {
+        ...state,
+        events: state.events.some(item => item.id === event.id)
+            ? state.events.map(item => item.id === event.id ? event : item)
+            : [...state.events, event],
+    };
+}
+
+function textField(value: unknown, key: string): string | null {
+    if (typeof value !== 'object' || value === null) return null;
+    const field = Reflect.get(value, key);
+    return typeof field === 'string' ? field : null;
+}
+
+export function parseCalendarEvent(value: unknown): CalEvent | null {
+    if (typeof value !== 'object' || value === null) return null;
+    const id = textField(value, 'id');
+    const eventDayKey = textField(value, 'dayKey');
+    const title = textField(value, 'title');
+    const location = textField(value, 'location');
+    const notes = textField(value, 'notes');
+    const color = textField(value, 'color');
+    const allDay = Reflect.get(value, 'allDay');
+    const start = Reflect.get(value, 'start');
+    const end = Reflect.get(value, 'end');
+    if (!id || !eventDayKey || !title || location === null || notes === null || !color) return null;
+    if (typeof allDay !== 'boolean') return null;
+    if (start !== undefined && start !== null && typeof start !== 'string') return null;
+    if (end !== undefined && end !== null && typeof end !== 'string') return null;
+    return {
+        id,
+        dayKey: eventDayKey,
+        title,
+        allDay,
+        start: typeof start === 'string' ? start : undefined,
+        end: typeof end === 'string' ? end : undefined,
+        location,
+        notes,
+        color,
+    };
+}
+
+export function parseCalendarChange(value: unknown): CalendarChange | null {
+    if (typeof value !== 'object' || value === null) return null;
+    const operation = Reflect.get(value, 'operation');
+    if (operation === 'upsert') {
+        const event = parseCalendarEvent(Reflect.get(value, 'event'));
+        return event ? { operation, id: event.id, event } : null;
+    }
+    if (operation === 'delete') {
+        const id = textField(value, 'id');
+        return id ? { operation, id } : null;
+    }
+    if (operation === 'note') {
+        const eventDayKey = textField(value, 'dayKey');
+        const note = textField(value, 'note');
+        return eventDayKey && note !== null ? { operation, dayKey: eventDayKey, note } : null;
+    }
+    return null;
 }
 
 
