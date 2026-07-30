@@ -44,6 +44,10 @@ local MAX_TICK_DISTANCE_M = 50.0
 ---@type integer Sampler cadence in ms.
 local TICK_MS = 250
 
+---@type boolean Whether Health is switched on in configs/apps.lua. Off means no sampler at all:
+---this is the one app that costs every player's game thread whether or not they open it.
+local APP_ENABLED = require('client.appids').enabled('health')
+
 ---@type table Session running totals: steps, distanceM (on-foot metres), heartRate (bpm), activity state.
 local stats = {
     steps     = 0,
@@ -55,6 +59,8 @@ local stats = {
 ---Per-tick sampler: classifies the ped, accumulates steps + on-foot distance, and smooths heart
 ---rate toward the per-state target. Runs for the lifetime of the resource.
 CreateThread(function()
+    if not APP_ENABLED then return end
+
     local lastPos
     local lastTickMs = GetGameTimer()
 
@@ -124,6 +130,8 @@ end)
 
 -- 1s NUI pump while the phone is on screen.
 CreateThread(function()
+    if not APP_ENABLED then return end
+
     while true do
         Wait(1000)
         if phoneOpen then pushSnapshot() end

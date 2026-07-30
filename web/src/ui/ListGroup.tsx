@@ -33,7 +33,7 @@ export function GroupCard({ children, className = '', radius = 10, header, foote
             )}
             {card}
             {footer && (
-                <div className="px-3 pt-2 text-[13px] font-normal text-ios-gray">
+                <div className="px-3 pt-2 text-[14px] font-normal text-ios-gray">
                     {footer}
                 </div>
             )}
@@ -57,7 +57,7 @@ export function ListGroup({ children, header, footer }: {
                 {children}
             </GroupCard>
             {footer && (
-                <div className="px-7 pt-2 text-[13px] font-normal text-ios-gray">
+                <div className="px-7 pt-2 text-[14px] font-normal text-ios-gray">
                     {footer}
                 </div>
             )}
@@ -84,7 +84,7 @@ export function ListRow({ label, sub, value, chevron, divider, destructive, sele
     const showChevron = !isPicker && (chevron !== undefined ? chevron : value === undefined);
     const labelColor  = destructive ? 'text-ios-red' : 'text-black dark:text-white';
     const labelSize   = large ? 'text-[18px]' : 'text-[17px]';
-    const subSize     = large ? 'text-[14px]' : 'text-[13px]';
+    const subSize     = large ? 'text-[15px]' : 'text-[14px]';
     return (
         <button
             type="button"

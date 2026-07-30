@@ -25,12 +25,21 @@ end
 ---@type boolean True while the local mic is muted for the active call.
 local micMuted = false
 
----Mutes/unmutes the local mic entirely (call AND proximity - a muted caller isn't talking).
----Mumble's audio input distance gates capture at the source; near-zero captures nothing.
+---Mutes/unmutes the local mic entirely (call AND proximity).
+---Switching the voice target to 0 (the default, which carries no call channels) prevents audio
+---from reaching the pma-voice call channel; zeroing the input distance silences proximity too.
+---The target is only touched when pma-voice is running, since the index is its own.
 ---@param on boolean
 local function setMicMuted(on)
     micMuted = on == true
-    MumbleSetAudioInputDistance(micMuted and 0.05 or 9999.0)
+    local pma = GetResourceState('pma-voice') == 'started'
+    if micMuted then
+        if pma then MumbleSetVoiceTarget(0) end
+        MumbleSetAudioInputDistance(0.0)
+    else
+        if pma then MumbleSetVoiceTarget(1) end
+        MumbleSetAudioInputDistance(9999.0)
+    end
 end
 
 ---React to Lua: the call UI's Mute button.
@@ -88,6 +97,13 @@ end)
 RegisterNetEvent('sd-phone:client:call:ended', function(data)
     if micMuted then setMicMuted(false) end
     pushCall('sd-phone:call:ended', data)
+end)
+
+---A call torn down because tower coverage went. `lost` marks whether it was this player's own
+---signal that dropped; the phone raises a dialog either way.
+---@param data { lost: boolean }
+RegisterNetEvent('sd-phone:client:call:dropped', function(data)
+    pushCall('sd-phone:call:dropped', data)
 end)
 
 ---Flips the active cell-cam between the rear and front (selfie) lens.

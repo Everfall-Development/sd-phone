@@ -12,6 +12,8 @@ local badges   = require 'server.badges.init'
 local moderation = require 'server.admin.moderation'
 ---@type table Payphone persistence (server.payphone.store): booth number -> location lookups.
 local payphones = require 'server.payphone.store'
+---@type table Cell service (server.service): authoritative signal level per player.
+local service  = require 'server.service'
 
 ---@type table Actions module; the table returned at end of file.
 local actions = {}
@@ -350,6 +352,86 @@ end
 
 actions.endCall = endCall
 
+---@type number|false Seconds a live call tolerates a signal too weak to hold it, false to never drop.
+local DROP_AFTER = (function()
+    local cfg = config.CellTowers
+    local n = cfg and cfg.DropCallsAfter
+    if n == false or n == nil then return false end
+    return math.max(0, tonumber(n) or 0)
+end)()
+
+---@type integer Milliseconds between coverage sweeps while at least one call is live.
+local COVERAGE_MS = 2000
+---@type integer Milliseconds between sweeps while nothing is connected.
+local COVERAGE_IDLE_MS = 5000
+
+---@type table<number, number> Channel -> os.time() a participant first fell below call signal.
+local losingSignal = {}
+
+---Whether one leg of a call still has the signal to hold it. A payphone leg is a landline, so it
+---always does; an unresolvable player is left alone rather than cut off.
+---@param party table session side, { src, cid, ... }
+---@param isPayphone boolean
+---@return boolean
+local function legHasSignal(party, isPayphone)
+    if isPayphone then return true end
+    if not party or not party.src then return true end
+    return service.allows(party.src, 'call')
+end
+
+---Ends a call because coverage went and tells each side whose signal was the one that went, so
+---the phone can raise the dialog. Only that fact travels: the wording and its translation are the
+---NUI's business.
+---@param channel number
+---@param s table live session
+---@param callerOk boolean caller still had signal
+---@param calleeOk boolean callee still had signal
+local function dropForNoService(channel, s, callerOk, calleeOk)
+    local caller, callee = s.caller, s.callee
+    endCall(channel, 'noservice')
+
+    if caller and caller.src then
+        TriggerClientEvent('sd-phone:client:call:dropped', caller.src, { lost = not callerOk })
+    end
+    if callee and callee.src then
+        TriggerClientEvent('sd-phone:client:call:dropped', callee.src, { lost = not calleeOk })
+    end
+end
+
+-- Coverage watch. There is no event for "player walked out of range", so a live call has to be
+-- looked at; the sweep is bounded by the number of connected calls rather than players, and idles
+-- when nothing is up. Ringing calls are left alone: an unanswered ring ends on its own.
+CreateThread(function()
+    if DROP_AFTER == false then return end
+    while true do
+        if next(sessions) == nil then
+            losingSignal = {}
+            Wait(COVERAGE_IDLE_MS)
+        else
+            local now = os.time()
+            for channel, s in pairs(sessions) do
+                if s.state ~= 'active' then
+                    losingSignal[channel] = nil
+                else
+                    local callerOk = legHasSignal(s.caller, s.payphoneSide == 'caller')
+                    local calleeOk = legHasSignal(s.callee, s.payphoneSide == 'callee')
+                    if callerOk and calleeOk then
+                        losingSignal[channel] = nil
+                    else
+                        local since = losingSignal[channel] or now
+                        losingSignal[channel] = since
+                        if now - since >= DROP_AFTER then
+                            losingSignal[channel] = nil
+                            dropForNoService(channel, s, callerOk, calleeOk)
+                        end
+                    end
+                end
+            end
+            Wait(COVERAGE_MS)
+        end
+    end
+end)
+
 ---@type integer Dial budget window in ms.
 local DIAL_WINDOW = 30000
 ---@type integer Dials allowed per window, counted even when the dial fails. Redialling a busy
@@ -372,6 +454,7 @@ function actions.dial(source, payload)
     if sessionForSource(source) or ringForSource(source) or boothRingForSource(source) then return fail('You are already on a call') end
     if not util.rateLimit(cid, 'call:dial', DIAL_WINDOW, DIAL_PER_WINDOW) then return fail('Slow down') end
     if settings.isAirplane(cid) then return fail('Airplane Mode is on') end
+    if not service.allows(source, 'call') then return fail('No Service') end
     local muted = moderation.guard(cid, 'calls'); if muted then return muted end
 
     local myNumber = settings.ensurePhoneNumber(cid)
@@ -423,6 +506,7 @@ function actions.dial(source, payload)
     if not targetSrc then return fail('This number is currently unavailable') end
     if not reachable(targetSrc) then return fail('This number is currently unavailable') end
     if settings.isAirplane(targetCid) then return fail('This number is currently unavailable') end
+    if not service.allows(targetSrc, 'call') then return fail('This number is currently unavailable') end
     if contacts.isBlocked(targetCid, digits(myNumber)) then return fail('This number is currently unavailable') end
     if sessionForSource(targetSrc) or ringForSource(targetSrc) then return fail('Line busy') end
 
@@ -483,6 +567,7 @@ function actions.dialPayphone(source, payload)
     if not targetSrc then return fail('This number is currently unavailable') end
     if not reachable(targetSrc) then return fail('This number is currently unavailable') end
     if settings.isAirplane(targetCid) then return fail('This number is currently unavailable') end
+    if not service.allows(targetSrc, 'call') then return fail('This number is currently unavailable') end
     if callerNumber ~= '' and contacts.isBlocked(targetCid, callerNumber) then return fail('This number is currently unavailable') end
     if sessionForSource(targetSrc) or ringForSource(targetSrc) then return fail('Line busy') end
 
@@ -557,6 +642,7 @@ function actions.callGroup(source, targets, displayName, displayNumber)
     if not cid then return fail('Player not found') end
     if sessionForSource(source) or ringForSource(source) then return fail('You are already on a call') end
     if settings.isAirplane(cid) then return fail('Airplane Mode is on') end
+    if not service.allows(source, 'call') then return fail('No Service') end
 
     local myNumber = digits(settings.ensurePhoneNumber(cid))
 
@@ -564,7 +650,8 @@ function actions.callGroup(source, targets, displayName, displayNumber)
     for _, t in ipairs(targets) do
         if t.src and t.src ~= source
             and not sessionForSource(t.src) and not ringForSource(t.src)
-            and not settings.isAirplane(t.cid) and reachable(t.src) then
+            and not settings.isAirplane(t.cid) and reachable(t.src)
+            and service.allows(t.src, 'call') then
             ringTargets[t.src] = {
                 src    = t.src,
                 cid    = t.cid,

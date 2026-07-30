@@ -15,6 +15,7 @@ import { AppDeck, FullscreenStage, type DeckAppCtx } from '@/shell/AppDeck';
 import { Homescreen }  from '@/shell/Homescreen';
 import { useBadgeStore } from '@/stores/badgeStore';
 import { useBatteryStore } from '@/stores/batteryStore';
+import { useWidgetData } from '@/stores/widgetDataStore';
 import { useSessionStore } from '@/stores/sessionStore';
 import { useDownloadStore, useDownloadingIds } from '@/stores/downloadStore';
 import { useLocaleStore } from '@/stores/localeStore';
@@ -34,6 +35,7 @@ import { fetchNui, isFiveM } from '@/core/nui';
 import { usePhoneReset } from '@/core/phoneReset';
 import { resetAuth } from '@/stores/authStore';
 import { setMailDomain } from '@/core/accountsApi';
+import { setNumberFormat } from '@/lib/phone';
 import { voiceHub, setLocalTalking } from '@/media/nearbyVoice';
 import { useMusicLibrary } from '@/stores/musicLibraryStore';
 import { DEFAULT_FRAME_COLOR } from '@/shell/frameColors';
@@ -41,10 +43,13 @@ import { ThemeProvider, useTheme, useThemeStore } from '@/stores/themeStore';
 import { useCallStore } from '@/stores/callStore';
 import type { AppDef } from '@/core/types';
 import { listInstalledApps, installApp, uninstallApp, loadHomeLayout, saveHomeLayout, parseLayout, type SavedLayout } from '@/apps/appstore/appsApi';
-import { customToAppDef, installedCustomIds, isCustomApp, setCustomInstalled, useCustomApps, useCustomAppsStore } from '@/stores/customAppsStore';
+import { clearCustomInstalled, customToAppDef, isCustomApp, setCustomInstalled, useCustomApps, useCustomAppsStore, withCustomInstalled } from '@/stores/customAppsStore';
 import { resolveWallpaper } from '@/shell/wallpapers';
 import { NoSimScreen } from '@/shell/NoSimScreen';
 import { useNoService, useNoSim, useSimStore } from '@/stores/simStore';
+import { useNoServiceArea, useServiceBars, useServiceStore } from '@/stores/serviceStore';
+import { useWifiConnected, useWifiStore } from '@/stores/wifiStore';
+import { useBluetoothStore } from '@/stores/bluetoothStore';
 import { resetContacts, syncSimNumber } from '@/stores/contactsStore';
 import { playOnce } from '@/apps/settings/tonePlayer';
 import { resolveTone, toneUrl } from '@/apps/settings/tones';
@@ -228,6 +233,7 @@ function AppContent() {
     // status bar shows "No Service" and only number-dependent actions (call/text) are refused
     // server-side. (In legacy mode useNoSim drives the full-screen wall instead.)
     const noService = useNoService();
+    const noServiceArea = useNoServiceArea();
     // A pulled SIM drops the phone straight back to the (blocked) lock state: no app stays
     // foregrounded and the switcher/control-center close.
     useEffect(() => {
@@ -364,6 +370,9 @@ function AppContent() {
         if (!data) return;
         if (data.locale) useLocaleStore.getState().applyServerDefault(data.locale);   // server default, unless the player already picked their own
         if (data.mailDomain) setMailDomain(data.mailDomain);
+        if (data.number) setNumberFormat(data.number.formats, data.number.length);
+        useWifiStore.getState().setConfigured(data.wifiConfigured === true);
+        useBluetoothStore.getState().setConfigured(data.bluetoothConfigured === true);
         useSimStore.getState().apply(data.sim);
         applySimProfile(data.sim?.enabled, data.sim?.hasSim, data.sim?.number, data.sim?.device, data.sim?.profile);
         syncSimNumber(data.sim);
@@ -399,10 +408,10 @@ function AppContent() {
         // payload still counts as ready - the Homescreen must never wait on a follow-up that
         // isn't coming. The dev harness fetches from its local mock instead.
         if (data.installedApps) {
-            setInstalledApps(new Set([...data.installedApps, ...installedCustomIds()]));
+            setInstalledApps(withCustomInstalled(data.installedApps));
             setAppsReady(true);
         } else {
-            if (!isFiveM) void listInstalledApps().then(ids => setInstalledApps(new Set([...ids, ...installedCustomIds()])));
+            if (!isFiveM) void listInstalledApps().then(ids => setInstalledApps(withCustomInstalled(ids)));
             setAppsReady(!isFiveM);
         }
         // Under unique phones the localStorage layout fallback is another profile's - server only.
@@ -422,7 +431,7 @@ function AppContent() {
     // fetched after the reveal so the server round-trip never delayed the phone appearing.
     useNuiEvent('sd-phone:apps', useCallback((data) => {
         if (!data) return;
-        setInstalledApps(new Set([...(data.installedApps ?? []), ...installedCustomIds()]));
+        setInstalledApps(withCustomInstalled(data.installedApps ?? []));
         setSavedLayout(data.homeLayout ? parseLayout(data.homeLayout) : null);
         setAppsReady(true);
     }, []));
@@ -646,7 +655,7 @@ function AppContent() {
     const finishInstall = useCallback((id: string) => {
         setInstalledApps(prev => new Set(prev).add(id));
         if (isCustomApp(id)) { setCustomInstalled(id, true); void fetchNui('customApps/lifecycle', { id, action: 'install' }); }
-        else void installApp(id).then(ids => setInstalledApps(new Set(ids)));
+        else void installApp(id).then(ids => setInstalledApps(withCustomInstalled(ids)));
     }, []);
     const pumpDownloads = useCallback(function pump() {
         const id = downloadQueue.current[0];
@@ -683,7 +692,7 @@ function AppContent() {
         setRecentApps(prev => prev.filter(x => x !== id));
         setForegroundKeys(m => { const n = { ...m }; delete n[id]; return n; });
         if (isCustomApp(id)) { setCustomInstalled(id, false); void fetchNui('customApps/lifecycle', { id, action: 'uninstall' }); }
-        else void uninstallApp(id).then(ids => setInstalledApps(new Set(ids)));
+        else void uninstallApp(id).then(ids => setInstalledApps(withCustomInstalled(ids)));
     }, []);
     const handleSaveLayout = useCallback((layout: SavedLayout) => {
         saveHomeLayout(layout);
@@ -707,6 +716,71 @@ function AppContent() {
 
     useNuiEvent('sd-phone:battery', useCallback((pct) => {
         if (typeof pct === 'number') { setBattery(pct); useBatteryStore.getState().setLevel(pct); }
+    }, []));
+
+    useNuiEvent('sd-phone:service', useCallback((data) => {
+        useServiceStore.getState().apply(data);
+    }, []));
+
+    useNuiEvent('sd-phone:wifi', useCallback((data) => {
+        useWifiStore.getState().apply(data);
+    }, []));
+
+    // Home screen widgets render while their app is closed, so the pushes those apps listen for
+    // are mirrored into a store here, the same way the battery level is above.
+    useNuiEvent('sd-phone:weather', useCallback((data) => {
+        useWidgetData.getState().setWeather(data ?? null);
+    }, []));
+
+    // The Wallet widget has no app to fetch for it, so it also refreshes on the pushes Banking
+    // itself listens to - money can arrive while the home screen is already on screen.
+    const refreshWallet = useCallback(() => {
+        void import('@/apps/banking/bankingApi')
+            .then(m => m.fetchOverview())
+            .then(o => useWidgetData.getState().setWallet(o.balance, o.cash, o.transactions))
+            .catch(() => {});
+    }, []);
+    useNuiEvent('sd-phone:bank:received', refreshWallet);
+    useNuiEvent('sd-phone:bank:txAdded', refreshWallet);
+
+    // Health is pushed on a timer whether or not the Health app is open, so the Activity widget
+    // just mirrors it. No fetch of its own.
+    useNuiEvent('sd-phone:health', useCallback((data) => {
+        useWidgetData.getState().setHealth(data ?? null);
+    }, []));
+
+    /**
+     * Server reads for the widgets that have no push of their own.
+     *
+     * Driven off the home screen BECOMING VISIBLE rather than the phone opening: vehicles get
+     * taken out in the world, articles get published by other players, and holdings change inside
+     * the Stocks app - none of which fire an event this UI can hear. Refreshing on arrival at the
+     * home screen catches all of it, while an idle phone and a phone sitting inside an app both
+     * cost nothing. Deliberately NOT watchMarket(): subscribing to per-tick pushes is the right
+     * cost for an open Stocks screen and the wrong one for a tile you glance at.
+     */
+    const homeVisible = !!view && !locked && !currentApp;
+    useEffect(() => {
+        if (!homeVisible) return;
+        refreshWallet();
+        void import('@/apps/garages/garagesApi')
+            .then(m => m.fetchVehicles())
+            .then(v => useWidgetData.getState().setVehicles(v))
+            .catch(() => {});
+        void import('@/apps/stocks/stocksApi')
+            .then(m => m.fetchMarket())
+            .then(mk => useWidgetData.getState().setAssets(mk.assets))
+            .catch(() => {});
+        void import('@/apps/weazelnews/weazelnewsApi')
+            .then(m => m.weazelFeed())
+            .then(f => useWidgetData.getState().setNews(f.articles, f.ticker))
+            .catch(() => {});
+    }, [homeVisible, refreshWallet]);
+
+    // Free liveness: these ticks are already arriving whenever the Stocks app is watching, so
+    // mirroring them means leaving the app does not drop you onto a frozen tile.
+    useNuiEvent('sd-phone:stocks:prices', useCallback((data) => {
+        if (data?.assets) useWidgetData.getState().setPrices(data.assets);
     }, []));
 
     useNuiEvent('sd-phone:session', useCallback((data) => {
@@ -736,6 +810,12 @@ function AppContent() {
     ringingAlarmRef.current = ringingAlarm;
     const [ringingSince, setRingingSince] = useState(0);
     const lastViewRef  = useRef<ViewState | null>(null);
+    const peekBars = useServiceBars(lastViewRef.current?.signal ?? 4);
+    const liveBars = useServiceBars(view?.signal ?? 4);
+    const wifiNetwork = useWifiConnected();
+    const wifiConfigured = useWifiStore(s => s.configured);
+    const wifiUsable  = !(airplaneMode || noSim || !ccWifi);
+    const wifiBars = wifiUsable ? (wifiNetwork?.bars ?? null) : null;
     const phoneOpenRef = useRef(false);
     phoneOpenRef.current = !!view;
     const lockedRef = useRef(locked);
@@ -1118,6 +1198,7 @@ function AppContent() {
         for (const k of doomed) window.localStorage.removeItem(k);
         if (scope === 'erase') {
             resetAuth();
+            clearCustomInstalled();
             useMusicLibrary.getState().reset();
             useLocaleStore.getState().hydrate();
             void fetchNui('sd-phone:settings:factoryReset');
@@ -1178,12 +1259,13 @@ function AppContent() {
                         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/30 via-black/5 to-transparent" />
                         <StatusBar
                             use24h={hour24}
-                            signal={(airplaneMode || noSim || noService) ? 0 : (lv?.signal ?? 4)}
-                            showWifi={(airplaneMode || noSim) ? false : ((lv?.showWifi ?? true) && ccWifi)}
+                            signal={(airplaneMode || noSim || noService) ? 0 : peekBars}
+                            showWifi={(airplaneMode || noSim || wifiConfigured) ? false : ((lv?.showWifi ?? true) && ccWifi)}
+                            wifiBars={wifiBars}
                             battery={battery}
                             airplane={airplaneMode}
                             noSim={noSim}
-                            noService={noService}
+                            noService={noService || noServiceArea}
                             light
                         />
                         {ringingAlarm ? (
@@ -1281,12 +1363,13 @@ function AppContent() {
                 {!(showSetup && setupHello && !noSim) && (
                     <StatusBar
                         use24h={hour24}
-                        signal={(airplaneMode || noSim || noService) ? 0 : view.signal}
-                        showWifi={(airplaneMode || noSim) ? false : (view.showWifi && ccWifi)}
+                        signal={(airplaneMode || noSim || noService) ? 0 : liveBars}
+                        showWifi={(airplaneMode || noSim || wifiConfigured) ? false : (view.showWifi && ccWifi)}
+                        wifiBars={wifiBars}
                         battery={battery}
                         airplane={airplaneMode}
                         noSim={noSim}
-                        noService={noService}
+                        noService={noService || noServiceArea}
                         light={noSim ? true : (showSetup ? false : (cameraMode ? true : (statusLightOverride ?? statusBarAutoLight ?? statusLight)))}
                         controlHint={!showSetup && !cameraMode && !ccOpen && !homeEditing && !noSim}
                         editing={homeEditing && onHomescreen}

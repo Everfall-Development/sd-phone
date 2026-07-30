@@ -6,6 +6,8 @@ local banking = require 'server.banking.actions'
 local settings = require 'server.settings.store'
 ---@type table Shared server helpers (server.util): digit/trim/finite guards at the shim boundary.
 local util = require 'server.util'
+---@type table Cell service (server.service): the configured masts behind GetCellTowers.
+local service = require 'server.service'
 
 local registerLbExport, stubLbExport = shim.registerLbExport, shim.stubLbExport
 
@@ -38,9 +40,18 @@ registerLbExport('AddTransaction', function(phoneNumber, amount, company, logo)
     })
 end)
 
--- Misc surfaces with no sd-phone equivalent; GetConfig/GetCellTowers answer with empty tables.
+-- Misc surfaces with no sd-phone equivalent; GetConfig answers with an empty table.
 stubLbExport('GetConfig', {})
-stubLbExport('GetCellTowers', {})
+
+---GetCellTowers() -> vector3[]. lb-phone's shape is a bare coordinate list, so sd-phone's
+---per-tower `range` is dropped; read it via exports['sd-phone']:getServiceLevel(source). A
+---switched-off system reports no masts, matching the full service every phone actually has.
+registerLbExport('GetCellTowers', function()
+    local out = {}
+    for _, mast in ipairs(service.towers()) do out[#out + 1] = mast.tower end
+    return out
+end)
+
 stubLbExport('AirShare', nil)
 stubLbExport('AddCheck', 0, 'is not supported; use exports["sd-phone"]:setDisabled(true) on the client instead')
 stubLbExport('RemoveCheck', false, 'is not supported; use exports["sd-phone"]:setDisabled(false) on the client instead')

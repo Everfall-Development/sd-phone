@@ -26,11 +26,12 @@ const catalogs: Record<string, Record<string, string>> = {
 // chunk. Dropping a new locales/<code>.json in is all it takes: the loader and both language
 // pickers derive from the files (a UI rebuild is still required, as the catalogs are bundled).
 const catalogFiles = import.meta.glob<{ default: Record<string, unknown> }>(
-    ['../../../locales/*.json', '!**/en.json']);
+    ['../../../locales/*.json', '!../../../locales/en.json']);
 
 const loaders: Record<string, () => Promise<{ default: Record<string, unknown> }>> = {};
 for (const path in catalogFiles) {
     const code = path.slice(path.lastIndexOf('/') + 1).replace('.json', '');
+    if (code === 'en') continue;
     loaders[code] = catalogFiles[path];
 }
 

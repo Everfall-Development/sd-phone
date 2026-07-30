@@ -90,6 +90,8 @@ local function markChanged()
 end
 
 CreateThread(function()
+    if not util.appEnabled('vibez') then return end
+
     while true do
         Wait(CHANGED_MS)
         if changedDirty then

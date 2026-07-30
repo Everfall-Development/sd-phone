@@ -18,11 +18,8 @@ local function stripCol(col)
     return ("REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(%s,'-',''),' ',''),'(',''),')',''),'+',''),'.','')"):format(col)
 end
 
----Generates a random 10-digit phone number as raw digits, with the first block starting at 200.
----@return string number ten raw digits
-local function genNumber()
-    return ('%03d%03d%04d'):format(math.random(200, 989), math.random(100, 999), math.random(0, 9999))
-end
+---@type fun(): string Random number candidate at config.Phone.Number.Length (server.util).
+local genNumber = util.randomNumber
 
 ---Returns a varchar column's declared character cap, or nil when the column is missing or not
 ---length-bounded (information_schema probe).
@@ -83,6 +80,9 @@ function store.ensureSchema()
             setup_done         TINYINT(1)   NULL,
             theme              VARCHAR(8)   NULL,
             dark_theme         VARCHAR(16)  NULL,
+            icon_theme         VARCHAR(16)  NULL,
+            icon_custom        LONGTEXT     NULL,
+            show_app_names     TINYINT(1)   NULL,
             ringtone_volume    TINYINT UNSIGNED NULL,
             call_volume        TINYINT UNSIGNED NULL,
             locale             VARCHAR(8)   NULL,
@@ -1005,6 +1005,419 @@ function store.setDarkTheme(citizenid, theme)
     ]], { citizenid, theme })
 end
 
+-- Mirrors the IconThemeId union in web/src/stores/iconThemeStore.ts.
+---@type table<string, boolean> Whitelist of storable home-screen icon themes.
+local ICON_THEMES = {
+    default = true, glass  = true, flat = true, light = true, pastel   = true,
+    sand    = true, slate  = true, tinted = true, noir = true, mono    = true,
+    contrast = true,
+}
+
+-- Mirrors CUSTOM_ID / MAX_CUSTOM_ICON_THEMES in web/src/stores/iconThemeStore.ts.
+---@type integer Bounds on the slug after the 'custom:' prefix. 8 keeps the longest id at 15
+---characters, which is what lets a player-designed theme share icon_theme VARCHAR(16).
+local CUSTOM_ICON_MIN, CUSTOM_ICON_MAX = 4, 8
+---@type integer Cap on player-designed icon themes per character.
+local MAX_CUSTOM_ICON_THEMES = 12
+---@type integer Cap on a player-designed theme's display name, in characters.
+local CUSTOM_ICON_NAME_MAX = 24
+-- Mirrors IconTexture in web/src/stores/iconThemeStore.ts.
+---@type table<string, boolean> Whitelist of tile textures a theme may name.
+local ICON_TEXTURES = { none = true, noise = true, dots = true, stripes = true }
+---@type integer Cap on per-app overrides inside one theme.
+local MAX_ICON_OVERRIDES = 40
+---@type table|nil Lua 5.4 utf8 library, so a name is bounded in characters rather than bytes.
+local utf8lib = _G.utf8
+
+---True for a well-formed player-designed icon theme id, whether or not that theme exists. The
+---UI applies before it saves, so an id is accepted here and falls back to Default at render.
+---@param v any client-supplied icon theme id
+---@return boolean
+local function isCustomIconId(v)
+    if type(v) ~= 'string' or not v:match('^custom:[a-z0-9]+$') then return false end
+    local slug = #v - #'custom:'
+    return slug >= CUSTOM_ICON_MIN and slug <= CUSTOM_ICON_MAX
+end
+
+---True for any icon theme id this server will store: a built-in, or a well-formed custom one.
+---@param v any client-supplied icon theme id
+---@return boolean
+local function isStorableIconTheme(v)
+    return (type(v) == 'string' and ICON_THEMES[v] == true) or isCustomIconId(v)
+end
+
+---Returns a player's home-screen icon theme, defaulting to 'default'. Read-only.
+---@param citizenid string framework per-character id
+---@return string iconTheme a built-in id or a 'custom:' one
+function store.getIconTheme(citizenid)
+    if not citizenid or citizenid == '' then return 'default' end
+    local row = MySQL.single.await('SELECT icon_theme FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local v = row and row.icon_theme
+    if isStorableIconTheme(v) then return v end
+    return 'default'
+end
+
+---Persists a player's home-screen icon theme (upsert), whitelisted to the built-ins plus any
+---well-formed custom id.
+---@param citizenid string framework per-character id
+---@param theme any client-supplied icon theme id
+function store.setIconTheme(citizenid, theme)
+    if not citizenid or citizenid == '' then return end
+    if not isStorableIconTheme(theme) then return end
+    MySQL.update.await([[
+        INSERT INTO phone_settings (citizenid, icon_theme) VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE icon_theme = VALUES(icon_theme)
+    ]], { citizenid, theme })
+end
+
+---A trimmed name's length in characters, or nil when the string is not valid UTF-8.
+---@param s string trimmed display name
+---@return integer|nil chars
+local function nameLength(s)
+    if utf8lib then return utf8lib.len(s) end
+    return #s
+end
+
+---Validates one colour recipe: the source, the base colour a 'fixed' source needs, and the
+---optional toward/amount mix pair, which is all-or-nothing. Nil for anything malformed.
+---@param v any client-supplied recipe
+---@return table|nil recipe { from: string, color: string|nil, toward: string|nil, amount: number|nil }
+local function sanitizeRecipe(v)
+    if type(v) ~= 'table' then return nil end
+    if v.from ~= 'accent' and v.from ~= 'fixed' then return nil end
+    local clean = { from = v.from }
+    if v.color ~= nil then
+        local hex = sanitizeHex(v.color)
+        if not hex then return nil end
+        clean.color = hex
+    elseif v.from == 'fixed' then
+        return nil
+    end
+    if (v.toward ~= nil) ~= (v.amount ~= nil) then return nil end
+    if v.toward ~= nil then
+        local hex = sanitizeHex(v.toward)
+        if not hex then return nil end
+        if type(v.amount) ~= 'number' or v.amount ~= v.amount then return nil end
+        if v.amount < 0 or v.amount > 1 then return nil end
+        clean.toward = hex
+        clean.amount = v.amount
+    end
+    return clean
+end
+
+---A finite number inside [lo, hi], or nil. The type test drops NaN, and both infinities fall out
+---of the bounds compare.
+---@param v any client-supplied number
+---@param lo number inclusive lower bound
+---@param hi number inclusive upper bound
+---@return number|nil value
+local function boundedNumber(v, lo, hi)
+    if type(v) ~= 'number' or v ~= v then return nil end
+    if v < lo or v > hi then return nil end
+    return v
+end
+
+---True for a plausible app or glyph id: at most 32 characters of [a-z0-9_-] behind an
+---alphanumeric first one, which is also what keeps '__proto__' out of the overrides map.
+---@param v any client-supplied id
+---@return boolean
+local function isAppId(v)
+    if type(v) ~= 'string' or #v > 32 then return false end
+    return v:match('^[a-z0-9][a-z0-9_%-]*$') ~= nil
+end
+
+---Validates a theme's per-app overrides, capped at MAX_ICON_OVERRIDES entries. An empty table is
+---a legal no-op; nil refuses the whole theme.
+---@param v any client-supplied override map
+---@return table|nil overrides appId -> { background: table|nil, glyph: table|nil, icon: string|nil }
+local function sanitizeIconOverrides(v)
+    if type(v) ~= 'table' then return nil end
+    local out, count = {}, 0
+    for key, entry in pairs(v) do
+        if not isAppId(key) or type(entry) ~= 'table' then return nil end
+        local clean, fields = {}, 0
+        if entry.background ~= nil then
+            clean.background = sanitizeRecipe(entry.background)
+            if not clean.background then return nil end
+            fields = fields + 1
+        end
+        if entry.glyph ~= nil then
+            clean.glyph = sanitizeRecipe(entry.glyph)
+            if not clean.glyph then return nil end
+            fields = fields + 1
+        end
+        if entry.icon ~= nil then
+            if not isAppId(entry.icon) then return nil end
+            clean.icon = entry.icon
+            fields = fields + 1
+        end
+        if fields == 0 then return nil end
+        count = count + 1
+        if count > MAX_ICON_OVERRIDES then return nil end
+        out[key] = clean
+    end
+    return out
+end
+
+---Validates one label style block: colour recipe, CSS font weight and the show flag.
+---@param v any client-supplied label block
+---@return table|nil label { color: table|nil, weight: number|nil, show: boolean|nil }
+local function sanitizeIconLabel(v)
+    if type(v) ~= 'table' then return nil end
+    local clean = {}
+    if v.color ~= nil then
+        clean.color = sanitizeRecipe(v.color)
+        if not clean.color then return nil end
+    end
+    if v.weight ~= nil then
+        clean.weight = boundedNumber(v.weight, 100, 900)
+        if not clean.weight then return nil end
+    end
+    if v.show ~= nil then
+        if type(v.show) ~= 'boolean' then return nil end
+        clean.show = v.show
+    end
+    return clean
+end
+
+---Validates a tile border: the colour recipe is required, the width is 0-4 pixels.
+---@param v any client-supplied border block
+---@return table|nil border { color: table, width: number }
+local function sanitizeIconBorder(v)
+    if type(v) ~= 'table' then return nil end
+    local color = sanitizeRecipe(v.color)
+    local width = boundedNumber(v.width, 0, 4)
+    if not color or not width then return nil end
+    return { color = color, width = width }
+end
+
+---Validates a theme's wallpaper exactly as the wallpaper setting does, but refusing anything
+---sanitizeWallpaper would have had to rewrite: a theme is stored whole or not at all.
+---@param v any client-supplied wallpaper key or URL
+---@return string|nil wallpaper
+local function sanitizeThemeWallpaper(v)
+    local clean = sanitizeWallpaper(v)
+    if clean ~= v then return nil end
+    return clean
+end
+
+---Writes the optional look fields a theme shares with its dark variant onto `clean`. False when a
+---field that IS present is malformed, which drops the whole theme.
+---@param v table client-supplied theme or variant
+---@param clean table destination, mutated in place
+---@return boolean ok
+local function applyIconTraits(v, clean)
+    if v.radius ~= nil then
+        clean.radius = boundedNumber(v.radius, 0, 0.5)
+        if not clean.radius then return false end
+    end
+    if v.background2 ~= nil then
+        clean.background2 = sanitizeRecipe(v.background2)
+        if not clean.background2 then return false end
+    end
+    if v.angle ~= nil then
+        clean.angle = boundedNumber(v.angle, 0, 360)
+        if not clean.angle then return false end
+    end
+    if v.gloss ~= nil then
+        clean.gloss = boundedNumber(v.gloss, 0, 1)
+        if not clean.gloss then return false end
+    end
+    if v.texture ~= nil then
+        if type(v.texture) ~= 'string' or not ICON_TEXTURES[v.texture] then return false end
+        clean.texture = v.texture
+    end
+    if v.glyphScale ~= nil then
+        clean.glyphScale = boundedNumber(v.glyphScale, 0.6, 1.4)
+        if not clean.glyphScale then return false end
+    end
+    if v.glyphWeight ~= nil then
+        clean.glyphWeight = boundedNumber(v.glyphWeight, 1, 3)
+        if not clean.glyphWeight then return false end
+    end
+    if v.hue ~= nil then
+        clean.hue = boundedNumber(v.hue, -180, 180)
+        if not clean.hue then return false end
+    end
+    if v.saturation ~= nil then
+        clean.saturation = boundedNumber(v.saturation, 0, 2)
+        if not clean.saturation then return false end
+    end
+    if v.border ~= nil then
+        clean.border = sanitizeIconBorder(v.border)
+        if not clean.border then return false end
+    end
+    if v.bevel ~= nil then
+        if type(v.bevel) ~= 'boolean' then return false end
+        if v.bevel then clean.bevel = true end
+    end
+    if v.glow ~= nil then
+        clean.glow = boundedNumber(v.glow, 0, 1)
+        if not clean.glow then return false end
+    end
+    if v.label ~= nil then
+        local label = sanitizeIconLabel(v.label)
+        if not label then return false end
+        if next(label) ~= nil then clean.label = label end
+    end
+    if v.overrides ~= nil then
+        local overrides = sanitizeIconOverrides(v.overrides)
+        if not overrides then return false end
+        if next(overrides) ~= nil then clean.overrides = overrides end
+    end
+    if v.wallpaper ~= nil then
+        clean.wallpaper = sanitizeThemeWallpaper(v.wallpaper)
+        if not clean.wallpaper then return false end
+    end
+    return true
+end
+
+---Validates a theme's dark-mode variant: every field the theme itself carries, minus a nested
+---variant of its own.
+---@param v any client-supplied variant
+---@return table|nil variant
+local function sanitizeIconVariant(v)
+    if type(v) ~= 'table' or v.dark ~= nil then return nil end
+    local clean = {}
+    if v.background ~= nil then
+        clean.background = sanitizeRecipe(v.background)
+        if not clean.background then return nil end
+    end
+    if v.glyph ~= nil then
+        clean.glyph = sanitizeRecipe(v.glyph)
+        if not clean.glyph then return nil end
+    end
+    if v.depth ~= nil then
+        if type(v.depth) ~= 'boolean' then return nil end
+        if v.depth then clean.depth = true end
+    end
+    if not applyIconTraits(v, clean) then return nil end
+    return clean
+end
+
+---Validates one player-designed icon theme, rebuilding it from only the sanitised fields so no
+---client JSON is ever stored verbatim. Nil when any field is malformed.
+---@param v any client-supplied theme
+---@return table|nil theme { id: string, name: string, background: table, glyph: table, ... }
+local function sanitizeCustomIconTheme(v)
+    if type(v) ~= 'table' or not isCustomIconId(v.id) then return nil end
+    if type(v.name) ~= 'string' then return nil end
+    local name = (v.name:gsub('^%s+', ''):gsub('%s+$', ''))
+    local chars = nameLength(name)
+    if not chars or chars < 1 or chars > CUSTOM_ICON_NAME_MAX then return nil end
+    if v.depth ~= nil and type(v.depth) ~= 'boolean' then return nil end
+    local background = sanitizeRecipe(v.background)
+    local glyph      = sanitizeRecipe(v.glyph)
+    if not background or not glyph then return nil end
+    local clean = { id = v.id, name = name, background = background, glyph = glyph }
+    if v.depth == true then clean.depth = true end
+    if not applyIconTraits(v, clean) then return nil end
+    if v.dark ~= nil then
+        local dark = sanitizeIconVariant(v.dark)
+        if not dark then return nil end
+        if next(dark) ~= nil then clean.dark = dark end
+    end
+    return clean
+end
+
+---Decodes an icon_custom column into validated themes; an unparseable column, a malformed entry
+---or a duplicate id is dropped rather than served.
+---@param raw any stored column value
+---@return table[] themes
+local function decodeCustomIconThemes(raw)
+    if not raw or raw == '' then return {} end
+    local ok, decoded = pcall(json.decode, raw)
+    if not ok or type(decoded) ~= 'table' then return {} end
+    local out, seen = {}, {}
+    for i = 1, #decoded do
+        local clean = sanitizeCustomIconTheme(decoded[i])
+        if clean and not seen[clean.id] and #out < MAX_CUSTOM_ICON_THEMES then
+            seen[clean.id] = true
+            out[#out + 1] = clean
+        end
+    end
+    return out
+end
+
+---Reads a player's player-designed icon themes (JSON array column); an unparseable column or a
+---malformed entry yields nothing for that entry. Read-only.
+---@param citizenid string framework per-character id
+---@return table[] themes
+function store.getCustomIconThemes(citizenid)
+    if not citizenid or citizenid == '' then return {} end
+    local row = MySQL.single.await('SELECT icon_custom FROM phone_settings WHERE citizenid = ?', { citizenid })
+    if not row then return {} end
+    return decodeCustomIconThemes(row.icon_custom)
+end
+
+---Upserts one player-designed icon theme by id, capped at MAX_CUSTOM_ICON_THEMES per character.
+---@param citizenid string framework per-character id
+---@param theme any client-supplied theme definition
+---@return boolean ok, string|nil reason 'invalid' or 'limit' when refused
+function store.saveCustomIconTheme(citizenid, theme)
+    if not citizenid or citizenid == '' then return false, 'invalid' end
+    local clean = sanitizeCustomIconTheme(theme)
+    if not clean then return false, 'invalid' end
+    local list = store.getCustomIconThemes(citizenid)
+    local at
+    for i = 1, #list do
+        if list[i].id == clean.id then at = i break end
+    end
+    if not at and #list >= MAX_CUSTOM_ICON_THEMES then return false, 'limit' end
+    list[at or (#list + 1)] = clean
+    MySQL.update.await([[
+        INSERT INTO phone_settings (citizenid, icon_custom) VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE icon_custom = VALUES(icon_custom)
+    ]], { citizenid, json.encode(list) })
+    return true, nil
+end
+
+---Removes one player-designed icon theme; a character using it falls back to Default in the same
+---statement, so no row is ever left pointing at a theme that no longer exists.
+---@param citizenid string framework per-character id
+---@param id any theme id to remove
+---@return boolean removed
+function store.deleteCustomIconTheme(citizenid, id)
+    if not citizenid or citizenid == '' or not isCustomIconId(id) then return false end
+    local list = store.getCustomIconThemes(citizenid)
+    local kept, removed = {}, false
+    for i = 1, #list do
+        if list[i].id == id then removed = true else kept[#kept + 1] = list[i] end
+    end
+    if not removed then return false end
+    MySQL.update.await([[
+        UPDATE phone_settings
+        SET icon_custom = ?,
+            icon_theme  = CASE WHEN icon_theme = ? THEN 'default' ELSE icon_theme END
+        WHERE citizenid = ?
+    ]], { json.encode(kept), id, citizenid })
+    return true
+end
+
+---Returns true if a player wants app names printed under their home-screen icons, defaulting to
+---true when the show_app_names column is NULL. Read-only.
+---@param citizenid string framework per-character id
+---@return boolean showAppNames
+function store.getShowAppNames(citizenid)
+    if not citizenid or citizenid == '' then return true end
+    local row = MySQL.single.await('SELECT show_app_names FROM phone_settings WHERE citizenid = ?', { citizenid })
+    if row and row.show_app_names ~= nil then
+        return isTruthy(row.show_app_names)
+    end
+    return true
+end
+
+---Persists a player's show-app-names preference (upsert), coerced to a strict boolean.
+---@param citizenid string framework per-character id
+---@param on boolean print app names under the home-screen icons
+function store.setShowAppNames(citizenid, on)
+    if not citizenid or citizenid == '' then return end
+    MySQL.update.await([[
+        INSERT INTO phone_settings (citizenid, show_app_names) VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE show_app_names = VALUES(show_app_names)
+    ]], { citizenid, on == true and 1 or 0 })
+end
+
 ---Persists a player's tone selections, leaving any other settings intact; a nil or invalid
 ---field is left unchanged.
 ---@param citizenid string framework per-character id
@@ -1117,11 +1530,25 @@ function store.snapshot(citizenid)
     end
 
     local pin = row and sanitizePin(row.passcode) or nil
-    local hour24 = (row and row.hour24 ~= nil)
-        and (row.hour24 == true or tonumber(row.hour24) == 1)
-        or defaultHour24()
+    -- Explicit if, not `cond and value or default`: hour24 is a BOOLEAN, so an explicitly stored
+    -- false collapses through the `or` and silently reports the configured default instead of the
+    -- player's choice. store.getHour24 above already spells it out this way.
+    local hour24
+    if row and row.hour24 ~= nil then
+        hour24 = row.hour24 == true or tonumber(row.hour24) == 1
+    else
+        hour24 = defaultHour24()
+    end
     local dark = row and row.dark_theme
     if dark ~= 'graphite' and dark ~= 'black' and dark ~= 'warm' then dark = 'graphite' end
+    local icons = row and row.icon_theme
+    if not isStorableIconTheme(icons) then icons = 'default' end
+    local showAppNames
+    if row and row.show_app_names ~= nil then
+        showAppNames = isTruthy(row.show_app_names)
+    else
+        showAppNames = true
+    end
 
     return {
         ringtone         = row and row.ringtone or nil,
@@ -1132,6 +1559,9 @@ function store.snapshot(citizenid)
         setupDone        = row ~= nil and (row.setup_done == true or tonumber(row.setup_done) == 1),
         theme            = (row and row.theme == 'dark') and 'dark' or 'light',
         darkTheme        = dark,
+        iconTheme        = icons,
+        customIconThemes = row and decodeCustomIconThemes(row.icon_custom) or {},
+        showAppNames     = showAppNames,
         lockClock        = row and decodeColumn(row.lock_clock, nil) or nil,
         wallpaper        = (row and row.wallpaper ~= '') and row.wallpaper or nil,
         wallpaperHome    = (row and row.wallpaper_home ~= '') and row.wallpaper_home or nil,

@@ -30,7 +30,7 @@ return {
     TargetDistance = 1.5,
 
     -- Use ox_lib context menus + input dialog instead of the payphone UI page.
-    UseOxLibMenu = true,
+    UseOxLibMenu = false,
 
     -- Coin-operated calling. When enabled, outbound calls demand a coin first:
     -- the LCD reads INSERT COIN, clicking the coin slot charges Cost from the
@@ -60,13 +60,16 @@ return {
         Idle  = 'fxfr_ptj_1_male',
         Exit  = 'exit_left_male',
         EnterProp = 'fxfr_pcn_1_intro_phone',
-        -- Booth model -> animatable variant spawned in its place while the handset
-        -- is lifted. The variant should look like the booth it replaces; models
-        -- without an entry skip the swap (handset stays on the hook, ped anim only).
+        -- Booth model -> animatable variant spawned in its place while the handset is lifted.
+        -- The variant should look like the booth it replaces. The scripted clips are authored
+        -- against these variants, so a model with NO entry here plays no scene at all: it still
+        -- targets and dials normally, just without the animation. Add an entry to give a model
+        -- the scene.
+        -- Only map a booth to a variant that LOOKS like it. sf_prop_sf_phonebox_01b_s is the
+        -- Contract-DLC animatable booth built on the 01b shell, so only the 01b family swaps
+        -- cleanly; pointing 01a or 01c at it visibly changes the booth mid-call.
         AnimProps = {
-            prop_phonebox_01a = 'sf_prop_sf_phonebox_01b_s',
             prop_phonebox_01b = 'sf_prop_sf_phonebox_01b_s',
-            prop_phonebox_01c = 'sf_prop_sf_phonebox_01b_s',
             p_phonebox_01b_s  = 'sf_prop_sf_phonebox_01b_s',
         },
     },

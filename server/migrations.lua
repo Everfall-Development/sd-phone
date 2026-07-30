@@ -27,6 +27,9 @@ local COLUMNS = {
         phone_scale       = 'phone_scale TINYINT UNSIGNED NULL',
         phone_align       = 'phone_align VARCHAR(16) NULL',
         brightness        = 'brightness TINYINT UNSIGNED NULL',
+        icon_theme        = 'icon_theme VARCHAR(16) NULL',
+        icon_custom       = 'icon_custom LONGTEXT NULL',
+        show_app_names    = 'show_app_names TINYINT(1) NULL',
     },
 
     phone_documents = {

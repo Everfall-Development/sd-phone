@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Mic, MicOff, Phone, Plus, User, Video, Volume2 } from 'lucide-react';
 
+import { AlertDialog } from '@/ui/AlertDialog';
 import { resolveWallpaper } from '@/shell/wallpapers';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { fetchNui } from '@/core/nui';
@@ -36,6 +37,7 @@ export function CallLayer({ wallpaper }: { wallpaper?: string }) {
     const [keypadOpen, setKeypadOpen]     = useState(false);
     const [contactsOpen, setContactsOpen] = useState(false);
     const [dtmfDialed, setDtmfDialed]     = useState('');
+    const [droppedLost, setDroppedLost]   = useState<boolean | null>(null);
     const [now, setNow]         = useState(() => Date.now());
     const [videoPhase, setVideoPhase]         = useState<'off' | 'requesting' | 'incoming' | 'active'>('off');
     const [videoInitiator, setVideoInitiator] = useState(false);
@@ -68,6 +70,10 @@ export function CallLayer({ wallpaper }: { wallpaper?: string }) {
         resetControls();
     }, [resetControls]));
 
+    useNuiEvent('sd-phone:call:dropped', useCallback((data) => {
+        setDroppedLost(data?.lost === true);
+    }, []));
+
     useNuiEvent('sd-phone:video:request', useCallback(() => setVideoPhase('incoming'), []));
     useNuiEvent('sd-phone:video:accept',  useCallback(() => { setVideoInitiator(true); setVideoPhase('active'); }, []));
     useNuiEvent('sd-phone:video:stop',    useCallback(() => setVideoPhase('off'), []));
@@ -95,7 +101,20 @@ export function CallLayer({ wallpaper }: { wallpaper?: string }) {
         return () => window.clearInterval(id);
     }, [phase]);
 
-    if (!phase) return null;
+    const dropNotice = droppedLost === null ? null : (
+        <AlertDialog
+            title={t('phone.callDropped','Call Dropped')}
+            message={droppedLost
+                ? t('phone.youLostService','You lost service.')
+                : t('phone.peerLostService','The other caller lost service.')}
+            confirmLabel={t('phone.ok','OK')}
+            hideCancel
+            onCancel={() => setDroppedLost(null)}
+            onConfirm={() => setDroppedLost(null)}
+        />
+    );
+
+    if (!phase) return dropNotice;
 
     const title    = name || formatPhone(number) || t('phone.unknown','Unknown');
     const elapsed  = startedAt ? Math.max(0, Math.floor((now - startedAt) / 1000)) : 0;

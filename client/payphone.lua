@@ -113,6 +113,14 @@ local function beginBoothAnim(entity)
     local model   = GetEntityModel(entity)
     local variant = animVariants[model]
     dbg('beginBoothAnim: entity=%d model=%s variant=%s coords=%s', entity, modelName(model), tostring(variant), tostring(GetEntityCoords(entity)))
+
+    -- The scripted clips are authored against the swappable booth variants. Without one the
+    -- handset stays on the hook and the ped mimes holding nothing, so play no scene at all.
+    if not variant then
+        dbg('beginBoothAnim skipped: model %s has no AnimProps variant, no scene', modelName(model))
+        return
+    end
+
     if not loadSceneAssets(variant) then
         dbg('scene assets FAILED to load: dict=%s (loaded=%s) variant=%s (loaded=%s)',
             tostring(scene.Dict), tostring(HasAnimDictLoaded(scene.Dict)),
@@ -124,17 +132,15 @@ local function beginBoothAnim(entity)
     local booth  = GetEntityCoords(entity)
     local pos    = GetOffsetFromEntityInWorldCoords(entity, -0.10, -0.85, 0.0)
 
-    if variant then
-        SetEntityVisible(entity, false, false)
-        -- Local-only spawn: the swap is a personal visual; a networked object would
-        -- appear (unhidden and duplicated) for every other client nearby.
-        animProp = CreateObjectNoOffset(joaat(variant), booth.x, booth.y, booth.z, false, false, true)
-        SetEntityHeading(animProp, GetEntityHeading(entity))
-        SetEntityCompletelyDisableCollision(animProp, false, false)
-        SetModelAsNoLongerNeeded(joaat(variant))
-        dbg('swap: hid entity=%d, spawned animProp=%d exists=%s at=%s heading=%.1f',
-            entity, animProp or -1, tostring(DoesEntityExist(animProp)), tostring(GetEntityCoords(animProp)), GetEntityHeading(animProp))
-    end
+    SetEntityVisible(entity, false, false)
+    -- Local-only spawn: the swap is a personal visual; a networked object would
+    -- appear (unhidden and duplicated) for every other client nearby.
+    animProp = CreateObjectNoOffset(joaat(variant), booth.x, booth.y, booth.z, false, false, true)
+    SetEntityHeading(animProp, GetEntityHeading(entity))
+    SetEntityCompletelyDisableCollision(animProp, false, false)
+    SetModelAsNoLongerNeeded(joaat(variant))
+    dbg('swap: hid entity=%d, spawned animProp=%d exists=%s at=%s heading=%.1f',
+        entity, animProp or -1, tostring(DoesEntityExist(animProp)), tostring(GetEntityCoords(animProp)), GetEntityHeading(animProp))
 
     SetEntityCoords(ped, pos.x, pos.y, pos.z - 1.0, false, false, false, false)
     SetEntityHeading(ped, GetHeadingFromVector_2d(booth.x - pos.x, booth.y - pos.y))
@@ -161,6 +167,10 @@ local function endBoothAnim()
     local scene = cfg.Scene
     local worldEntity = animEntity
     animEntity = nil
+
+    -- A booth with no animatable variant never started a scene, so there is nothing to unwind:
+    -- clearing tasks here would cancel whatever the player was actually doing.
+    if not worldEntity and not animProp then return end
 
     local ped = PlayerPedId()
     if scene and scene.Enabled ~= false and HasAnimDictLoaded(scene.Dict) and worldEntity then
@@ -359,6 +369,17 @@ local function openPayphone(entity, coords, connected)
     SetNuiFocus(true, true)
     SetNuiFocusKeepInput(false)
     SendNUIMessage({ action = 'sd-phone:payphone:open', data = state.data })
+
+    -- Picked up mid-ring: the ring started before the UI existed, so ringStart never had anyone
+    -- to tell. Replay it now so the booth opens showing the incoming call.
+    if not connected then
+        for channel, entry in pairs(ringing) do
+            if entry.location == location then
+                SendNUIMessage({ action = 'sd-phone:payphone:incoming', data = { channel = channel } })
+                break
+            end
+        end
+    end
 end
 
 ---Restores focus to whatever was under the payphone UI.
@@ -396,6 +417,30 @@ RegisterNUICallback('sd-phone:payphone:hangup', function(_, cb)
     cb({ ok = true })
 end)
 
+---Answers a ring on the booth already open in the UI. Same server call the ox_target "Answer
+---Phone" option makes, minus the reopen: the session is already live, only the channel is new.
+RegisterNUICallback('sd-phone:payphone:answer', function(data, cb)
+    local channel = data and tonumber(data.channel)
+    local entry   = channel and ringing[channel]
+    if not entry or not activeLocation or activeChannel then
+        cb({ success = false, message = 'Nothing to answer' })
+        return
+    end
+
+    local result = lib.callback.await('sd-phone:server:payphone:answer', false, {
+        location = entry.location,
+        channel  = channel,
+    })
+    if not result or not result.success then
+        cb(result or { success = false, message = 'Could not answer' })
+        return
+    end
+
+    activeChannel = (result.data and result.data.channel) or channel
+    loopBoothAnim()
+    cb(result)
+end)
+
 ---Server push: our payphone call started ringing (mirrors call:outgoing for the dial UI).
 RegisterNetEvent('sd-phone:client:payphone:outgoing', function(data)
     SendNUIMessage({ action = 'sd-phone:payphone:outgoing', data = data })
@@ -428,6 +473,13 @@ RegisterNetEvent('sd-phone:client:payphone:ringStart', function(data)
         PlaySoundFromEntity(entry.soundId, inbound.SoundName or 'Ringtone_Michael', booth, inbound.SoundSet or 'Phone_SoundSet_Michael', false, 0)
     end
     ringing[data.channel] = entry
+
+    -- Already standing at this booth with the UI up: surface the answer inside the open UI.
+    -- Without this the only way to take the call is the ox_target option, which the focused
+    -- NUI covers, so the player has to close and reopen the booth to answer it.
+    if not cfg.UseOxLibMenu and activeLocation == data.location and not activeChannel then
+        SendNUIMessage({ action = 'sd-phone:payphone:incoming', data = { channel = data.channel } })
+    end
 end)
 
 ---Server push: the ring was answered, cancelled or timed out.
@@ -439,6 +491,10 @@ RegisterNetEvent('sd-phone:client:payphone:ringStop', function(data)
         ReleaseSoundId(entry.soundId)
     end
     ringing[data.channel] = nil
+
+    if not cfg.UseOxLibMenu and activeLocation then
+        SendNUIMessage({ action = 'sd-phone:payphone:incomingEnded', data = { channel = data.channel } })
+    end
 end)
 
 if cfg.Enabled then
@@ -469,18 +525,9 @@ if cfg.Enabled then
             onSelect = function(tdata)
                 local entity = tdata and tdata.entity
                 if not entity or entity == 0 then return end
-                local coords = GetEntityCoords(entity)
-                local channel, entry = ringAt(entity)
-                if not channel then return end
-                local result = lib.callback.await('sd-phone:server:payphone:answer', false, {
-                    location = entry.location,
-                    channel  = channel,
-                })
-                if not result or not result.success then
-                    lib.notify({ title = 'Payphone', description = (result and result.message) or 'Could not answer', type = 'error' })
-                    return
-                end
-                openPayphone(entity, coords, result.data)
+                -- Pick the booth up, do not take the call: it opens ringing and the player
+                -- accepts on the keypad, the same as any other phone.
+                openPayphone(entity, GetEntityCoords(entity))
             end,
         },
     })

@@ -1,19 +1,26 @@
 import { t } from '@/i18n';
 
-export function SegmentedControl<T extends string>({ value, onChange, options, className, fit = false }: {
+export function SegmentedControl<T extends string>({ value, onChange, options, className, fit = false, disabled = false }: {
     value:      T;
     onChange:   (value: T) => void;
     options:    readonly { value: T; label: string; dot?: boolean; badge?: number }[];
     className?: string;
     /** Size segments to their label + side padding instead of an equal split of a fixed width. */
     fit?:       boolean;
+    /** Shown but inert: the choice exists, it just does nothing in the current context. */
+    disabled?:  boolean;
 }) {
     return (
-        <div className={`flex rounded-[9px] bg-black/[0.06] p-[2px] dark:bg-white/[0.12] ${className ?? ''}`}>
+        <div
+            className={`flex rounded-[9px] bg-black/[0.06] p-[2px] dark:bg-white/[0.12] ${className ?? ''}`}
+            style={disabled ? { opacity: 0.4, pointerEvents: 'none' } : undefined}
+            aria-disabled={disabled || undefined}
+        >
             {options.map(opt => (
                 <button
                     key={opt.value}
                     type="button"
+                    disabled={disabled}
                     onClick={() => onChange(opt.value)}
                     className={`${fit ? 'px-3.5' : 'flex-1'} rounded-[8px] py-1.5 text-[15px] font-medium transition-colors ${
                         value === opt.value

@@ -23,11 +23,15 @@ if compatConvar == 'false' or compatConvar == '0' or realLbPhoneStarted() then r
 ---@type table Self-export proxy for the sd-phone client surface.
 local sd = exports['sd-phone']
 
----@type table sd-phone config root (configs/config.lua), read here only for the Debug flag.
+---@type table sd-phone config root (configs/config.lua), read here for the Debug flag and the
+---configured cell towers.
 local config = require 'configs.config'
 
 ---@type table Custom third-party app registry (client.customapps): identifier resolution + forwards.
 local customApps = require 'client.customapps'
+
+---@type table Cell service (client.service): level, bars + the SetServiceBars override.
+local service = require 'client.service'
 
 ---@type any[] AddEventHandler cookies for every registered export handler.
 local exportCookies = {}
@@ -242,14 +246,113 @@ end)
 eventCookies[#eventCookies + 1] = RegisterNetEvent('lb-phone:itemAdded', function() end)
 eventCookies[#eventCookies + 1] = RegisterNetEvent('lb-phone:itemRemoved', function() end)
 
+---Converts an sd-phone 0-100 slider to the 0-1 fraction lb-phone published. nil stays nil.
+---@param v number|nil
+---@return number|nil
+local function slider01(v)
+    local n = tonumber(v)
+    if not n then return nil end
+    return n / 100
+end
+
+---Projects an sd-phone settings snapshot onto lb-phone's settings object. Shape and ranges follow
+---lb-phone's config/defaultSettings.json; settings it never published are left out.
+---@param s table snapshot from sd-phone:server:settings:get
+---@return table settings
+local function lbSettings(s)
+    return {
+        display = {
+            theme      = s.theme,
+            brightness = slider01(s.brightness),
+            size       = slider01(s.phoneScale),
+        },
+        sound = {
+            ringtone   = s.ringtone,
+            texttone   = s.notificationTone,
+            volume     = slider01(s.ringtoneVol),
+            callVolume = slider01(s.callVol),
+        },
+        wallpaper = {
+            background = s.wallpaper,
+            blur       = s.blurLock,
+        },
+        time = {
+            twelveHourClock = not s.hour24,
+        },
+    }
+end
+
+---@type table|nil Last known lb-phone-shaped settings. Cached so GetSettings answers without yielding.
+local settingsCache
+
+---Re-reads the snapshot into settingsCache. Yields, so never called from the export.
+---@return table|nil settings nil when the read failed
+local function refreshSettings()
+    local res = lib.callback.await('sd-phone:server:settings:get', false)
+    if type(res) ~= 'table' or res.success ~= true or type(res.data) ~= 'table' then return nil end
+    settingsCache = lbSettings(res.data)
+    return settingsCache
+end
+
+---Re-reads the cache and mirrors it as lb-phone's settingsUpdated once the read lands.
+local function refreshAndAnnounce()
+    local settings = refreshSettings()
+    if settings then TriggerEvent('lb-phone:settingsUpdated', settings) end
+end
+
+---Drops the snapshot when the character goes away, so GetSettings answers nil rather than the
+---departed character's settings.
+local function clearSettingsCache()
+    settingsCache = nil
+end
+
+-- Primed at load, then tracked across characters. Settings resolve only once the citizenid
+-- exists (the constraint client/main.lua's pushCharacterLoaded is built around), so on a normal
+-- join the load-time read answers before the character is picked and would otherwise leave the
+-- cache empty for the whole session. Switching characters matters just as much: without this the
+-- cache keeps serving the PREVIOUS character's settings until the new one happens to write one.
+-- Same four events the number cache above already tracks, for the same reason.
+--
+-- Note this runs on every server, not only ones with an lb-phone consumer: the compat convar
+-- defaults to on, and nothing can detect whether anyone listens to lb-phone:settingsUpdated. So
+-- each accepted settings write costs one extra callback round trip regardless. That is cheap
+-- (writes are user-paced, and slider persists are already debounced to one per gesture), but the
+-- only way to pay nothing is sd_phone_lbcompat=false, which turns off the whole shim.
+CreateThread(refreshSettings)
+eventCookies[#eventCookies + 1] = RegisterNetEvent('QBCore:Client:OnPlayerLoaded', refreshAndAnnounce)
+eventCookies[#eventCookies + 1] = RegisterNetEvent('esx:playerLoaded', refreshAndAnnounce)
+eventCookies[#eventCookies + 1] = RegisterNetEvent('QBCore:Client:OnPlayerUnload', clearSettingsCache)
+eventCookies[#eventCookies + 1] = RegisterNetEvent('esx:onPlayerLogout', clearSettingsCache)
+
+---Mirrors an accepted sd-phone settings write as lb-phone's settingsUpdated.
+eventCookies[#eventCookies + 1] = AddEventHandler('sd-phone:client:settingsUpdated', refreshAndAnnounce)
+
 -- Stubs: the rest of lb-phone's client surface, grouped by family; each warns once and returns
 -- a safe default.
 
 -- Config and settings readers.
 stubLbExport('GetConfig', {})
-stubLbExport('GetCellTowers', {})
-stubLbExport('GetSettings', nil)
+
+---GetCellTowers() -> vector3[]. lb-phone's config is a bare coordinate list, so the per-tower
+---`range` sd-phone adds is dropped here; read it via exports['sd-phone']:getServiceLevel(). A
+---switched-off system reports no masts, matching the full service every phone actually has.
+registerLbExport('GetCellTowers', function()
+    local out = {}
+    for _, mast in ipairs(service.towers()) do out[#out + 1] = mast.tower end
+    return out
+end)
+
+---GetSettings() -> table|nil, from the cache refreshed alongside lb-phone:settingsUpdated.
+registerLbExport('GetSettings', function()
+    return settingsCache
+end)
 stubLbExport('GetStreamerMode', false)
+
+---SetServiceBars(bars): forces the displayed bars until called with nil. Display only; it never
+---changes what the server allows.
+registerLbExport('SetServiceBars', function(bars)
+    service.setBarsOverride(bars)
+end)
 
 -- Airplane mode reads as off.
 stubLbExport('GetAirplaneMode', false, 'state is server-side only in sd-phone; returning false')
@@ -279,7 +382,6 @@ stubLbExport('IsPhoneDead', false)
 
 -- Appearance and shell tweaks with no sd-phone counterpart.
 stubLbExport('SetPhoneVariation', nil)
-stubLbExport('SetServiceBars', nil)
 stubLbExport('ReloadPhone', nil)
 stubLbExport('ToggleHomeIndicator', nil)
 stubLbExport('ToggleLandscape', nil)

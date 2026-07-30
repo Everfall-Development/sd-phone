@@ -1,10 +1,12 @@
 import { formatClockTime, useClock } from '@/hooks/useClock';
 import { t } from '@/i18n';
+import { signalBarOpacities } from '@/lib/signal';
 
 export interface StatusBarProps {
     use24h: boolean;
     signal: number;
     showWifi: boolean;
+    wifiBars?: number | null;
     battery: number;
     airplane?: boolean;
     noSim?: boolean;
@@ -14,7 +16,7 @@ export interface StatusBarProps {
     editing?: boolean;
 }
 
-export function StatusBar({ use24h, signal, showWifi, battery, airplane = false, noSim = false, noService = false, light = true, controlHint = false, editing = false }: StatusBarProps) {
+export function StatusBar({ use24h, signal, showWifi, wifiBars = null, battery, airplane = false, noSim = false, noService = false, light = true, controlHint = false, editing = false }: StatusBarProps) {
     const time  = formatClockTime(useClock(), use24h);
     const color = light ? '#ffffff' : '#000000';
 
@@ -35,11 +37,14 @@ export function StatusBar({ use24h, signal, showWifi, battery, airplane = false,
                 ) : noSim ? (
                     <span className="font-sf text-[13px] font-semibold leading-none opacity-80">No SIM</span>
                 ) : noService ? (
-                    <span className="font-sf text-[13px] font-semibold leading-none opacity-80">{t('shell.noService', 'No Service')}</span>
+                    <>
+                        <span className="font-sf text-[13px] font-semibold leading-none opacity-80">{t('shell.noService', 'No Service')}</span>
+                        <WifiGlyph bars={wifiBars} showWifi={false} />
+                    </>
                 ) : (
                     <>
-                        {signal > 0 && <Cellular size={21} />}
-                        {showWifi && <Wifi size={21} />}
+                        {signal > 0 && <Cellular size={21} bars={signal} />}
+                        <WifiGlyph bars={wifiBars} showWifi={showWifi} />
                     </>
                 )}
                 <Battery size={28} pct={battery} />
@@ -57,20 +62,47 @@ export function StatusBar({ use24h, signal, showWifi, battery, airplane = false,
 }
 
 
-function Cellular({ size }: { size: number }) {
+const BAR_PATHS = [
+    'M88 432H40a24 24 0 01-24-24v-96a24 24 0 0124-24h48a24 24 0 0124 24v96a24 24 0 01-24 24z',
+    'M216 432h-48a24 24 0 01-24-24V248a24 24 0 0124-24h48a24 24 0 0124 24v160a24 24 0 01-24 24z',
+    'M344 432h-48a24 24 0 01-24-24V184a24 24 0 0124-24h48a24 24 0 0124 24v224a24 24 0 01-24 24z',
+    'M472 432h-48a24 24 0 01-24-24V104a24 24 0 0124-24h48a24 24 0 0124 24v304a24 24 0 01-24 24z',
+];
+
+function Cellular({ size, bars }: { size: number; bars: number }) {
+    const opacities = signalBarOpacities(bars);
     return (
         <svg width={size} height={size} viewBox="0 0 512 512" fill="currentColor" aria-hidden>
-            <path d="M472 432h-48a24 24 0 01-24-24V104a24 24 0 0124-24h48a24 24 0 0124 24v304a24 24 0 01-24 24zM344 432h-48a24 24 0 01-24-24V184a24 24 0 0124-24h48a24 24 0 0124 24v224a24 24 0 01-24 24zM216 432h-48a24 24 0 01-24-24V248a24 24 0 0124-24h48a24 24 0 0124 24v160a24 24 0 01-24 24zM88 432H40a24 24 0 01-24-24v-96a24 24 0 0124-24h48a24 24 0 0124 24v96a24 24 0 01-24 24z" />
+            {BAR_PATHS.map((d, i) => (
+                <path key={d} d={d} opacity={opacities[i]} />
+            ))}
         </svg>
     );
 }
 
-function Wifi({ size }: { size: number }) {
+const WIFI_ARC_PATHS = [
+    'M346.65 304.3a136 136 0 00-180.71 0 21 21 0 1027.91 31.38 94 94 0 01124.89 0 21 21 0 0027.91-31.4z',
+    'M256.28 183.7a221.47 221.47 0 00-151.8 59.92 21 21 0 1028.68 30.67 180.28 180.28 0 01246.24 0 21 21 0 1028.68-30.67 221.47 221.47 0 00-151.8-59.92z',
+    'M462 175.86a309 309 0 00-411.44 0 21 21 0 1028 31.29 267 267 0 01355.43 0 21 21 0 0028-31.31z',
+];
+
+const WIFI_DIM = 0.28;
+
+function WifiGlyph({ bars, showWifi }: { bars?: number | null; showWifi?: boolean }) {
+    if (bars !== null && bars !== undefined) return <Wifi size={21} bars={bars} />;
+    if (showWifi) return <Wifi size={21} />;
+    return null;
+}
+
+function Wifi({ size, bars }: { size: number; bars?: number | null }) {
+    const lit = bars === null || bars === undefined
+        ? WIFI_ARC_PATHS.length
+        : Math.max(0, Math.min(WIFI_ARC_PATHS.length, Math.round(bars)));
     return (
         <svg width={size} height={size} viewBox="0 0 512 512" fill="currentColor" aria-hidden>
-            <path d="M346.65 304.3a136 136 0 00-180.71 0 21 21 0 1027.91 31.38 94 94 0 01124.89 0 21 21 0 0027.91-31.4z" />
-            <path d="M256.28 183.7a221.47 221.47 0 00-151.8 59.92 21 21 0 1028.68 30.67 180.28 180.28 0 01246.24 0 21 21 0 1028.68-30.67 221.47 221.47 0 00-151.8-59.92z" />
-            <path d="M462 175.86a309 309 0 00-411.44 0 21 21 0 1028 31.29 267 267 0 01355.43 0 21 21 0 0028-31.31z" />
+            {WIFI_ARC_PATHS.map((d, i) => (
+                <path key={d} d={d} opacity={i < lit ? 1 : WIFI_DIM} />
+            ))}
             <circle cx="256.28" cy="393.41" r="32" />
         </svg>
     );

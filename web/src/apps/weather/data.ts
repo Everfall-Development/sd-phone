@@ -16,7 +16,7 @@ interface WeatherSlice {
     tempF:  number;
 }
 
-interface DayForecast {
+export interface DayForecast {
     label: string;
     code:  WeatherCode;
     high:  number;

@@ -7,6 +7,12 @@ local store   = require 'server.darkchat.store'
 local actions = require 'server.darkchat.actions'
 ---@type table Player bridge (bridge.server.player): server id lookups from a citizenid.
 local player  = require 'bridge.server.player'
+---@type table Shared server helpers (server.util): the configs/apps.lua switch.
+local util    = require 'server.util'
+
+---@type boolean Whether Dark Chat is switched on in configs/apps.lua. A disabled app takes no new
+---messages, so there is nothing for the retention sweep to prune.
+local APP_ENABLED = util.appEnabled('darkchat')
 
 ---@type integer Newest messages retained per room by the sweep. The app only ever renders
 ---DarkChat.HistoryLimit (60) of them, so this is roughly eight times the reachable history.
@@ -22,6 +28,7 @@ CreateThread(function()
         return
     end
     boot.schemaReady()
+    if not APP_ENABLED then return end
 
     while true do
         pcall(store.pruneRoomMessages, RETAIN_PER_ROOM)

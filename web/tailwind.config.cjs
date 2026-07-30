@@ -125,9 +125,13 @@ module.exports = {
                     '0%':   { opacity: 0, transform: 'translateX(-26px)' },
                     '100%': { opacity: 1, transform: 'translateX(0)' },
                 },
+                // Angle is overridable via --jiggle because rotation displaces a corner in
+                // proportion to its distance from the centre: the 1.7deg that reads as a subtle
+                // wobble on a 78px icon throws a 4x4 widget's corner about five times as far.
+                // Large tiles pass a smaller angle so every element sweeps the same few pixels.
                 'app-jiggle': {
-                    '0%, 100%': { transform: 'rotate(-1.7deg)' },
-                    '50%':      { transform: 'rotate(1.7deg)' },
+                    '0%, 100%': { transform: 'rotate(calc(var(--jiggle, 1.7deg) * -1))' },
+                    '50%':      { transform: 'rotate(var(--jiggle, 1.7deg))' },
                 },
                 'plop': {
                     '0%':   { transform: 'scale(1)' },

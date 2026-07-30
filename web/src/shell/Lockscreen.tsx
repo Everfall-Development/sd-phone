@@ -164,7 +164,7 @@ export function Lockscreen({ use24h, showDate, wallpaper, unlockTrigger, onUnloc
                 <QuickAction label={t('shell.flashlight','Flashlight')} active={flashlightOn} onClick={(e) => { e.stopPropagation(); onToggleFlashlight(); }}>
                     <Flashlight
                         className={`h-[29px] w-[29px] ${flashlightOn ? 'text-black' : 'text-white'}`}
-                        fill={flashlightOn ? 'currentColor' : 'none'}
+                        fill="none"
                         strokeWidth={2.2}
                     />
                 </QuickAction>
@@ -251,7 +251,7 @@ function FaceScan({ exiting, onSuccess }: { exiting: boolean; onSuccess: () => v
                 </div>
 
                 <p className={`mt-2 text-[15px] font-medium text-white/90 transition-opacity duration-200 ${done ? 'opacity-0' : 'opacity-100'}`}>
-                    {t('shell.faceUnlock','Face Unlock')}
+                    {t('shell.faceScan','Face Scan')}
                 </p>
             </div>
         </div>

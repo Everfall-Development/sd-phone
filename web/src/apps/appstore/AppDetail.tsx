@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Lock } from 'lucide-react';
 
 import { AppIconSVG } from '@/shell/AppIconSVG';
 import { CircularProgress } from '@/ui/CircularProgress';
@@ -19,13 +19,15 @@ function appSize(id: string): string {
     return t('appstore.appSize', '{size} MB', { size: mb.toFixed(1) });
 }
 
-export function AppDetail({ app, desc, installed, downloadProgress, onBack, onInstall, onOpen }: {
+export function AppDetail({ app, desc, installed, downloadProgress, onBack, onInstall, canDownload = true, wifiLocked, onOpen }: {
     app:               AppDef;
     desc:              string;
     installed:         boolean;
     downloadProgress?: number;
     onBack:            () => void;
     onInstall:         (id: string) => void;
+    canDownload?:      boolean;
+    wifiLocked?:       boolean;
     onOpen:            (id: string) => void;
 }) {
     const [shown, setShown] = useState(false);
@@ -67,7 +69,10 @@ export function AppDetail({ app, desc, installed, downloadProgress, onBack, onIn
                         </div>
                     </div>
                     <div className="min-w-0 flex-1">
-                        <div className="truncate text-[24px] font-semibold leading-tight text-black dark:text-white">{app.label}</div>
+                        <div className="flex items-center gap-1.5">
+                            <span className="min-w-0 truncate text-[24px] font-semibold leading-tight text-black dark:text-white">{app.label}</span>
+                            {wifiLocked && !installed && <Lock className="h-[16px] w-[16px] shrink-0 text-black/45 dark:text-white/45" role="img" aria-label={t('appstore.wifiOnly', 'Wi-Fi only')} />}
+                        </div>
                         <div className="mt-0.5 line-clamp-2 text-[15px] leading-snug text-black/65 dark:text-white/65">{desc}</div>
                         <div className="mt-3">
                             {downloading ? (
@@ -79,7 +84,7 @@ export function AppDetail({ app, desc, installed, downloadProgress, onBack, onIn
                                 <button
                                     type="button"
                                     onClick={() => (installed ? onOpen(app.id) : onInstall(app.id))}
-                                    className="rounded-full bg-ios-blue px-7 py-1.5 text-[15px] font-bold uppercase tracking-wide text-white active:opacity-70"
+                                    className={`rounded-full bg-ios-blue px-7 py-1.5 text-[15px] font-bold uppercase tracking-wide text-white active:opacity-70 ${!installed && !canDownload ? 'opacity-40' : ''}`}
                                 >
                                     {installed ? t('appstore.open', 'Open') : t('appstore.get', 'Get')}
                                 </button>
@@ -102,7 +107,7 @@ export function AppDetail({ app, desc, installed, downloadProgress, onBack, onIn
                 {custom && custom.price != null && custom.price > 0 && (
                     <InfoRow label={t('appstore.price', 'Price')} value={t('appstore.priceValue', '${price}', { price: custom.price.toLocaleString() })} />
                 )}
-                <InfoRow label={t('appstore.compatibility', 'Compatibility')}    value={t('appstore.worksWithThisPhone', 'Compatible with your device')} />
+                <InfoRow label={t('appstore.compatibility', 'Compatibility')}    value={t('appstore.deviceCompatible', 'Compatible with your device')} />
                 <InfoRow label={t('appstore.inAppPurchases', 'In-App Purchases')} value={t('appstore.no', 'No')} last />
             </div>
         </div>

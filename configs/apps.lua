@@ -3,8 +3,13 @@
 --   base = true       ships installed and cannot be removed (never in the App Store)
 --   enabled = false   the app does not exist on this server: hidden from the home screen
 --                     and the App Store, uninstallable, and removed from phones that had it
---                     installed. Content and server modules keep running; only the app's
---                     presence on the phone is gated.
+--                     installed. Background work belonging to the app stops too: no ticks, no
+--                     sweeps, no write-behind flushes. Its schema and stored data are left
+--                     untouched, so switching it back on picks up where it left off.
+--   wifi = '<id>'     the app only downloads while the phone is on that Wi-Fi network, an `id`
+--                     from configs/wifi.lua. The server re-checks the connection from its own
+--                     coords, so the App Store dimming it is presentation only. An id no
+--                     configured network carries leaves the app permanently undownloadable.
 return {
     -- Wallpaper name. Same registry as the lockscreen - see
     -- `web/src/wallpapers.ts`.
@@ -70,5 +75,9 @@ return {
         { id = 'vibez', label = 'Vibez', icon = 'vibez', route = '/vibez', accent = '#A855F7', base = false, enabled = false },
         { id = 'weazelnews', label = 'Weazel News', icon = 'weazelnews', route = '/weazelnews', accent = '#C8102E', base = false, enabled = true },
         { id = 'streaks', label = 'Streaks', icon = 'streaks', route = '/streaks', accent = '#FF7A1A', base = false, enabled = true },
+
+        -- Add `wifi` to any entry above to keep its download to one network, e.g. Dark Chat only
+        -- handed out inside the bank:
+        -- { id = 'darkchat', label = 'Dark Chat', icon = 'darkchat', route = '/darkchat', accent = '#1c1c1e', base = false, enabled = true, wifi = 'mazebank' },
     },
 }

@@ -13,6 +13,8 @@ export interface OpenPayload {
     carrier: string;
     signal: number;
     showWifi: boolean;
+    wifiConfigured?: boolean;
+    bluetoothConfigured?: boolean;
     use24h: boolean;
     showDate: boolean;
     dock: string[];
@@ -20,6 +22,11 @@ export interface OpenPayload {
     installedApps?: string[];
     homeLayout?: string;
     mailDomain?: string;
+    /** Phone-number display config (config.Phone.Number); formats are keyed by digit count. */
+    number?: {
+        formats?: Record<string, string>;
+        length?: number;
+    };
     wallpaper: {
         lock: string;
         home: string;
@@ -40,6 +47,28 @@ export interface SimStatePush {
     profile?: string;
 }
 
+/** One Wi-Fi network the phone can see. `strength` is 0..1 raw, `bars` the 0..3 the icon draws. */
+export interface WifiNetwork {
+    id: string;
+    ssid: string;
+    /** Already joined once by this character, so rejoining needs no password. */
+    known?: boolean;
+    /** Password protected. The client omits it on the connected network, where it normalizes to false. */
+    secured: boolean;
+    strength: number;
+    bars: number;
+}
+
+/** Live Wi-Fi snapshot: enabled=false means the radio is off, so there is nothing to join. */
+export interface WifiState {
+    enabled: boolean;
+    /** This server runs Wi-Fi at all. Distinguishes a switched-off radio from no networks. */
+    configured?: boolean;
+    connected: WifiNetwork | null;
+    networks: WifiNetwork[];
+    providesData?: boolean;
+}
+
 export interface AppDef {
     id: string;
     label: string;
@@ -47,6 +76,15 @@ export interface AppDef {
     route: string;
     accent: string;
     base?: boolean;
+    /** Wi-Fi network id (configs/wifi.lua) the phone must be joined to before this app downloads. */
+    wifi?: string;
+}
+
+export interface CustomWidgetDef {
+    id:    string;
+    name:  string;
+    ui:    string;
+    sizes: ('sm' | 'md' | 'lg')[];
 }
 
 export interface CustomAppDef {
@@ -64,6 +102,9 @@ export interface CustomAppDef {
     fixBlur?:    boolean;
     keepOpen?:   boolean;
     landscape?:  boolean;
+    /** Wi-Fi network id (configs/wifi.lua) the phone must be joined to before this app downloads. */
+    wifi?:       string;
+    widgets?:    CustomWidgetDef[];
     resource:    string;
 }
 
@@ -77,7 +118,7 @@ interface SessionPayload {
     startMs: number;
 }
 
-interface HealthPayload {
+export interface HealthPayload {
     steps:     number;
     distanceM: number;
     heartRate: number;
@@ -203,6 +244,8 @@ export type NuiMessage =
     | { action: 'sd-phone:client:characterLoaded' }
     | { action: 'sd-phone:launchApp'; data: { id: string; link?: Record<string, unknown> } }
     | { action: 'sd-phone:battery'; data: number }
+    | { action: 'sd-phone:service'; data: { bars: number; level: number; data: boolean } }
+    | { action: 'sd-phone:wifi'; data: WifiState }
     | { action: 'sd-phone:weather'; data: WeatherPayload }
     | { action: 'sd-phone:session'; data: SessionPayload }
     | { action: 'sd-phone:health';  data: HealthPayload }
@@ -251,9 +294,12 @@ export type NuiMessage =
     | { action: 'sd-phone:call:outgoing';  data: CallPush }
     | { action: 'sd-phone:call:connected'; data: { channel: number } }
     | { action: 'sd-phone:call:ended';     data: CallEndedPush }
+    | { action: 'sd-phone:call:dropped';   data: { lost: boolean } }
     | { action: 'sd-phone:payphone:open';     data: { number: string; anonymous: boolean; myNumber?: string | null; favorites: { name: string; phone: string }[]; connected?: boolean; callerName?: string; coin?: { enabled: boolean; cost: number }; credited?: boolean } }
     | { action: 'sd-phone:payphone:outgoing'; data: { channel: number; number: string } }
     | { action: 'sd-phone:payphone:ended';    data: { channel: number; reason: string } }
+    | { action: 'sd-phone:payphone:incoming';      data: { channel: number } }
+    | { action: 'sd-phone:payphone:incomingEnded'; data: { channel: number } }
     | { action: 'sd-phone:radio:status';   data: { on: boolean; freq: number; standby?: boolean } }
     | { action: 'sd-phone:radio:onair';    data: { active: boolean } }
     | { action: 'sd-phone:radio:count';    data: { count: number } }

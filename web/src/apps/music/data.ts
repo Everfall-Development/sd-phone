@@ -56,6 +56,15 @@ export function coverGradient(seed: string): string {
     return `linear-gradient(135deg, ${a}, ${b})`;
 }
 
+/**
+ * Artwork URL for a track, or null when it is not a YouTube source. Lives here rather than in
+ * Music.tsx so the home screen widget can resolve a cover without importing the Music app chunk.
+ */
+export function coverUrl(track: { url: string }): string | null {
+    const vid = youtubeId(track.url);
+    return vid ? `https://i.ytimg.com/vi/${vid}/mqdefault.jpg` : null;
+}
+
 function hexToRgb(hex: string): [number, number, number] {
     const h = hex.replace('#', '');
     return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];

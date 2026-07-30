@@ -69,6 +69,8 @@ export function devInjectMockData(): () => void {
             { id: 'streaks',    label: 'Streaks',     icon: 'streaks',    route: '/streaks',    accent: '#FF7A1A' },
         ],
         locale: new URLSearchParams(window.location.search).get('loc') ?? 'en',
+        wifiConfigured: true,
+        bluetoothConfigured: true,
         wallpaper: { lock: 'lockscreen.jpg', home: 'lockscreen.jpg' },
     };
 

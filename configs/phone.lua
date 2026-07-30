@@ -21,6 +21,34 @@ return {
     -- session (the keybind fallback). Must be one of the frame colours.
     DefaultColor = 'black',
 
+    -- Phone numbers: how long a new one is, and how numbers are displayed.
+    -- Numbers are always STORED as bare digits, so this changes presentation and
+    -- generation only - no database column, contact, message or call log is
+    -- rewritten, and every lookup keeps matching on digits.
+    Number = {
+        -- Digits in a NEWLY generated number. Changing it leaves every existing
+        -- number exactly as it is, so a running server ends up with a mix of
+        -- lengths, and both keep working everywhere.
+        Length = 10,
+
+        -- How a number is displayed, keyed by how many digits it has. Each X is
+        -- replaced by the next digit and every other character is printed
+        -- literally, so '+44 XXXX XXXXXX', 'XXX-XXXX' and '(XXX) XXX-XXXX' all
+        -- work. A digit count with no entry is shown as bare digits.
+        --
+        -- The table is keyed by length precisely so a Length change is safe:
+        -- add an entry for the new length and KEEP the old one, and numbers
+        -- already in circulation still read properly next to the new ones.
+        Formats = {
+            [10] = '(XXX) XXX-XXXX',
+
+            -- An 11-digit entry sits alongside it quite happily, which is what
+            -- keeps numbers readable either side of a Length change. This one
+            -- renders 12075550123 as +1 (207) 555-0123.
+            -- [11] = '+X (XXX) XXX-XXXX',
+        },
+    },
+
     -- Default keybind to open / close the phone. Players can rebind
     -- via FiveM's keybinding menu (Settings → Key Bindings → FiveM).
     Keybind  = 'F1',
@@ -125,10 +153,10 @@ return {
 
     -- Let other players see the phone in your hand. When true, your ped broadcasts a replicated
     -- statebag while the phone is out and every nearby client spawns its own LOCAL welded copy of
-    -- the prop on your ped (the hold animation already replicates on its own). This is lb-phone's
-    -- "state" strategy: the prop is deliberately NOT a networked object, because a networked prop's
-    -- ownership can migrate to another client whose sync then freezes it mid-hold. Set false to go
-    -- back to local-only (only you see your own prop).
+    -- the prop on your ped (the hold animation already replicates on its own). The prop is
+    -- deliberately NOT a networked object, because a networked prop's ownership can migrate to
+    -- another client whose sync then freezes it mid-hold. Set false to go back to local-only
+    -- (only you see your own prop).
     PropVisibleToOthers = true,
 
     -- Flashlight beam emitted forward from the phone (lockscreen torch button).

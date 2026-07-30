@@ -11,14 +11,18 @@ function readInstalled(): string[] {
     return arr ? arr.filter((x): x is string => typeof x === 'string') : [];
 }
 
-export function installedCustomIds(): string[] {
-    return readInstalled();
-}
-
 export function setCustomInstalled(id: string, installed: boolean): void {
     const set = new Set(readInstalled());
     if (installed) set.add(id); else set.delete(id);
     writeJson(INSTALLED_KEY, [...set]);
+}
+
+export function withCustomInstalled(ids: Iterable<string>): Set<string> {
+    return new Set([...ids, ...readInstalled()]);
+}
+
+export function clearCustomInstalled(): void {
+    writeJson(INSTALLED_KEY, []);
 }
 
 interface CustomAppsState {

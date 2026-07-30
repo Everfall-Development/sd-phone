@@ -764,6 +764,8 @@ end
 -- Live peer-location push loop: every 500ms, pushes each watcher's counterpart position
 -- (server-side coords); watchers whose trip ended or who disconnected are dropped.
 CreateThread(function()
+    if not util.appEnabled('ryde') then return end
+
     while true do
         Wait(500)
         for vsrc, w in pairs(tripViewers) do

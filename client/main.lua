@@ -21,6 +21,20 @@ do
         if ids[id] then ENABLED_DOCK[#ENABLED_DOCK + 1] = id end
     end
 end
+-- Number display config for the NUI. Format keys are stringified deliberately: a Lua table whose
+-- integer keys run contiguously from 1 encodes as a JSON ARRAY, which would land in the UI
+-- off-by-one, so this guarantees an object either way.
+---@type { formats: table<string, string>, length: integer }
+local NUMBER_FORMAT = {}
+do
+    local cfg = type(config.Phone.Number) == 'table' and config.Phone.Number or {}
+    local formats = {}
+    for length, pattern in pairs(type(cfg.Formats) == 'table' and cfg.Formats or {}) do
+        if type(pattern) == 'string' and pattern ~= '' then formats[tostring(length)] = pattern end
+    end
+    NUMBER_FORMAT = { formats = formats, length = math.floor(tonumber(cfg.Length) or 10) }
+end
+
 ---@type table Weather bridge (bridge.client.weather): live weather + synced world-time reads.
 local weatherBridge = require 'bridge.client.weather'
 ---@type table Custom third-party app registry (client.customapps): add/remove/message + lifecycle.
@@ -29,6 +43,12 @@ local customApps = require 'client.customapps'
 local pose = require 'client.pose'
 ---@type table Scripted phone camera (client.phonecam): owns the frame-a-shot movement lock.
 local phonecam = require 'client.phonecam'
+---@type table Cell service (client.service): live signal level, bars + capability gating.
+local service = require 'client.service'
+---@type table Wi-Fi (client.wifi): joined network, nearby scan + capability gating.
+local wifiClient = require 'client.wifi'
+---@type table Bluetooth (client.bluetooth): the radio switch + connected devices, mirrored server-side.
+local bluetoothClient = require 'client.bluetooth'
 
 -- Loaded for side effects: each app module registers its own NUI callbacks, net events and
 -- server proxies.
@@ -78,6 +98,7 @@ require 'client.apps.settings'
 require 'client.apps.sim'
 require 'client.admin'
 require 'client.payphone'
+require 'client.celltowerblips'
 
 ---@type table Phone visibility state: open/locked flags + cosmetic battery percentage.
 local phoneState = {
@@ -343,13 +364,16 @@ local function OpenPhone()
             battery   = phoneState.battery,
             frameColor = currentFrameColor,
             carrier   = config.StatusBar.Carrier,
-            signal    = config.StatusBar.SignalBars,
+            signal    = service.active() and service.bars() or config.StatusBar.SignalBars,
             showWifi  = config.StatusBar.ShowWifi,
+            wifiConfigured = wifiClient.configured(),
+            bluetoothConfigured = bluetoothClient.configured(),
             use24h    = config.Lockscreen.Use24Hour,
             showDate  = config.Lockscreen.ShowDate,
             dock      = ENABLED_DOCK,
             apps      = ENABLED_APPS,
             mailDomain = config.Mail.Domain,
+            number    = NUMBER_FORMAT,
             wallpaper = {
                 lock = config.Lockscreen.Wallpaper,
                 home = config.Apps.Wallpaper,
@@ -763,6 +787,56 @@ exports('isLocked', phoneState.isLocked)
 exports('open',     OpenPhone)
 exports('close',    ClosePhone)
 exports('openApp',  OpenApp)
+
+---Current cell service, 0 (dead zone) to 1 (standing at a mast). Always 1 when no towers are
+---configured.
+exports('getServiceLevel', function() return service.level() end)
+
+---Current status bar bars, 0..4.
+exports('getServiceBars', function() return service.bars() end)
+
+---The configured masts as { tower = vector3, range = number }, mirroring configs/celltowers.lua.
+---Empty while the system is off. The lb-phone GetCellTowers export drops the ranges to match
+---their shape; this one keeps them.
+exports('getCellTowers', function() return service.towers() end)
+
+---Whether a capability is currently possible: 'text', 'call' or 'data' (default 'data').
+---@param capability string|nil
+exports('hasService', function(capability)
+    return service.allows(capability or 'data')
+end)
+
+---Whether the phone is on a Wi-Fi network right now.
+exports('isOnWifi', function() return wifiClient.connected() end)
+
+---The joined network's id as configs/wifi.lua names it, or nil while off Wi-Fi.
+exports('getWifi', function()
+    local c = wifiClient.current()
+    return c and c.id or nil
+end)
+
+---The joined network as { id, ssid, strength, bars }, or nil while off Wi-Fi.
+exports('getWifiNetwork', function() return wifiClient.current() end)
+
+---Every configured network as { id, ssid, coords, range, secured }, mirroring configs/wifi.lua.
+---Empty while the system is off. A network's password is never part of this.
+exports('getWifiNetworks', function() return wifiClient.networks() end)
+
+---The networks in reach as of the last scan, strongest first, as { id, ssid, secured, strength,
+---bars, known }. Empty while the radio is off or nothing is in range.
+exports('getNearbyWifi', function() return wifiClient.nearby() end)
+
+---Whether this character's Bluetooth radio is switched on. Says nothing about what is connected:
+---a switched-on radio with nothing in range is still on.
+exports('isBluetoothOn', function() return bluetoothClient.enabled() end)
+
+---Whether this phone is connected to a device right now, by the id its owning script registered.
+---@param deviceId string
+exports('isBluetoothConnected', function(deviceId) return bluetoothClient.isConnected(deviceId) end)
+
+---Every device this phone is connected to as { id, name, kind }. Empty while the radio is off or
+---nothing paired is in range.
+exports('getConnectedDevices', function() return bluetoothClient.devices() end)
 
 ---Registers a third-party app - exports['sd-phone']:addCustomApp(data). Attribution is the calling
 ---resource; re-registering an identifier is only allowed from that same resource.

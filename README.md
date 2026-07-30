@@ -71,6 +71,26 @@ The Camera, Photos and Voice Memos apps need somewhere to store what they captur
 | **Games** | Chess, Connect Four, Battleship and Wordle with online lobbies, plus Blackjack, Cookie, Flappy, Blocks, Climber and Rail Runner with server-side leaderboards |
 | **Utilities** | Clock (alarms), Calendar, Notes (with sketches), Calculator, Compass, Health, Passwords, App Store, Settings |
 
+## Home screen widgets
+
+Eleven widgets, each in three sizes (2x2, 4x2 and 4x4), added from the Add Widget sheet in edit mode and placed anywhere on any page.
+
+| Widget | Shows |
+|---|---|
+| **Weather** | Current conditions coloured by the in-game sky, hourly strip, and a five-day forecast with temperature range bars |
+| **Clock** | Analogue face with a sweep hand and date |
+| **Clock (Digital)** | Large type, city, seconds and full date |
+| **Now Playing** | Artwork, track and transport controls that work without opening Music |
+| **Wallet** | Balance, cash on hand and recent transactions |
+| **Stocks** | Your holdings first by position value, with profit or loss, sparklines and a portfolio total |
+| **Contacts** | Hand-picked people you tap to call, chosen with the standard contact picker |
+| **Garage** | Your vehicles with photos, plates and stored / out / impounded status |
+| **Activity** | Steps, distance and heart rate as concentric rings |
+| **Weazel News** | The lead story with its photo, plus the breaking ticker |
+| **Timers & Alarms** | A live countdown ring, or the next alarm and everything else you have set |
+
+Nine of them offer a **Dark, Light or Glass** finish; Glass frosts your wallpaper behind the tile. Weather and Now Playing take their colour from their content instead. Clock and Weather also align left, centre or right. Previews in the picker render over your own wallpaper at true size, so what you see is what gets placed.
+
 ## Highlights
 
 - **Real accounts engine.** Social apps use actual registration and login, with verification codes and password resets delivered by in-game mail or SMS. Accounts are global, not per-character-slot.
@@ -152,6 +172,16 @@ phone_pink    phone_purple   phone_red     phone_yellow
 Ready-made ox_inventory definitions live in the [installation docs](https://docs.samueldev.shop/resources/phone/installation), and the item icons ship in this repo's `images/` folder.
 
 Players can also open the phone with a keybind (<kbd>F1</kbd> by default), which still requires owning one of these items.
+
+Running unique phones with physical SIM trays (`SimTray` in `configs/uniqueandsim.lua`, ox_inventory only)? Give every phone item a `buttons` entry so players can open its tray:
+
+```lua
+buttons = {
+    { label = 'SIM Tray', action = function(slot) exports['sd-phone']:openSimTray(slot) end },
+},
+```
+
+Using the phone item opens the phone itself, so the tray needs its own button. Skip this in metadata mode, where SIMs are installed by using the `sim_card` item.
 
 ### 3. Add your API keys
 

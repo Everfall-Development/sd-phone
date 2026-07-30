@@ -7,6 +7,8 @@ import { fetchNui, isFiveM } from '@/core/nui';
 import { useKeypadInput } from '@/hooks/useKeypadInput';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { playDtmf } from '@/apps/phone/keypad/dtmf';
+import { startRing } from '@/apps/phone/calls/ringtone';
+import { playHandsetHang, playHandsetLift } from './sfx';
 import { formatPhone } from '@/lib/phone';
 
 type Phase = 'idle' | 'calling' | 'connected' | 'ended';
@@ -14,6 +16,11 @@ type Phase = 'idle' | 'calling' | 'connected' | 'ended';
 interface Favorite { name: string; phone: string }
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
+
+// One source of truth for the coin drop: the CSS keyframes and the unmount timer have to agree,
+// or the coin blinks out before it finishes going into the slot.
+const COIN_DROP_MS = 920;
+const COIN_DROP_S  = `${COIN_DROP_MS / 1000}s`;
 
 function fmtClock(secs: number): string {
     return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
@@ -55,6 +62,23 @@ const KEY_FACE: CSSProperties = {
     boxShadow: '0 2px 3px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.95), inset 0 -2px 3px rgba(0,0,0,0.2)',
 };
 
+/**
+ * Names on the notepad are set in Inter, not the Great Vibes script the numbers use. The script
+ * is a formal copperplate: at list sizes the capitals are ornate enough that a name is close to
+ * unreadable. Printed names against handwritten numbers also reads like a real scribbled list.
+ */
+const NOTE_LABEL: CSSProperties = {
+    fontFamily: 'Inter, system-ui, sans-serif',
+    textShadow: '0 0.5px 0 rgba(255,252,238,0.6)',
+};
+
+/** Numbers on the notepad: ballpoint-blue but set in tabular Inter, so digits actually read. */
+const NOTE_NUMBER: CSSProperties = {
+    fontFamily: 'Inter, system-ui, sans-serif',
+    fontVariantNumeric: 'tabular-nums',
+    textShadow: '0 0.5px 0 rgba(255,252,238,0.55)',
+};
+
 const ETCHED: CSSProperties = {
     color: '#33363c',
     textShadow: '0 1px 0 rgba(255,255,255,0.45)',
@@ -78,6 +102,23 @@ const ETCHED: CSSProperties = {
  * becomes the hang-up control while a call runs.
  */
 function HandsetAssembly({ lifted, onHangup }: { lifted: boolean; onHangup: () => void }) {
+    // Without this the hang-up animation would play on first paint, so every time the booth
+    // opened the handset would fly in from off-screen. It only re-hangs once it has been lifted.
+    const everLifted = useRef(false);
+    if (lifted) everLifted.current = true;
+    const handsetAnim = lifted ? 'ppHandsetLift' : (everLifted.current ? 'ppHandsetHang' : null);
+
+    // Metal on metal, but only when the hook state actually CHANGES. Comparing against the
+    // previous value rather than "is this the first effect run" is deliberate: StrictMode
+    // double-invokes effects, and a first-run flag lets the second invocation clunk on mount.
+    const prevLifted = useRef<boolean | null>(null);
+    useEffect(() => {
+        const prev = prevLifted.current;
+        prevLifted.current = lifted;
+        if (prev === null || prev === lifted) return;
+        if (lifted) playHandsetLift(); else playHandsetHang();
+    }, [lifted]);
+
     return (
         <div className="relative" style={{ width: 112 }}>
             <svg
@@ -114,8 +155,21 @@ function HandsetAssembly({ lifted, onHangup }: { lifted: boolean; onHangup: () =
 
                 {/* armored cable: starts 16px inside the (tilted) mouth cap,
                     sags, then climbs into the grommet */}
-                <path d="M36 398 C 18 446, 20 494, 52 516 C 76 531, 96 522, 104 500" stroke="#0b0b0d" strokeWidth="9" fill="none" strokeLinecap="round" />
-                <path d="M36 398 C 18 446, 20 494, 52 516 C 76 531, 96 522, 104 500" stroke="#44464c" strokeWidth="6" strokeDasharray="2.6 2.4" fill="none" strokeLinecap="round" />
+                <g
+                    style={{
+                        transformBox: 'view-box',
+                        // Anchored at the wall grommet, so the cable SWINGS about the point it is
+                        // actually bolted to: the free end sweeps up and right, chasing the
+                        // handset out of frame, then fades rather than ending in mid-air.
+                        transformOrigin: '104px 500px',
+                        transform: lifted ? 'rotate(34deg) scale(1.06)' : 'none',
+                        opacity: lifted ? 0 : 1,
+                        transition: 'transform 0.62s cubic-bezier(0.34, 0.86, 0.36, 1), opacity 0.5s ease 0.12s',
+                    }}
+                >
+                    <path d="M36 398 C 18 446, 20 494, 52 516 C 76 531, 96 522, 104 500" stroke="#0b0b0d" strokeWidth="9" fill="none" strokeLinecap="round" />
+                    <path d="M36 398 C 18 446, 20 494, 52 516 C 76 531, 96 522, 104 500" stroke="#44464c" strokeWidth="6" strokeDasharray="2.6 2.4" fill="none" strokeLinecap="round" />
+                </g>
 
                 {/* cable-entry plate wrapped over the enclosure's edge, sitting
                     in the blank steel margin left of the keypad tray */}
@@ -133,8 +187,9 @@ function HandsetAssembly({ lifted, onHangup }: { lifted: boolean; onHangup: () =
                     style={{
                         transformBox: 'view-box',
                         transformOrigin: '58px 110px',
-                        transform: lifted ? 'translate(6px, -16px) rotate(-4deg)' : 'none',
-                        transition: 'transform 0.35s cubic-bezier(0.3, 0.9, 0.4, 1.1)',
+                        // Off the hook and up to the ear: unseat, swing clear of the clip, then
+                        // travel out of frame. Reverses on hang-up.
+                        animation: handsetAnim ? `${handsetAnim} 0.62s cubic-bezier(0.34, 0.86, 0.36, 1) forwards` : undefined,
                     }}
                 >
                     <g transform="rotate(5 58 110)">
@@ -239,7 +294,8 @@ export function PayphoneUI() {
     const [coin,      setCoin]      = useState<{ enabled: boolean; cost: number }>({ enabled: false, cost: 1 });
     const [credit,    setCredit]    = useState(false);
     const [coinAnim,  setCoinAnim]  = useState(false);
-    const [slotNudge, setSlotNudge] = useState(0);
+    // Channel of a ring on THIS booth while it is already open, so it can be answered in place.
+    const [incoming,  setIncoming]  = useState<number | null>(null);
     const coinBusy   = useRef(false);
     const channelRef = useRef<number | null>(null);
     const phaseRef   = useRef(phase);
@@ -258,6 +314,7 @@ export function PayphoneUI() {
         setCoin(data.coin ?? { enabled: false, cost: 1 });
         setCredit(data.credited === true);
         setCoinAnim(false);
+        setIncoming(null);
         coinBusy.current = false;
         setDigits('');
         setPhase(data.connected ? 'connected' : 'idle');
@@ -265,6 +322,14 @@ export function PayphoneUI() {
         setElapsed(0);
         channelRef.current = null;
         setOpen(true);
+    }, []));
+
+    useNuiEvent('sd-phone:payphone:incoming', useCallback((data) => {
+        if (typeof data?.channel === 'number') setIncoming(data.channel);
+    }, []));
+
+    useNuiEvent('sd-phone:payphone:incomingEnded', useCallback(() => {
+        setIncoming(null);
     }, []));
 
     useNuiEvent('sd-phone:call:connected', useCallback((data) => {
@@ -279,6 +344,20 @@ export function PayphoneUI() {
         setPhase('ended');
         setLcdNote(null);
     }, []));
+
+    // Ringback down the earpiece while the far end rings out. Same tone the phone app uses, so
+    // both surfaces sound like the same network. startRing hands back its own stop.
+    useEffect(() => {
+        if (phase !== 'calling') return;
+        return startRing('ringback');
+    }, [phase]);
+
+    // The booth ringing at you, in the UI. The world prop rings too (client/payphone.lua plays it
+    // from the entity), so this is the close-up on top of the one you hear across the street.
+    useEffect(() => {
+        if (incoming === null || phase !== 'idle') return;
+        return startRing('ringtone');
+    }, [incoming, phase]);
 
     // Call timer; the caller-name note clears once it starts counting.
     useEffect(() => {
@@ -337,11 +416,9 @@ export function PayphoneUI() {
 
     function press(k: string) {
         if (phaseRef.current !== 'idle') return;
-        if (coinRef.current.enabled && !creditRef.current) {
-            // Dead keys until a coin goes in — nudge the slot instead of typing.
-            setSlotNudge(n => n + 1);
-            return;
-        }
+        // Dead keys until a coin goes in. Silent on purpose: the LCD is already blinking
+        // INSERT COIN, which is the machine telling you why nothing happened.
+        if (coinRef.current.enabled && !creditRef.current) return;
         setLcdNote(null);
         setDigits(prev => (prev.length >= 15 ? prev : prev + k));
         playDtmf(k);
@@ -365,7 +442,7 @@ export function PayphoneUI() {
                 setCredit(true);
                 setLcdNote(`${t('payphone.credit', 'CREDIT')} $${coinRef.current.cost.toFixed(2)}`);
                 coinBusy.current = false;
-            }, 780);
+            }, COIN_DROP_MS);
         } else {
             setLcdNote(r?.message ?? t('payphone.noCoins', 'NO COINS'));
             coinBusy.current = false;
@@ -376,7 +453,7 @@ export function PayphoneUI() {
         const number = digits.replace(/\D/g, '');
         if (!number || phaseRef.current !== 'idle') return;
         if (coinRef.current.enabled && !creditRef.current) {
-            setSlotNudge(n => n + 1);
+            setLcdNote(t('payphone.insertCoin', 'INSERT COIN'));
             return;
         }
         setPhase('calling');
@@ -391,6 +468,25 @@ export function PayphoneUI() {
         }
     }
 
+    async function answer() {
+        if (incoming === null || phaseRef.current !== 'idle') return;
+        const channel = incoming;
+        const r = await fetchNui<{ success: boolean; data?: { channel: number; callerName?: string }; message?: string }>(
+            'sd-phone:payphone:answer', { channel },
+        ).catch(() => null);
+
+        if (r?.success || !isFiveM) {
+            channelRef.current = r?.data?.channel ?? channel;
+            setIncoming(null);
+            setDigits('');
+            setElapsed(0);
+            setLcdNote(r?.data?.callerName ? r.data.callerName.toUpperCase() : null);
+            setPhase('connected');
+        } else {
+            setLcdNote(r?.message ?? t('payphone.couldNotAnswer', 'CANNOT ANSWER'));
+        }
+    }
+
     function hangup() {
         if (phaseRef.current === 'calling' || phaseRef.current === 'connected') {
             void fetchNui('sd-phone:payphone:hangup');
@@ -400,15 +496,16 @@ export function PayphoneUI() {
     }
 
     const lcd = lcdNote ? lcdNote.toUpperCase()
+        : incoming !== null && phase === 'idle' ? t('payphone.incomingCall', 'INCOMING CALL')
         : phase === 'calling'   ? t('payphone.calling', 'CALLING…')
         : phase === 'connected' ? fmtClock(elapsed)
         : phase === 'ended'     ? t('payphone.callEnded', 'CALL ENDED')
-        : digits ? (digits.length === 10 ? formatPhone(digits) : digits)
+        : digits ? formatPhone(digits)
         : needsCoin ? t('payphone.insertCoin', 'INSERT COIN')
         : booth.anonymous ? t('payphone.withheld', 'NO CALLER ID') : formatPhone(booth.number);
 
     /** The classic arcade blink, only while the display is begging for a coin. */
-    const lcdBlink = !lcdNote && phase === 'idle' && !digits && needsCoin;
+    const lcdBlink = !lcdNote && phase === 'idle' && (incoming !== null || (!digits && needsCoin));
 
     const inCall = phase === 'calling' || phase === 'connected';
     const boothScrawl = booth.anonymous ? t('payphone.withheld', 'NO CALLER ID') : formatPhone(booth.number);
@@ -419,14 +516,44 @@ export function PayphoneUI() {
             onMouseDown={() => { if (!inCall) close(); }}
         >
             {/* coin-toll animations: the drop, the slot's clink flash + idle
-                beckon glow, the INSERT COIN blink and the dead-key nudge */}
+                beckon glow, the INSERT COIN blink and the handset lift */}
             <style>{`
+                /* Hand-fed, not dropped: the coin is brought in from the right with its FACE to
+                   the viewer, lined up over the slit, then pushed straight down into it. It never
+                   rotates; only the last stretch narrows, as the slit takes it. */
                 @keyframes ppCoinDrop {
-                    0%   { transform: translate(-50%, -54px) rotate(0deg) scaleX(1); opacity: 0; }
-                    16%  { transform: translate(-50%, -40px) rotate(14deg) scaleX(0.94); opacity: 1; }
-                    58%  { transform: translate(-50%, -4px) rotate(78deg) scaleX(0.4); opacity: 1; }
-                    88%  { transform: translate(-50%, 30px) rotate(90deg) scaleX(0.18); opacity: 1; }
-                    100% { transform: translate(-50%, 44px) rotate(90deg) scaleX(0.14); opacity: 0; }
+                    0%   { transform: translate(calc(-50% + 34px), -58px) scale(0.9);  opacity: 0; }
+                    14%  { transform: translate(calc(-50% + 24px), -50px) scale(1);    opacity: 1; }
+                    38%  { transform: translate(calc(-50% + 4px),  -40px) scale(1);    opacity: 1; }
+                    50%  { transform: translate(-50%, -38px) scale(1) scaleX(1);       opacity: 1; }
+                    58%  { transform: translate(-50%, -34px) scale(1) scaleX(1);       opacity: 1; }
+                    76%  { transform: translate(-50%, -8px)  scale(1) scaleX(0.86);    opacity: 1; }
+                    90%  { transform: translate(-50%, 12px)  scale(1) scaleX(0.34);    opacity: 1; }
+                    100% { transform: translate(-50%, 26px)  scale(1) scaleX(0.16);    opacity: 0; }
+                }
+                /* Specular sweep across the face while it is still flat enough to catch light. */
+                @keyframes ppCoinShine {
+                    0%, 16%  { opacity: 0; transform: translateX(-140%) skewX(-18deg); }
+                    38%      { opacity: 0.9; }
+                    64%, 100%{ opacity: 0; transform: translateX(140%) skewX(-18deg); }
+                }
+                /* The slot's mouth flexes as the coin goes through it. */
+                @keyframes ppSlotSwallow {
+                    0%, 55%  { transform: scaleX(1); }
+                    68%      { transform: scaleX(1.35); }
+                    82%      { transform: scaleX(0.92); }
+                    100%     { transform: scaleX(1); }
+                }
+                /* Credit lamp: a hard blink as the coin registers, then it settles lit. */
+                @keyframes ppCreditStrike {
+                    0%   { opacity: 0.2; box-shadow: none; }
+                    45%  { opacity: 1; box-shadow: 0 0 10px rgba(96,224,120,0.95), inset 0 0 3px rgba(255,255,255,0.8); }
+                    62%  { opacity: 0.5; box-shadow: 0 0 3px rgba(96,224,120,0.4); }
+                    100% { opacity: 1; box-shadow: 0 0 7px rgba(96,224,120,0.7), inset 0 0 3px rgba(255,255,255,0.6); }
+                }
+                @keyframes ppCreditIdle {
+                    0%, 100% { box-shadow: 0 0 6px rgba(96,224,120,0.55), inset 0 0 3px rgba(255,255,255,0.5); }
+                    50%      { box-shadow: 0 0 9px rgba(96,224,120,0.8), inset 0 0 3px rgba(255,255,255,0.65); }
                 }
                 @keyframes ppSlotFlash {
                     0%, 68% { box-shadow: inset 0 0 4px rgba(0,0,0,0.95), 0 1px 0 rgba(255,255,255,0.4); }
@@ -441,11 +568,28 @@ export function PayphoneUI() {
                     0%, 54% { opacity: 1; }
                     55%, 100% { opacity: 0.22; }
                 }
-                @keyframes ppSlotNudge {
-                    0%, 100% { transform: translateX(0); }
-                    25% { transform: translateX(-3px); }
-                    55% { transform: translateX(3px); }
-                    80% { transform: translateX(-1.5px); }
+                /* Taking the handset to your ear: it unseats straight up out of the retaining
+                   clip, tips as the weight comes onto your hand, then swings up and out of
+                   frame. It is gone for the whole call; the empty cradle and the taut cable
+                   are what is left on screen. */
+                @keyframes ppHandsetLift {
+                    0%   { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
+                    18%  { transform: translate(1px, -30px) rotate(-2deg) scale(1.01); opacity: 1; }
+                    40%  { transform: translate(12px, -96px) rotate(-9deg) scale(1.04); opacity: 1; }
+                    68%  { transform: translate(26px, -212px) rotate(-16deg) scale(1.07); opacity: 0.72; }
+                    100% { transform: translate(40px, -330px) rotate(-22deg) scale(1.1); opacity: 0; }
+                }
+                /* Hung back up: dropped in and settled onto the hook. */
+                @keyframes ppHandsetHang {
+                    0%   { transform: translate(40px, -330px) rotate(-22deg) scale(1.1); opacity: 0; }
+                    46%  { transform: translate(14px, -104px) rotate(-9deg) scale(1.04); opacity: 1; }
+                    82%  { transform: translate(0, 6px) rotate(1.5deg) scale(1); opacity: 1; }
+                    100% { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
+                }
+                /* The call key doubles as Answer while this booth is ringing, so it pulses. */
+                @keyframes ppAnswerPulse {
+                    0%, 100% { box-shadow: 0 2px 3px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.55), 0 0 9px rgba(70,220,95,0.35); }
+                    50%      { box-shadow: 0 2px 3px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.7), 0 0 20px rgba(90,240,120,0.95); }
                 }
             `}</style>
             <div
@@ -653,15 +797,16 @@ export function PayphoneUI() {
                                 <div className="flex gap-1.5">
                                     <button
                                         type="button"
-                                        onClick={() => void call()}
-                                        disabled={phase !== 'idle' || !digits}
-                                        aria-label={t('payphone.call', 'Call')}
-                                        title={t('payphone.call', 'Call')}
+                                        onClick={() => void (incoming !== null && phase === 'idle' ? answer() : call())}
+                                        disabled={phase !== 'idle' || (incoming === null && !digits)}
+                                        aria-label={incoming !== null ? t('payphone.answer', 'Answer') : t('payphone.call', 'Call')}
+                                        title={incoming !== null ? t('payphone.answer', 'Answer') : t('payphone.call', 'Call')}
                                         className="flex h-[42px] w-[54px] items-center justify-center rounded-[7px] transition-[transform,filter] active:translate-y-[1px] active:brightness-90 disabled:opacity-45"
                                         style={{
                                             background: 'linear-gradient(180deg, #63e874 0%, #38bf4d 60%, #2ca63f 100%)',
                                             border: '1px solid #1d5c28',
                                             boxShadow: '0 2px 3px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.55), 0 0 9px rgba(70,220,95,0.35)',
+                                            animation: incoming !== null && phase === 'idle' ? 'ppAnswerPulse 1.05s ease-in-out infinite' : undefined,
                                         }}
                                     >
                                         <Phone className="h-[17px] w-[17px] text-[#0c3314]" fill="currentColor" strokeWidth={0} />
@@ -690,7 +835,6 @@ export function PayphoneUI() {
                             <div className="relative">
                                 <button
                                     type="button"
-                                    key={slotNudge}
                                     onClick={() => void insertCoin()}
                                     disabled={!needsCoin || phase !== 'idle'}
                                     aria-label={t('payphone.insertCoin', 'Insert coin')}
@@ -699,7 +843,6 @@ export function PayphoneUI() {
                                     style={{
                                         ...RECESS,
                                         cursor: needsCoin && phase === 'idle' ? 'pointer' : 'default',
-                                        animation: slotNudge > 0 && needsCoin ? 'ppSlotNudge 0.35s ease' : undefined,
                                     }}
                                 >
                                     <div
@@ -708,7 +851,9 @@ export function PayphoneUI() {
                                             background: 'linear-gradient(90deg, #0a0a0b, #1c1d1f 55%, #060607)',
                                             boxShadow: 'inset 0 0 4px rgba(0,0,0,0.95), 0 1px 0 rgba(255,255,255,0.4)',
                                             margin: '0 auto',
-                                            animation: coinAnim ? 'ppSlotFlash 0.78s ease' : (needsCoin && phase === 'idle' ? 'ppSlotBeckon 2s ease-in-out infinite' : undefined),
+                                            animation: coinAnim
+                                                ? `ppSlotFlash ${COIN_DROP_S} ease, ppSlotSwallow ${COIN_DROP_S} ease`
+                                                : (needsCoin && phase === 'idle' ? 'ppSlotBeckon 2s ease-in-out infinite' : undefined),
                                         }}
                                     />
                                 </button>
@@ -716,22 +861,61 @@ export function PayphoneUI() {
                                 {coinAnim && (
                                     <div
                                         aria-hidden
-                                        className="absolute left-1/2 top-[10px] z-10 flex h-[30px] w-[30px] items-center justify-center rounded-full text-[11px] font-black text-[#6d5414]"
+                                        className="absolute left-1/2 top-[4px] z-10 h-[52px] w-[52px] overflow-hidden rounded-full"
                                         style={{
-                                            background: 'radial-gradient(circle at 35% 30%, #f6dc82, #d3ab3e 55%, #9c7a22)',
-                                            border: '2px solid #8a6d1c',
-                                            boxShadow: 'inset 0 0 0 2.5px rgba(255,246,205,0.5), 0 2px 5px rgba(0,0,0,0.4)',
-                                            animation: 'ppCoinDrop 0.78s cubic-bezier(0.5, 0, 0.9, 0.4) forwards',
+                                            /* milled rim: alternating light/dark spokes read as reeding */
+                                            background: 'repeating-conic-gradient(#c9a338 0deg 3.2deg, #8f6f1e 3.2deg 6.4deg)',
+                                            boxShadow: '0 5px 12px rgba(0,0,0,0.55), 0 1px 0 rgba(255,246,205,0.35)',
+                                            animation: `ppCoinDrop ${COIN_DROP_S} cubic-bezier(0.45, 0, 0.85, 0.45) forwards`,
                                         }}
                                     >
-                                        $1
+                                        <div
+                                            className="absolute inset-[4px] flex items-center justify-center rounded-full text-[17px] font-black tracking-[-0.02em] text-[#6d5414]"
+                                            style={{
+                                                background: 'radial-gradient(circle at 34% 28%, #fbe89c, #d9b246 52%, #a8842a)',
+                                                boxShadow: 'inset 0 1.5px 2px rgba(255,250,220,0.9), inset 0 -1.5px 3px rgba(90,68,12,0.6), inset 0 0 0 2px rgba(255,246,205,0.28)',
+                                                textShadow: '0 1px 0 rgba(255,248,210,0.55)',
+                                            }}
+                                        >
+                                            $1
+                                        </div>
+                                        <div
+                                            className="pointer-events-none absolute inset-y-0 left-0 w-[55%]"
+                                            style={{
+                                                background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.9), transparent)',
+                                                animation: `ppCoinShine ${COIN_DROP_S} ease-out forwards`,
+                                            }}
+                                        />
                                     </div>
                                 )}
                             </div>
                             {coin.enabled && (
-                                <span className="mt-1.5 text-center text-[10px] font-bold tracking-[0.12em]" style={ETCHED}>
-                                    {`$${coin.cost} ${t('payphone.perCall', 'PER CALL')}`}
-                                </span>
+                                <>
+                                    {/* credit lamp: unlit steel bead until a coin registers, then held green
+                                        so a banked credit is readable without reading the LCD */}
+                                    <div className="mt-2 flex items-center gap-1.5">
+                                        <div
+                                            className="h-[7px] w-[7px] rounded-full"
+                                            style={credit
+                                                ? {
+                                                    background: 'radial-gradient(circle at 35% 30%, #b9ffc8, #47d162 55%, #1f7d33)',
+                                                    animation: coinAnim
+                                                        ? `ppCreditStrike ${COIN_DROP_S} ease forwards`
+                                                        : 'ppCreditIdle 2.4s ease-in-out infinite',
+                                                }
+                                                : {
+                                                    background: 'radial-gradient(circle at 35% 30%, #4a4c50, #2a2c2f 60%, #17181a)',
+                                                    boxShadow: 'inset 0 1px 1px rgba(0,0,0,0.8), 0 1px 0 rgba(255,255,255,0.22)',
+                                                }}
+                                        />
+                                        <span className="text-[8.5px] font-bold tracking-[0.14em]" style={ETCHED}>
+                                            {credit ? t('payphone.creditLamp', 'CREDIT') : t('payphone.noCreditLamp', 'NO CREDIT')}
+                                        </span>
+                                    </div>
+                                    <span className="mt-1 text-center text-[10px] font-bold tracking-[0.12em]" style={ETCHED}>
+                                        {`$${coin.cost} ${t('payphone.perCall', 'PER CALL')}`}
+                                    </span>
+                                </>
                             )}
                             {/* coin return flap at the column's foot */}
                             <div className="mt-auto w-full rounded-[10px] p-2" style={RECESS}>
@@ -750,7 +934,10 @@ export function PayphoneUI() {
                     {/* Lower door: the taped notes, stuck where a passerby would leave them */}
                     <div className="mt-4">
                         <TapedNote tilt={-2}>
-                            <span className="block text-center text-[21px] leading-[26px] text-[#2b3a8c]" style={{ fontFamily: HAND }}>
+                            <span className="block text-center text-[9.5px] font-bold uppercase leading-[13px] tracking-[0.18em] text-[#8a7a55]" style={NOTE_LABEL}>
+                                {t('payphone.thisPhone', 'This phone')}
+                            </span>
+                            <span className="block text-center text-[17px] font-semibold leading-[22px] text-[#27357f]" style={NOTE_NUMBER}>
                                 {boothScrawl}
                             </span>
                         </TapedNote>
@@ -760,10 +947,10 @@ export function PayphoneUI() {
                                     <button
                                         type="button"
                                         onClick={() => { if (phase === 'idle') setDigits(myNumber.replace(/\D/g, '')); }}
-                                        className="block w-full text-left active:opacity-60"
+                                        className="flex w-full items-baseline justify-between gap-2 text-left active:opacity-60"
                                     >
-                                        <span className="block text-[15px] leading-[16px] text-[#8f3d31]" style={{ fontFamily: HAND }}>{t('payphone.myNumber', 'My number')}</span>
-                                        <span className="block text-[20px] leading-[24px] text-[#2b3a8c]" style={{ fontFamily: HAND, WebkitTextStroke: '0.35px #2b3a8c' }}>{formatPhone(myNumber)}</span>
+                                        <span className="shrink-0 text-[11px] font-semibold uppercase leading-[21px] tracking-[0.06em] text-[#9a4638]" style={NOTE_LABEL}>{t('payphone.myNumber', 'My number')}</span>
+                                        <span className="text-[14.5px] font-semibold leading-[21px] text-[#27357f]" style={NOTE_NUMBER}>{formatPhone(myNumber)}</span>
                                     </button>
                                 )}
                                 {favorites.map(f => (
@@ -771,10 +958,10 @@ export function PayphoneUI() {
                                         key={f.phone}
                                         type="button"
                                         onClick={() => { if (phase === 'idle') setDigits(f.phone); }}
-                                        className="mt-1.5 block w-full text-left active:opacity-60"
+                                        className="flex w-full items-baseline justify-between gap-2 text-left active:opacity-60"
                                     >
-                                        <span className="block truncate text-[15px] leading-[16px] text-[#4a3f28]" style={{ fontFamily: HAND }}>{f.name}</span>
-                                        <span className="block text-[20px] leading-[24px] text-[#2b3a8c]" style={{ fontFamily: HAND, WebkitTextStroke: '0.35px #2b3a8c' }}>{formatPhone(f.phone)}</span>
+                                        <span className="min-w-0 flex-1 truncate text-[11.5px] font-semibold leading-[21px] text-[#3f3627]" style={NOTE_LABEL}>{f.name}</span>
+                                        <span className="shrink-0 text-[14.5px] font-semibold leading-[21px] text-[#27357f]" style={NOTE_NUMBER}>{formatPhone(f.phone)}</span>
                                     </button>
                                 ))}
                                 {!myNumber && favorites.length === 0 && (

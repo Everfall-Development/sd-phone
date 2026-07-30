@@ -39,6 +39,8 @@ export function getSettingsGroups(): SettingsGroup[] {
             rows: [
                 { id: 'airplane', icon: 'Plane',  iconBg: '#ff9f0a', label: t('settings.airplaneMode', 'Airplane Mode'),  subtitle: t('settings.airplaneModeSub', 'Turn off calls, data and connectivity'), toggle: false },
                 { id: 'streamer', icon: 'Video',  iconBg: '#5e5ce6', label: t('settings.streamerMode', 'Streamer Mode'),  subtitle: t('settings.streamerModeSub', 'Hides balances and card numbers'),         toggle: false },
+                { id: 'wifi',     icon: 'Wifi',   iconBg: '#0a84ff', label: t('settings.wifi', 'Wi-Fi'),                subtitle: t('settings.wifiSub', 'Join nearby networks') },
+                { id: 'bluetooth', icon: 'Bluetooth', iconBg: '#0a84ff', label: t('settings.bluetooth', 'Bluetooth'),   subtitle: t('settings.bluetoothSub', 'Pair with nearby devices') },
             ],
         },
         {
@@ -54,7 +56,8 @@ export function getSettingsGroups(): SettingsGroup[] {
                 { id: 'general',      icon: 'Settings2',   iconBg: '#8e8e93', label: t('settings.general', 'General'),              subtitle: t('settings.generalSub', 'Device info, storage and language') },
                 { id: 'display',      icon: 'Sun',         iconBg: '#0a84ff', label: t('settings.displayBrightness', 'Display & Brightness'),  subtitle: t('settings.displayBrightnessSub', 'Wallpaper, theme and brightness') },
                 { id: 'wallpaper',    icon: 'Image',       iconBg: '#64d2ff', label: t('settings.wallpaper', 'Wallpaper'),             subtitle: t('settings.wallpaperSub', 'Wallpaper & background') },
-                { id: 'face-unlock',  icon: 'Fingerprint', iconBg: '#34c759', label: t('settings.faceUnlockPasscode', 'Face Unlock & Passcode'), subtitle: t('settings.faceUnlockPasscodeSub', 'Lock and unlock options') },
+                { id: 'app-icons',    icon: 'LayoutGrid',  iconBg: '#5e5ce6', label: t('settings.appIcons', 'App Icons'),              subtitle: t('settings.appIconsSub', 'Icon theme and Home Screen names') },
+                { id: 'face-unlock',  icon: 'Fingerprint', iconBg: '#34c759', label: t('settings.faceScanPasscode', 'Face Scan & Passcode'), subtitle: t('settings.faceScanPasscodeSub', 'Lock and unlock options') },
                 { id: 'battery',      icon: 'BatteryFull', iconBg: '#34c759', label: t('settings.battery', 'Battery'),               subtitle: t('settings.batterySub', 'Manage battery usage') },
                 { id: 'privacy',      icon: 'ShieldCheck', iconBg: '#0a84ff', label: t('settings.privacySecurity', 'Privacy & Security'),    subtitle: t('settings.privacySecuritySub', 'Control app permissions') },
             ],

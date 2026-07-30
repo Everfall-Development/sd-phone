@@ -1,7 +1,7 @@
 -- Phones, numbers and who owns what. Pick your setup:
 --
---   Stock phone (shared data, automatic numbers)        -> Enabled = false
---   Unique phones, SIM cards carry the number (default) -> Enabled = true, DataOwner = 'device'
+--   Stock phone (shared data, automatic numbers)        -> Enabled = false   (DEFAULT)
+--   Unique phones, SIM cards carry the number           -> Enabled = true, DataOwner = 'device'
 --   Unique phones, no SIM items (built-in numbers)      -> Enabled = true, DataOwner = 'device', BuiltInNumbers = true
 --   Stock data, SIMs only change your number            -> Enabled = true, DataOwner = 'character'
 --   The SIM IS the phone (original unique phones)       -> Enabled = true, DataOwner = 'sim'
@@ -30,7 +30,7 @@
 -- lets a player carry their data to a new phone (the number stays behind on the old SIM).
 --
 -- Backend support: reading/writing per-slot item metadata is required. Supported out of the box:
---   * ox_inventory              (metadata mode, or the physical SIM-tray container mode below)
+--   * ox_inventory              (metadata mode, or the physical SIM-tray mode below)
 --   * qb-inventory / ps / lj    (metadata mode via the QBCore item `info` table)
 -- Other inventories (qs / tgiann / codem / origen / jaksam) need a small adapter in
 -- server/sim/inv.lua; plain ESX inventory has no item metadata and cannot support this feature.
@@ -44,13 +44,13 @@ return {
     -- identity of the SIM currently in it (grandfathering, no data copied or lost), and only
     -- from then on does the number float free of the data. (The pre-DataOwner boolean
     -- `DeviceIdentity` is still honoured when this key is absent.)
-    DataOwner = 'device',
+    DataOwner = 'sim',
 
     -- Unique phones WITHOUT SIM cards ("eSIM"): every phone mints its own permanent number the
     -- first time it is used - no sim_card item, no install/eject, the number lives and dies
     -- with the phone. Pairs with DataOwner 'device' or 'character' ('sim' has no SIM identity
-    -- to own data and coerces to 'device'); forces the metadata attach mode. SimItem,
-    -- UseContainers, AllowEject, ActivateBlankSims and /givesim become inert.
+    -- to own data and coerces to 'device'); forces the metadata attach mode. SimItem, SimTray,
+    -- AllowEject, ActivateBlankSims and /givesim become inert.
     BuiltInNumbers = false,
 
     -- Inventory item that carries a phone number in its metadata ({ number = '2075550123' }).
@@ -64,17 +64,26 @@ return {
     -- export (character-bound or hardcoded numbers) produce usable SIMs.
     ActivateBlankSims = true,
 
-    -- ox_inventory only: register every phone item as a 1-slot container ("SIM tray") instead
-    -- of writing the number onto the phone item. Players right-click/use the phone to open the
-    -- tray and drag the SIM in or out. Trade-off: with containers, USING the phone item opens
-    -- the tray (ox intercepts container items client-side), so the phone UI itself only opens
-    -- via the keybind. Leave false for the universal metadata mode, where using the phone opens
-    -- the phone UI and the SIM is installed by using the sim_card item.
-    UseContainers = false,
+    -- ox_inventory only: give every phone item a 1-slot "SIM tray" instead of writing the number
+    -- onto the phone item. Using the phone opens the phone UI as normal; the tray is a separate
+    -- right-click button players drag the SIM in and out of. That button has to be declared on
+    -- the phone item in ox_inventory/data/items.lua (see README - "Unique Phones & SIM Cards"):
+    --
+    --   buttons = {
+    --       { label = 'SIM Tray', action = function(slot) exports['sd-phone']:openSimTray(slot) end },
+    --   },
+    --
+    -- Leave false for the universal metadata mode, where the SIM is installed by using the
+    -- sim_card item and no inventory edit is needed.
+    --
+    -- Renamed from `UseContainers`, which is still read when this key is absent. The old name
+    -- described the ox item-container this used to be built on; trays are ox stashes now, because
+    -- ox opens a container item on USE and that made the phone itself keybind-only.
+    SimTray = false,
 
     -- Metadata mode only: allow ejecting the installed SIM from Settings -> SIM & Backup. The
-    -- player gets the sim_card item back (number intact) and the phone loses service. In
-    -- container mode ejecting is physical (drag it out of the tray) and this flag is ignored.
+    -- player gets the sim_card item back (number intact) and the phone loses service. In tray
+    -- mode ejecting is physical (drag it out of the tray) and this flag is ignored.
     AllowEject = true,
 
     -- Cloud Backup (Settings -> SIM & Backup). The backup account is the CHARACTER, so a SIM

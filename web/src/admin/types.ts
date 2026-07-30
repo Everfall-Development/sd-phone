@@ -1,5 +1,7 @@
 // Shapes returned by the server admin module (server/admin/actions.lua).
 
+import { formatPhone } from '@/lib/phone';
+
 export interface AdminPlayerHit {
     citizenid:    string;
     name?:        string;
@@ -68,7 +70,7 @@ export interface AdminOverview {
     downloadable: { id: string; label: string }[];
     /** Unique-phones footprint; absent while the SIM feature is off. */
     sim?: {
-        mode: 'container' | 'metadata';
+        mode: 'tray' | 'metadata';
         sims: AdminSimRow[];
         backup?: { profiles: number; enabled: boolean; hasPassword: boolean } | null;
         /** Only while the player is online. */
@@ -206,6 +208,6 @@ export function fmtTime(epoch?: number | null): string {
 
 export function fmtPhone(number?: string | null): string {
     const d = (number ?? '').replace(/\D/g, '');
-    if (d.length !== 10) return d || '—';
-    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+    if (!d) return '—';
+    return formatPhone(d);
 }

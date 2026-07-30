@@ -1,5 +1,6 @@
 import { t } from '@/i18n';
 import { useSessionState } from '@/hooks/useSessionState';
+import { AppIconsPage } from './appearance/AppIconsPage';
 import { DisplayBrightnessPage } from './appearance/DisplayBrightnessPage';
 import { FaceUnlockPage } from './security/FaceUnlockPage';
 import { BatteryPage } from './general/BatteryPage';
@@ -17,17 +18,32 @@ import { PushLayer } from './SettingsSubPage';
 import { WallpaperPage } from './appearance/WallpaperPage';
 import { SimBackupPage } from './sim/SimBackupPage';
 import { useSimStore } from '@/stores/simStore';
+import { BluetoothPage } from './bluetooth/BluetoothPage';
+import { WifiPage } from './wifi/WifiPage';
+import { useWifiConfigured, useWifiConnected } from '@/stores/wifiStore';
+import { useBluetoothConfigured } from '@/stores/bluetoothStore';
 
-type SubPage = 'general' | 'display' | 'wallpaper' | 'notifications' | 'sound-haptics' | 'face-unlock' | 'phone' | 'battery' | 'privacy' | 'sim' | null;
+type SubPage = 'general' | 'display' | 'wallpaper' | 'app-icons' | 'notifications' | 'sound-haptics' | 'face-unlock' | 'phone' | 'battery' | 'privacy' | 'sim' | 'wifi' | 'bluetooth' | null;
 
 export function Settings({ onClose }: { onClose: () => void }) {
     const [subPage, setSubPage] = useSessionState<SubPage>('settings:subPage', null);
     const [query,   setQuery]   = useSessionState('settings:query', '');
     const simEnabled = useSimStore(s => s.enabled);
+    const wifiConfigured = useWifiConfigured();
+    const bluetoothConfigured = useBluetoothConfigured();
+    const wifi = useWifiConnected();
 
     // The SIM & Backup row only exists while the server runs unique phones.
     const settingsGroups = getSettingsGroups()
         .map(g => simEnabled ? g : { ...g, rows: g.rows.filter(r => r.id !== 'sim') })
+        .map(g => wifiConfigured ? g : { ...g, rows: g.rows.filter(r => r.id !== 'wifi') })
+        .map(g => bluetoothConfigured ? g : { ...g, rows: g.rows.filter(r => r.id !== 'bluetooth') })
+        .map(g => ({
+            ...g,
+            rows: g.rows.map(r => (r.id === 'wifi'
+                ? { ...r, status: wifi ? wifi.ssid : t('settings.wifiNotConnected', 'Not Connected') }
+                : r)),
+        }))
         .filter(g => g.rows.length > 0);
     const allRows = settingsGroups.flatMap(g => g.rows);
     const searchResults = query.trim()
@@ -44,6 +60,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         if (id === 'general')       setSubPage('general');
         if (id === 'display')       setSubPage('display');
         if (id === 'wallpaper')     setSubPage('wallpaper');
+        if (id === 'app-icons')     setSubPage('app-icons');
         if (id === 'notifications') setSubPage('notifications');
         if (id === 'sound-haptics') setSubPage('sound-haptics');
         if (id === 'face-unlock')   setSubPage('face-unlock');
@@ -51,12 +68,15 @@ export function Settings({ onClose }: { onClose: () => void }) {
         if (id === 'battery')       setSubPage('battery');
         if (id === 'privacy')       setSubPage('privacy');
         if (id === 'sim')           setSubPage('sim');
+        if (id === 'wifi')          setSubPage('wifi');
+        if (id === 'bluetooth')     setSubPage('bluetooth');
     }
 
     const sub =
         subPage === 'general'         ? <GeneralPage           onBack={handleBack} />
         : subPage === 'display'       ? <DisplayBrightnessPage onBack={handleBack} />
         : subPage === 'wallpaper'     ? <WallpaperPage         onBack={handleBack} />
+        : subPage === 'app-icons'     ? <AppIconsPage          onBack={handleBack} />
         : subPage === 'notifications' ? <NotificationsPage     onBack={handleBack} />
         : subPage === 'sound-haptics' ? <SoundHapticsPage      onBack={handleBack} />
         : subPage === 'face-unlock'   ? <FaceUnlockPage        onBack={handleBack} />
@@ -64,6 +84,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
         : subPage === 'battery'       ? <BatteryPage           onBack={handleBack} />
         : subPage === 'privacy'       ? <PrivacySecurityPage   onBack={handleBack} onOpenFaceUnlock={() => setSubPage('face-unlock')} />
         : subPage === 'sim'           ? <SimBackupPage         onBack={handleBack} />
+        : subPage === 'wifi'          ? <WifiPage              onBack={handleBack} />
+        : subPage === 'bluetooth'     ? <BluetoothPage         onBack={handleBack} />
         : null;
 
     return (

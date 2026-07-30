@@ -1,16 +1,25 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
-import { Minus, Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import { LayoutGrid, Minus, Plus } from 'lucide-react';
 
 import type { AppDef } from '@/core/types';
 import { useTheme } from '@/stores/themeStore';
 import { resolveWallpaper } from './wallpapers';
-import { AppIcon } from './AppIcon';
+import { AppIcon, TILE_SHADOW, radiusPct } from './AppIcon';
 import { AppIconSVG } from './AppIconSVG';
+import { AppGlyph } from './AppGlyphs';
 import { AppBadge } from './AppBadge';
 import { useBadges } from '@/stores/badgeStore';
+import { useIconAppearance, useShowAppNames } from '@/stores/iconThemeStore';
 import { AlertDialog } from '@/ui/AlertDialog';
-import type { SavedLayout } from '@/apps/appstore/appsApi';
+import type { SavedLayout, WidgetAlign, WidgetPlacement, WidgetSize, WidgetTheme } from '@/apps/appstore/appsApi';
+import type { DockDrag, DockPlan } from './dockMoves';
+import { DOCK_MAX, planDockDrag } from './dockMoves';
+import { SPAN, coveredCells, firstFit, jiggleDeg, landingCell, pageMoves, placeNewApps, reflowAround, trySwap, widgetPx } from './widgets/geometry';
+import { useDockReflow } from './useDockReflow';
+import { widgetByKind } from './widgets/registry';
+import { launchOriginFrom } from './launchOrigin';
+import { WidgetGallery } from './widgets/WidgetGallery';
 import { t } from '@/i18n';
 
 
@@ -18,6 +27,7 @@ const COLS = 4;
 const ROWS = 6;
 const ITEMS_PER_PAGE = COLS * ROWS;
 const SCREEN_W = 440;
+const SCREEN_H = 956;
 const COMMIT_THRESHOLD = SCREEN_W * 0.2;
 const FLICK_VELOCITY = 0.4;
 
@@ -26,6 +36,7 @@ const ICON = 78;
 const COL_STRIDE = ICON + 24;
 const ROW_Y0 = 8;
 const ROW_STRIDE = 122;
+const stripTop = 70;
 
 function chunk<T>(arr: T[], size: number): T[][] {
     const out: T[][] = [];
@@ -39,6 +50,14 @@ function cellFromCenter(cx: number, cy: number) {
     const c = Math.max(0, Math.min(COLS - 1, Math.round((cx - PAD_X - ICON / 2) / COL_STRIDE)));
     const r = Math.max(0, Math.min(ROWS - 1, Math.round((cy - ROW_Y0 - ICON / 2) / ROW_STRIDE)));
     return r * COLS + c;
+}
+function offsetWithin(el: HTMLElement | null, root: HTMLElement | null): { x: number; y: number } {
+    let x = 0, y = 0;
+    for (let n: HTMLElement | null = el; n && n !== root; n = n.offsetParent as HTMLElement | null) {
+        x += n.offsetLeft;
+        y += n.offsetTop;
+    }
+    return { x, y };
 }
 function ancestorZoom(el: HTMLElement | null): number {
     let z = 1;
@@ -63,6 +82,33 @@ function jiggleDelay(id: string): number {
     let h = 0;
     for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
     return -(h % 180);
+}
+function bloomDelay(id: string): number {
+    return Math.abs(jiggleDelay(id));
+}
+
+function widgetClash(widgets: WidgetPlacement[], uid: string | undefined, size: WidgetSize, page: number, col: number, row: number): boolean {
+    const target = new Set(coveredCells({ size, col, row }));
+    return widgets.some(o => o.uid !== uid && o.page === page && coveredCells(o).some(c => target.has(c)));
+}
+
+function widgetsAfterDrop(widgets: WidgetPlacement[], uid: string | undefined, page: number, col: number, row: number): WidgetPlacement[] | null {
+    const held = widgets.find(w => w.uid === uid);
+    if (!held) return null;
+    if (!widgetClash(widgets, uid, held.size, page, col, row)) {
+        return widgets.map(o => (o.uid === uid ? { ...o, page, col, row } : o));
+    }
+    return trySwap(widgets, held.uid, { page, col, row });
+}
+
+function pillSpot(x: number, y: number, size: WidgetSize): { x: number; y: number } {
+    const { width, height } = widgetPx(size);
+    const gridH = ROWS * ROW_STRIDE + ROW_Y0;
+    const below = y + height + 10;
+    return {
+        x: Math.max(96, Math.min(SCREEN_W - 96, x + width / 2)),
+        y: below + 32 > gridH ? Math.max(0, y - 38) : below,
+    };
 }
 
 const FOLDER_PREFIX = 'folder:';
@@ -99,10 +145,15 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     const appMap   = useMemo(() => new Map(apps.map(a => [a.id, a])), [apps]);
+
+    const [dockIds, setDockIds] = useState<string[]>(() => savedLayout?.dock ?? dock);
     const dockApps = useMemo(
-        () => dock.map(id => apps.find(a => a.id === id)).filter((a): a is AppDef => !!a),
-        [apps, dock],
+        () => dockIds.map(id => apps.find(a => a.id === id)).filter((a): a is AppDef => !!a),
+        [apps, dockIds],
     );
+    const dockShown = useMemo(() => dockApps.map(a => a.id), [dockApps]);
+    const dockShownRef = useRef(dockShown);
+    dockShownRef.current = dockShown;
 
     const [folders, setFolders] = useState<Record<string, { name: string; appIds: string[] }>>(() => {
         const out: Record<string, { name: string; appIds: string[] }> = {};
@@ -111,10 +162,12 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
     });
     const folderedIds = useMemo(() => new Set(Object.values(folders).flatMap(f => f.appIds)), [folders]);
 
+    const [widgets, setWidgets] = useState<WidgetPlacement[]>(() => savedLayout?.widgets ?? []);
+
     const [slots, setSlots] = useState<(string | null)[]>(() => {
         if (savedLayout && savedLayout.slots.length) return normalize(savedLayout.slots);
         const seeded = new Set(Object.values(folders).flatMap(f => f.appIds));
-        const loose = apps.filter(a => !dock.includes(a.id) && !seeded.has(a.id)).map(a => a.id);
+        const loose = apps.filter(a => !dockIds.includes(a.id) && !seeded.has(a.id)).map(a => a.id);
         const FIRST_PAGE = 12;
         const arr: (string | null)[] = Array(ITEMS_PER_PAGE * 2).fill(null);
         loose.slice(0, FIRST_PAGE).forEach((id, i) => { arr[i] = id; });
@@ -140,31 +193,35 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
     useEffect(() => {
         const known = new Set(apps.map(a => a.id));
         const folderKeys = new Set(Object.keys(folders));
+        const docked = new Set(dockIds);
         setSlots(prev => {
             const cleaned = prev.map(id => {
                 if (!id) return id;
                 if (isFolderId(id)) return folderKeys.has(folderKeyOf(id)) ? id : null;
                 if (folderedIds.has(id)) return null;
+                if (docked.has(id)) return null;
                 return known.has(id) ? id : null;
             });
             const placed = new Set(cleaned.filter((x): x is string => !!x && !isFolderId(x)));
             const missing = apps
-                .filter(a => !dock.includes(a.id) && !folderedIds.has(a.id) && !placed.has(a.id))
+                .filter(a => !docked.has(a.id) && !folderedIds.has(a.id) && !placed.has(a.id))
                 .map(a => a.id);
             if (!missing.length && cleaned.every((v, i) => v === prev[i])) return prev;
-            const next = [...cleaned];
-            for (const id of missing) {
-                const idx = next.indexOf(null);
-                if (idx === -1) next.push(id); else next[idx] = id;
-            }
-            return normalize(next);
+            return normalize(placeNewApps(cleaned, missing, widgets, ITEMS_PER_PAGE));
         });
-    }, [apps, dock, folders, folderedIds]);
+    }, [apps, dockIds, folders, folderedIds, widgets]);
 
-    const latestRef = useRef<SavedLayout>({ slots, folders: [] });
+    // Read by the drag listeners, which are bound once per drag and would otherwise close over
+    // the widget list as it was when the drag started.
+    const widgetsRef = useRef(widgets);
+    widgetsRef.current = widgets;
+
+    const latestRef = useRef<SavedLayout>({ slots, folders: [], widgets: [], dock: dockIds });
     latestRef.current = {
         slots,
         folders: Object.entries(folders).map(([key, f]) => ({ key, name: f.name, appIds: f.appIds })),
+        widgets,
+        dock: dockIds,
     };
     const onLayoutChangeRef = useRef(onLayoutChange);
     onLayoutChangeRef.current = onLayoutChange;
@@ -177,7 +234,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
             layoutSaveTimer.current = null;
             onLayoutChangeRef.current?.(latestRef.current);
         }, 500);
-    }, [slots, folders]);
+    }, [slots, folders, widgets, dockIds]);
     useEffect(() => () => {
         if (layoutSaveTimer.current) {
             window.clearTimeout(layoutSaveTimer.current);
@@ -189,7 +246,163 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
         (folders[key]?.appIds ?? []).map(id => appMap.get(id)).filter((a): a is AppDef => !!a);
     const folderBadge = (key: string): number =>
         (folders[key]?.appIds ?? []).reduce((n, id) => n + (badges?.[id] ?? 0), 0);
-    const pages = useMemo(() => chunk(slots, ITEMS_PER_PAGE), [slots]);
+
+    const [galleryOpen, setGalleryOpen] = useState(false);
+
+    /** Places a widget on the current page, or reports back that it would not fit. */
+    const addWidget = useCallback((kind: string, size: WidgetSize, align: WidgetAlign, theme: WidgetTheme, picks?: string[]): boolean => {
+        const spot = firstFit(size, pageRef.current, slots, widgets, ITEMS_PER_PAGE);
+        if (!spot) return false;
+        const next: WidgetPlacement[] = [...widgets, {
+            uid: `w${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`,
+            kind, size, align, theme, page: pageRef.current, col: spot.col, row: spot.row,
+            ...(picks?.length ? { picks } : {}),
+        }];
+        setWidgets(next);
+        setSlots(prev => normalize(reflowAround(prev, next, ITEMS_PER_PAGE)));
+        setGalleryOpen(false);
+        return true;
+    }, [slots, widgets]);
+
+    const removeWidget = useCallback((uid: string) => {
+        setWidgets(prev => prev.filter(w => w.uid !== uid));
+    }, []);
+
+    // Widget dragging is deliberately separate from the icon drag above. Icons swap, fold into
+    // folders and reflow; a widget just moves to a free rectangle, so sharing that machinery
+    // would mean threading multi-cell cases through every branch of it.
+    const [dragW, setDragW] = useState<{ uid: string; x: number; y: number } | null>(null);
+    const dragWStart = useRef({ px: 0, py: 0, x: 0, y: 0, zoom: 1 });
+    const dropSpot   = useRef<{ col: number; row: number } | null>(null);
+    const [dropPreview, setDropPreview] = useState<{ page: number; col: number; row: number } | null>(null);
+
+    /** Nearest legal top-left cell for a widget dragged to (x, y), clamped inside the grid. */
+    const cellFor = useCallback((size: WidgetSize, x: number, y: number) => {
+        const span = SPAN[size];
+        const col = Math.max(0, Math.min(COLS - span.w, Math.round((x - PAD_X) / COL_STRIDE)));
+        const row = Math.max(0, Math.min(ROWS - span.h, Math.round((y - ROW_Y0) / ROW_STRIDE)));
+        return { col, row };
+    }, []);
+
+    /** Page the widget will land on. Follows the visible page while an edge-flip is dragging it. */
+    const dropPageRef = useRef(0);
+    const dragSizeRef = useRef<WidgetSize>('sm');
+
+    function onWidgetDown(e: ReactPointerEvent, w: WidgetPlacement) {
+        if (!editingRef.current) return;
+        e.stopPropagation();
+        const s = slot(w.row * COLS + w.col);
+        dragWStart.current = { px: e.clientX, py: e.clientY, x: s.x, y: s.y, zoom: ancestorZoom(stripRef.current) };
+        dropSpot.current = { col: w.col, row: w.row };
+        dropPageRef.current = w.page;
+        dragSizeRef.current = w.size;
+        setDropPreview({ page: w.page, col: w.col, row: w.row });
+        setDragW({ uid: w.uid, x: s.x, y: s.y });
+        // No setPointerCapture: the dragged tile is re-parented into whichever page is showing,
+        // and capture does not survive that. The window listeners below own the gesture instead.
+    }
+
+    /**
+     * Widget drag, driven from the WINDOW rather than the tile.
+     *
+     * Dragging a widget to another page means it has to be rendered on the page that is currently
+     * visible, which unmounts it from the page it started on. Pointer capture and element
+     * handlers both die with that unmount, so the move and release are tracked globally and the
+     * tile stays a passive thing to look at.
+     */
+    useEffect(() => {
+        const uid = dragW?.uid;
+        if (!uid) return;
+
+        function move(e: PointerEvent) {
+            const g = dragWStart.current;
+            const x = g.x + (e.clientX - g.px) / g.zoom;
+            const y = g.y + (e.clientY - g.py) / g.zoom;
+            setDragW(d => (d && d.uid === uid ? { uid, x, y } : d));
+            const spot = cellFor(dragSizeRef.current, x, y);
+            dropSpot.current = spot;
+            setDropPreview(p => (p && p.page === dropPageRef.current && p.col === spot.col && p.row === spot.row
+                ? p
+                : { page: dropPageRef.current, col: spot.col, row: spot.row }));
+
+            // Same edge-hold as the icon drag, so carrying a widget between pages feels identical
+            // to carrying an icon: hover near an edge and the page turns under you.
+            const stripW = stripRef.current?.offsetWidth ?? 0;
+            const span = SPAN[dragSizeRef.current];
+            const px = x + (span.w * COL_STRIDE) / 2;
+            const EDGE = 44;
+            const dir: 'l' | 'r' | null = px < EDGE ? 'l' : px > stripW - EDGE ? 'r' : null;
+            const canFlip = dir === 'l' ? pageRef.current > 0
+                : dir === 'r' ? pageRef.current < visiblePagesRef.current - 1 : false;
+            if (dir && canFlip) {
+                if (edgeDir.current !== dir) {
+                    clearEdge();
+                    edgeDir.current = dir;
+                    edgeTimer.current = window.setTimeout(() => {
+                        const next = Math.max(0, Math.min(visiblePagesRef.current - 1, pageRef.current + (dir === 'l' ? -1 : 1)));
+                        dropPageRef.current = next;
+                        setPage(next);
+                        setDropPreview(p => (p && p.page !== next ? { ...p, page: next } : p));
+                        edgeDir.current = null; edgeTimer.current = null;
+                    }, 600);
+                }
+            } else {
+                clearEdge();
+            }
+        }
+
+        function up() {
+            clearEdge();
+            const spot = dropSpot.current;
+            const toPage = dropPageRef.current;
+            setDragW(null);
+            setDropPreview(null);
+            if (!spot) return;
+
+            const next = widgetsAfterDrop(widgetsRef.current, uid, toPage, spot.col, spot.row);
+            if (!next) return;
+            setWidgets(next);
+            setSlots(prev => normalize(reflowAround(prev, next, ITEMS_PER_PAGE)));
+        }
+
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+        window.addEventListener('pointercancel', up);
+        return () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+            window.removeEventListener('pointercancel', up);
+        };
+        // Only the identity of the dragged widget matters; everything else is read from refs so
+        // the listeners are attached once per drag rather than re-bound on every pointer move.
+    }, [dragW?.uid, cellFor]);
+
+    const previewWidgets = useMemo(() => {
+        const uid = dragW?.uid;
+        if (!uid || !dropPreview) return widgets;
+        const held = widgets.find(w => w.uid === uid);
+        if (!held) return widgets;
+        if (held.page === dropPreview.page && held.col === dropPreview.col && held.row === dropPreview.row) return widgets;
+        return widgetsAfterDrop(widgets, uid, dropPreview.page, dropPreview.col, dropPreview.row) ?? widgets;
+    }, [widgets, dragW?.uid, dropPreview]);
+
+    const previewSlots = useMemo(
+        () => (previewWidgets === widgets ? slots : reflowAround(slots, previewWidgets, ITEMS_PER_PAGE)),
+        [slots, widgets, previewWidgets],
+    );
+
+    const reflowNote = useMemo(() => pageMoves(slots, previewSlots, ITEMS_PER_PAGE), [slots, previewSlots]);
+
+    /** page -> cells hidden beneath a widget, so an icon is never drawn under one. */
+    const coveredByPage = useMemo(() => {
+        const m = new Map<number, Set<number>>();
+        for (const w of previewWidgets) {
+            const set = m.get(w.page) ?? new Set<number>();
+            coveredCells(w).forEach(c => set.add(c));
+            m.set(w.page, set);
+        }
+        return m;
+    }, [previewWidgets]);
 
     const [page, setPage]   = useState(0);
     const [dragX, setDragX] = useState(0);
@@ -223,9 +436,15 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
     }, []);
 
     const stripRef = useRef<HTMLDivElement>(null);
+    const rootRef  = useRef<HTMLDivElement>(null);
+    const dockRef  = useRef<HTMLDivElement>(null);
     const [dragId, setDragId] = useState<string | null>(null);
     const [dragPos, setDragPos] = useState({ x: 0, y: 0 });
     const [overCell, setOverCell] = useState<number | null>(null);
+    const [dockOver, setDockOver] = useState<number | null>(null);
+    const dockOverRef = useRef<number | null>(null);
+    const [dragFromDock, setDragFromDock] = useState(false);
+    const fromDockRef = useRef(false);
     const startClient = useRef({ x: 0, y: 0 });
     const grabSlot = useRef({ x: 0, y: 0 });
     const grabZoom = useRef(1);
@@ -239,6 +458,49 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
     const edgeDir = useRef<'l' | 'r' | null>(null);
     const clearEdge = () => { if (edgeTimer.current) { window.clearTimeout(edgeTimer.current); edgeTimer.current = null; } edgeDir.current = null; };
 
+    const blockedCells = useCallback((pg: number) => {
+        const set = new Set(coveredByPage.get(pg) ?? []);
+        const base = pg * ITEMS_PER_PAGE;
+        for (let i = 0; i < ITEMS_PER_PAGE; i++) {
+            const v = slots[base + i];
+            if (v && isFolderId(v)) set.add(i);
+        }
+        return set;
+    }, [coveredByPage, slots]);
+
+    const dockDragOf = useCallback((id: string, dockIndex: number | null, fromDock: boolean, fromIndex: number, pg: number, cell: number, armed: number | null): DockDrag => ({
+        id,
+        dock:         dockShown,
+        slots,
+        dockIndex,
+        fromDock,
+        fromIndex,
+        page:         pg,
+        overCell:     cell,
+        blocked:      blockedCells(pg),
+        merge:        armed !== null && armed === cell && !!slots[pg * ITEMS_PER_PAGE + armed],
+        itemsPerPage: ITEMS_PER_PAGE,
+    }), [dockShown, slots, blockedCells]);
+
+    const dockPlan = useMemo(() => {
+        if (!dragId) return null;
+        if (dockOver === null && (!dragFromDock || overCell === null)) return null;
+        const fromIndex = fromPageRef.current * ITEMS_PER_PAGE + fromCell.current;
+        return planDockDrag(dockDragOf(dragId, dockOver, dragFromDock, fromIndex, page, overCell ?? 0, mergeCell));
+    }, [dragId, dockOver, dragFromDock, overCell, page, mergeCell, dockDragOf]);
+
+    const dockView = useMemo(
+        () => (dockPlan ? dockPlan.dock.map(id => appMap.get(id)).filter((a): a is AppDef => !!a) : dockApps),
+        [dockPlan, dockApps, appMap],
+    );
+
+    const dockRowRef = useDockReflow<HTMLDivElement>(dockView.map(a => a.id).join('|'));
+
+    const pages = useMemo(
+        () => chunk(dockPlan ? normalize(dockPlan.slots) : previewSlots, ITEMS_PER_PAGE),
+        [dockPlan, previewSlots],
+    );
+
     const mergeCellRef = useRef<number | null>(null);
     mergeCellRef.current = mergeCell;
     const dwellTimer = useRef<number | null>(null);
@@ -249,24 +511,72 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
         if (mergeCellRef.current !== null) setMergeCell(null);
     };
 
-    const filledPages = Math.floor(lastFilledIndex(slots) / ITEMS_PER_PAGE) + 1;
+    // A page counts as used if it holds an icon OR a widget. Counting only icons made a page
+    // holding nothing but a widget collapse the moment the drag ended: the page stopped being
+    // rendered and took the widget with it, which looked exactly like the widget was deleted.
+    const lastIconPage   = Math.floor(lastFilledIndex(slots) / ITEMS_PER_PAGE);
+    const lastWidgetPage = widgets.reduce((m, w) => Math.max(m, w.page), -1);
+    const filledPages = Math.max(lastIconPage, lastWidgetPage) + 1;
     const visiblePages = editing ? Math.max(1, filledPages + 1) : Math.max(1, filledPages);
     const visiblePagesRef = useRef(1);
     visiblePagesRef.current = visiblePages;
-    const renderPages = useMemo(() => pages.slice(0, visiblePages), [pages, visiblePages]);
+    // `pages` is chunked from the ICON array, so a widget-only page has no chunk to render into.
+    // Pad with empty pages up to visiblePages so every page that exists gets a container - this
+    // is also what provides the spare trailing page to drag onto in edit mode.
+    const renderPages = useMemo(() => {
+        const out = pages.slice(0, visiblePages);
+        while (out.length < visiblePages) out.push(Array<string | null>(ITEMS_PER_PAGE).fill(null));
+        return out;
+    }, [pages, visiblePages]);
     useEffect(() => { if (page > visiblePages - 1) setPage(visiblePages - 1); }, [visiblePages, page]);
 
-    function onPointerDown(e: ReactPointerEvent) {
+    /**
+     * True while the page strip is sliding, so glass widgets can drop their blur for the duration.
+     *
+     * Covers both halves of the gesture: the finger drag, and the settle transition that plays
+     * afterwards. The window is a hair longer than the 380ms transition so the blur returns to a
+     * stationary tile rather than a still-moving one.
+     */
+    const [pageMoving, setPageMoving] = useState(false);
+    const settleRef = useRef<number | null>(null);
+    const markPageMotion = useCallback(() => {
+        setPageMoving(true);
+        if (settleRef.current) window.clearTimeout(settleRef.current);
+        settleRef.current = window.setTimeout(() => { setPageMoving(false); settleRef.current = null; }, 430);
+    }, []);
+    useEffect(() => () => { if (settleRef.current) window.clearTimeout(settleRef.current); }, []);
+
+    const swiping = dragX !== 0;
+    useEffect(() => { if (swiping) markPageMotion(); }, [swiping, markPageMotion]);
+    // Compares the PREVIOUS page rather than skipping the first run: StrictMode double-invokes
+    // effects in dev, which defeats a "first run" ref and would suspend the blur on mount.
+    const prevPageRef = useRef(page);
+    useEffect(() => {
+        if (prevPageRef.current === page) return;
+        prevPageRef.current = page;
+        markPageMotion();
+    }, [page, markPageMotion]);
+
+    function armLongPress(e: ReactPointerEvent) {
         startXRef.current = e.clientX; startYRef.current = e.clientY;
+        clearLP();
+        if (!editingRef.current) lpTimer.current = window.setTimeout(() => setEditing(true), 450);
+    }
+    function longPressMove(e: ReactPointerEvent) {
+        if (lpTimer.current === null) return;
+        if (Math.abs(e.clientX - startXRef.current) > 8 || Math.abs(e.clientY - startYRef.current) > 8) clearLP();
+    }
+
+    function onPointerDown(e: ReactPointerEvent) {
+        armLongPress(e);
         lastXRef.current = e.clientX; lastTRef.current = e.timeStamp; velRef.current = 0;
         lockedAxis.current = null; capturedRef.current = false; isDraggingRef.current = true;
-        if (!editing) { clearLP(); lpTimer.current = window.setTimeout(() => setEditing(true), 450); }
     }
     function onPointerMove(e: ReactPointerEvent) {
         if (dragId) { onIconMove(e); return; }
         if (!isDraggingRef.current) return;
+        longPressMove(e);
         const dx = e.clientX - startXRef.current, dy = e.clientY - startYRef.current;
-        if (Math.abs(dx) > 8 || Math.abs(dy) > 8) clearLP();
         if (!lockedAxis.current && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) lockedAxis.current = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v';
         if (lockedAxis.current !== 'h') return;
         if (!capturedRef.current) { capturedRef.current = true; (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); }
@@ -302,21 +612,60 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
         fromCell.current = localCell;
         fromPageRef.current = pageRef.current;
         overCellRef.current = localCell;
+        fromDockRef.current = false;
+        dockOverRef.current = null;
+        setDragFromDock(false); setDockOver(null);
         setDragId(id); setDragPos(s); setOverCell(localCell);
         stripRef.current?.setPointerCapture(e.pointerId);
     }
+
+    function onDockIconDown(e: ReactPointerEvent, id: string, index: number) {
+        if (!editingRef.current) return;
+        e.stopPropagation();
+        const zone = e.currentTarget as HTMLElement;
+        const p = offsetWithin(zone, rootRef.current);
+        const s = { x: p.x + Math.max(0, (zone.offsetWidth - ICON) / 2), y: p.y - stripTop };
+        grabSlot.current = s;
+        startClient.current = { x: e.clientX, y: e.clientY };
+        grabZoom.current = ancestorZoom(stripRef.current);
+        fromCell.current = -1;
+        fromPageRef.current = pageRef.current;
+        overCellRef.current = 0;
+        fromDockRef.current = true;
+        dockOverRef.current = index;
+        setDragFromDock(true); setDockOver(index);
+        setDragId(id); setDragPos(s); setOverCell(null);
+        stripRef.current?.setPointerCapture(e.pointerId);
+    }
+
+    function dockHitAt(clientX: number, clientY: number): number | null {
+        const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+        if (!el || !dockRef.current?.contains(el)) return null;
+        const idx = el.closest('[data-dock-idx]')?.getAttribute('data-dock-idx');
+        if (idx != null) return Number(idx);
+        return dockOverRef.current ?? dockShownRef.current.length;
+    }
+
     function onIconMove(e: ReactPointerEvent) {
         if (!dragId) return;
         const z = grabZoom.current;
         const x = grabSlot.current.x + (e.clientX - startClient.current.x) / z;
         const y = grabSlot.current.y + (e.clientY - startClient.current.y) / z;
         setDragPos({ x, y });
+        const onDock = isFolderId(dragId) ? null : dockHitAt(e.clientX, e.clientY);
+        if (onDock !== dockOverRef.current) { dockOverRef.current = onDock; setDockOver(onDock); }
+        if (onDock !== null) {
+            clearDwell();
+            clearEdge();
+            setOverCell(null);
+            return;
+        }
         const over = cellFromCenter(x + ICON / 2, y + ICON / 2);
         overCellRef.current = over;
         setOverCell(over);
         const targetId = slots[pageRef.current * ITEMS_PER_PAGE + over] ?? null;
         const sameAsOrigin = pageRef.current === fromPageRef.current && over === fromCell.current;
-        if (!isFolderId(dragId) && targetId && !sameAsOrigin) {
+        if (!isFolderId(dragId) && !fromDockRef.current && targetId && !sameAsOrigin) {
             if (dwellCell.current !== over) {
                 dwellCell.current = over;
                 if (mergeCellRef.current !== null) setMergeCell(null);
@@ -344,14 +693,40 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
             clearEdge();
         }
     }
+    function plop(ids: (string | null)[]) {
+        setPlopIds(new Set(ids.filter((x): x is string => !!x)));
+        if (plopTimer.current) window.clearTimeout(plopTimer.current);
+        plopTimer.current = window.setTimeout(() => setPlopIds(new Set()), 460);
+    }
+    function endIconDrag() {
+        dockOverRef.current = null;
+        fromDockRef.current = false;
+        setDragId(null); setOverCell(null); setDockOver(null); setDragFromDock(false);
+    }
+    function applyDockPlan(plan: DockPlan) {
+        setDockIds(prev => (prev.length === plan.dock.length && prev.every((x, i) => x === plan.dock[i]) ? prev : plan.dock));
+        setSlots(prev => (plan.slots === prev ? prev : normalize(plan.slots)));
+    }
     function onIconUp() {
         if (!dragId) return;
         clearEdge();
         const armed = mergeCellRef.current;
         clearDwell();
         const dragged = dragId;
+        const fromDock = fromDockRef.current;
+        const onDock = dockOverRef.current;
         const from = fromPageRef.current * ITEMS_PER_PAGE + fromCell.current;
         const to   = pageRef.current * ITEMS_PER_PAGE + overCellRef.current;
+
+        if (onDock !== null && !isFolderId(dragged)) {
+            const plan = planDockDrag(dockDragOf(dragged, onDock, fromDock, from, pageRef.current, overCellRef.current, armed));
+            if (plan) {
+                applyDockPlan(plan);
+                if (!fromDock) plop([dragged, plan.displaced]);
+            }
+            endIconDrag();
+            return;
+        }
 
         if (armed !== null && !isFolderId(dragged) && to !== from) {
             const targetId = slots[to];
@@ -359,42 +734,55 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                 if (isFolderId(targetId)) {
                     const key = folderKeyOf(targetId);
                     setFolders(prev => ({ ...prev, [key]: { ...prev[key], appIds: [...prev[key].appIds, dragged] } }));
-                    setSlots(prev => normalize(prev.map((x, i) => (i === from ? null : x))));
+                    if (!fromDock) setSlots(prev => normalize(prev.map((x, i) => (i === from ? null : x))));
                 } else {
                     const key = newFolderKey();
                     setFolders(prev => ({ ...prev, [key]: { name: 'Folder', appIds: [targetId, dragged] } }));
-                    setSlots(prev => normalize(prev.map((x, i) => (i === to ? FOLDER_PREFIX + key : i === from ? null : x))));
+                    setSlots(prev => normalize(prev.map((x, i) => (i === to ? FOLDER_PREFIX + key : (!fromDock && i === from) ? null : x))));
                     setOpenFolder(key); setRenameFolder(key);
                 }
-                setDragId(null); setOverCell(null);
+                if (fromDock) setDockIds(prev => prev.filter(x => x !== dragged));
+                endIconDrag();
                 return;
             }
         }
 
-        if (isFolderId(dragged) && to === from) {
-            setOpenFolder(folderKeyOf(dragged));
-            setDragId(null); setOverCell(null);
+        if (fromDock) {
+            const plan = planDockDrag(dockDragOf(dragged, null, true, from, pageRef.current, overCellRef.current, armed));
+            if (plan && plan.landedCell !== null) {
+                applyDockPlan(plan);
+                plop([dragged, plan.intoDock]);
+            }
+            endIconDrag();
             return;
         }
 
-        if (to !== from) {
-            const displaced = slots[to] ?? null;
+        if (isFolderId(dragged) && to === from) {
+            setOpenFolder(folderKeyOf(dragged));
+            endIconDrag();
+            return;
+        }
+
+        const dest = landingCell(slots, coveredByPage.get(pageRef.current), pageRef.current, overCellRef.current, ITEMS_PER_PAGE);
+        if (dest === null) { endIconDrag(); return; }
+
+        if (dest !== from) {
+            const displaced = slots[dest] ?? null;
             setSlots(prev => {
                 const n = [...prev];
-                while (n.length <= to) n.push(null);
-                if (n[to] === null) { n[to] = n[from]; n[from] = null; }
-                else { const t = n[to]; n[to] = n[from]; n[from] = t; }
+                while (n.length <= dest) n.push(null);
+                if (n[dest] === null) { n[dest] = n[from]; n[from] = null; }
+                else { const t = n[dest]; n[dest] = n[from]; n[from] = t; }
                 return normalize(n);
             });
-            setPlopIds(new Set(displaced ? [dragged, displaced] : [dragged]));
-            if (plopTimer.current) window.clearTimeout(plopTimer.current);
-            plopTimer.current = window.setTimeout(() => setPlopIds(new Set()), 460);
+            plop([dragged, displaced]);
         }
-        setDragId(null); setOverCell(null);
+        endIconDrag();
     }
 
     function removeApp(id: string) {
         setSlots(prev => normalize(prev.map(x => (x === id ? null : x))));
+        setDockIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : prev));
     }
 
     function ejectFromFolder(key: string, appId: string) {
@@ -418,10 +806,17 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
     }
 
     const tx = -(page * SCREEN_W) + dragX;
-    const stripTop = 70;
+    const padCell = dockPlan?.landedCell != null ? dockPlan.landedCell - page * ITEMS_PER_PAGE : overCell;
+
+    const dragWidget = dragW ? previewWidgets.find(w => w.uid === dragW.uid) : undefined;
+    const dragWidgetDef = dragWidget ? widgetByKind(dragWidget.kind) : undefined;
+    const dragWidgetBox = dragWidget ? widgetPx(dragWidget.size) : null;
+    const dragWidgetPos = dragWidget ? slot(dragWidget.row * COLS + dragWidget.col) : null;
+    const pillAt = dragW && dragWidget && reflowNote.count > 0 ? pillSpot(dragW.x, dragW.y, dragWidget.size) : null;
+
 
     return (
-        <div className="absolute inset-0 select-none">
+        <div ref={rootRef} className="absolute inset-0 select-none">
             <div
                 className="wallpaper absolute inset-0"
                 style={{
@@ -433,11 +828,18 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
             <div className="pointer-events-none absolute inset-0 z-0 bg-black/20" />
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-52 bg-gradient-to-t from-black/40 to-transparent" />
 
+            {galleryOpen && <WidgetGallery onAdd={addWidget} onClose={() => setGalleryOpen(false)} wallpaper={wallpaper} />}
+
             {editing && (
                 <div className="absolute left-0 right-0 top-[10px] z-50 flex items-center justify-between px-5">
-                    <button type="button" aria-label={t('shell.getApps','Get apps')} onClick={openAppStore} className="flex h-[34px] w-[42px] items-center justify-center rounded-full border border-white/25 bg-white/20 backdrop-blur-md active:opacity-70">
-                        <Plus className="h-5 w-5 text-white" strokeWidth={2.6} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button type="button" aria-label={t('shell.getApps','Get apps')} onClick={openAppStore} className="flex h-[34px] w-[42px] items-center justify-center rounded-full border border-white/25 bg-white/20 backdrop-blur-md active:opacity-70">
+                            <Plus className="h-5 w-5 text-white" strokeWidth={2.6} />
+                        </button>
+                        <button type="button" aria-label={t('widgets.title','Add Widget')} onClick={() => setGalleryOpen(true)} className="flex h-[34px] w-[42px] items-center justify-center rounded-full border border-white/25 bg-white/20 backdrop-blur-md active:opacity-70">
+                            <LayoutGrid className="h-[18px] w-[18px] text-white" strokeWidth={2.4} />
+                        </button>
+                    </div>
                     <button type="button" onClick={() => setEditing(false)} className="rounded-full border border-white/25 bg-white/20 px-4 py-1.5 text-[15px] font-semibold text-white backdrop-blur-md active:opacity-70">
                         {t('shell.done','Done')}
                     </button>
@@ -447,6 +849,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
             <div
                 ref={stripRef}
                 className="relative z-10 overflow-hidden"
+                data-page-motion={pageMoving || undefined}
                 style={{ marginTop: stripTop, height: `calc(100% - ${stripTop}px - 104px)` }}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
@@ -464,14 +867,90 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                 >
                     {renderPages.map((cells, pi) => (
                         <div key={pi} style={{ width: SCREEN_W, flexShrink: 0, position: 'relative', height: ROWS * ROW_STRIDE + ROW_Y0 }}>
-                            {editing && dragId && pi === page && overCell !== null && !(pi === fromPageRef.current && overCell === fromCell.current) && (
+                            {editing && dragId && pi === page && padCell !== null && !(pi === fromPageRef.current && padCell === fromCell.current) && (
                                 <div
                                     className="pointer-events-none absolute rounded-[18px] border border-white/40 bg-white/15"
-                                    style={{ left: 0, top: 0, width: ICON, height: ICON, transform: `translate(${slot(overCell).x}px, ${slot(overCell).y}px)` }}
+                                    style={{ left: 0, top: 0, width: ICON, height: ICON, transform: `translate(${slot(padCell).x}px, ${slot(padCell).y}px)` }}
                                 />
                             )}
+                            {/* Landing pad under the dragged widget, so the snap target is visible. */}
+                            {dragW && dropPreview && dragWidgetBox && pi === page && (
+                                <div
+                                    className="pointer-events-none absolute rounded-[22px] border border-white/40 bg-white/10"
+                                    style={{
+                                        left: 0, top: 0, width: dragWidgetBox.width, height: dragWidgetBox.height,
+                                        transform: `translate(${slot(dropPreview.row * COLS + dropPreview.col).x}px, ${slot(dropPreview.row * COLS + dropPreview.col).y}px)`,
+                                    }}
+                                />
+                            )}
+                            {previewWidgets.filter(w => w.uid !== dragW?.uid && w.page === pi).map(w => {
+                                const def = widgetByKind(w.kind);
+                                if (!def) return null;
+                                const pos = slot(w.row * COLS + w.col);
+                                const { width, height } = widgetPx(w.size);
+                                return (
+                                    <div key={w.uid}>
+                                    <div
+                                        onPointerDown={e => onWidgetDown(e, w)}
+                                        style={{
+                                            position: 'absolute', left: 0, top: 0,
+                                            transform: `translate(${pos.x}px, ${pos.y}px)`,
+                                            transition: 'transform 0.26s cubic-bezier(0.2,0.8,0.3,1)',
+                                            zIndex: 1,
+                                            touchAction: 'none',
+                                            // Where this tile sits on the SCREEN, so a glass widget can crop its own
+                                            // copy of the wallpaper to match the one behind it. Page index is absent
+                                            // deliberately: the wallpaper does not scroll with the pages, so the same
+                                            // cell on every page sits over the same part of it.
+                                            '--glass-img': `url(${resolveWallpaper(wallpaper)})`,
+                                            '--glass-w': `${SCREEN_W}px`,
+                                            '--glass-h': `${SCREEN_H}px`,
+                                            '--glass-x': `${-pos.x}px`,
+                                            '--glass-y': `${-(stripTop + pos.y)}px`,
+                                        } as CSSProperties}
+                                    >
+                                        <div
+                                            className={editing ? 'animate-app-jiggle' : ''}
+                                            // --jiggle scales the wobble down for bigger tiles so a
+                                            // 4x4 does not swing five times as far as an icon.
+                                            style={editing
+                                                ? { animationDelay: `${jiggleDelay(w.uid)}ms`, '--jiggle': `${jiggleDeg(w.size)}deg` } as CSSProperties
+                                                : (bloom
+                                                    ? { animation: 'home-icon-in 0.38s cubic-bezier(0.34,1.3,0.64,1) both', animationDelay: `${bloomDelay(w.uid)}ms` }
+                                                    : undefined)}
+                                            onClick={e => {
+                                                if (editing) return;
+                                                const a = appMap.get(def.appId);
+                                                if (!a) return;
+                                                // Zoom the app open from the widget itself, not the grid origin. Must
+                                                // be SCREEN FRACTIONS like every other launch site - passing client
+                                                // pixels here put the origin off-screen, so the app appeared with no
+                                                // transition at all.
+                                                launch(a, launchOriginFrom(e.currentTarget as HTMLElement));
+                                            }}
+                                        >
+                                            {def.render({ size: w.size, width, height, align: w.align ?? 'left', theme: w.theme ?? 'dark', picks: w.picks,
+                                                onPicks: ids => setWidgets(prev => prev.map(o => (o.uid === w.uid ? { ...o, picks: ids.length ? ids : undefined } : o))) })}
+                                        </div>
+                                        {editing && (
+                                            <button
+                                                type="button"
+                                                aria-label={t('widgets.remove', 'Remove widget')}
+                                                onPointerDown={e => e.stopPropagation()}
+                                                onClick={e => { e.stopPropagation(); removeWidget(w.uid); }}
+                                                className="absolute -left-1.5 -top-1.5 flex h-[24px] w-[24px] items-center justify-center rounded-full bg-[#1c1c1e] text-white shadow-lg"
+                                                style={{ border: '0.5px solid rgba(255,255,255,0.25)' }}
+                                            >
+                                                <Minus className="h-[15px] w-[15px]" strokeWidth={3} />
+                                            </button>
+                                        )}
+                                    </div>
+                                    </div>
+                                );
+                            })}
                             {cells.map((id, li) => {
                                 if (!id) return null;
+                                if (coveredByPage.get(pi)?.has(li)) return null;
                                 const s = slot(li);
                                 const folder = isFolderId(id);
                                 const fkey = folder ? folderKeyOf(id) : '';
@@ -483,7 +962,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                                     return (
                                         <div key={id} style={{ position: 'absolute', left: 0, top: 0, width: ICON, transform: `translate(${s.x}px, ${s.y}px)` }}>
                                             {/* Scale/opacity live on this inner div so the positioned parent's translate is untouched. */}
-                                            <div style={bloom ? { animation: 'home-icon-in 0.38s cubic-bezier(0.34,1.3,0.64,1) both', animationDelay: `${li * 20}ms` } : undefined}>
+                                            <div style={bloom ? { animation: `${folder ? 'home-folder-in' : 'home-icon-in'} 0.38s cubic-bezier(0.34,1.3,0.64,1) both`, animationDelay: `${li * 20}ms` } : undefined}>
                                                 {folder
                                                     ? <FolderTile label={def!.name} apps={folderApps(fkey)} badge={folderBadge(fkey)} onOpen={() => setOpenFolder(fkey)} />
                                                     : <AppIcon app={app!} onOpen={launch} badge={badges?.[app!.id]} />}
@@ -497,7 +976,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                                     const isMergeTarget = mergeCell !== null && pi === page && li === mergeCell;
                                     const isSwapTarget = !!dragId && pi === page && overCell !== null && li === overCell
                                         && !(pi === fromPageRef.current && overCell === fromCell.current) && !isMergeTarget;
-                                    const slidePreview = isSwapTarget && page === fromPageRef.current;
+                                    const slidePreview = isSwapTarget && page === fromPageRef.current && fromCell.current >= 0;
                                     const pos = slidePreview ? slot(fromCell.current) : s;
                                     return (
                                         <div
@@ -514,7 +993,8 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                                 const isMergeTarget = mergeCell !== null && pi === page && li === mergeCell;
                                 const isSwapTarget = !!dragId && pi === page && overCell !== null && li === overCell
                                     && !(pi === fromPageRef.current && overCell === fromCell.current) && !isMergeTarget;
-                                const slidePreview = isSwapTarget && page === fromPageRef.current;
+                                const isDisplaced = dockPlan?.displacedCell === pi * ITEMS_PER_PAGE + li;
+                                const slidePreview = isSwapTarget && page === fromPageRef.current && fromCell.current >= 0;
                                 const pos = slidePreview ? slot(fromCell.current) : s;
                                 return (
                                     <div
@@ -527,7 +1007,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                                             zIndex: 1,
                                         }}
                                     >
-                                        <EditTile app={app!} dragging={false} swapTarget={isSwapTarget} plopping={plopIds.has(id)} removable={!app!.base} merging={isMergeTarget} badge={badges?.[app!.id]} onRemove={() => setConfirmRemove(app!)} />
+                                        <EditTile app={app!} dragging={false} swapTarget={isSwapTarget || isDisplaced} plopping={plopIds.has(id)} removable={!app!.base} merging={isMergeTarget} badge={badges?.[app!.id]} onRemove={() => setConfirmRemove(app!)} />
                                     </div>
                                 );
                             })}
@@ -535,14 +1015,63 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                     ))}
                 </div>
 
-                {editing && dragId && (
-                    <div className="pointer-events-none absolute left-0 top-0 z-[60]" style={{ width: ICON, transform: `translate(${dragPos.x}px, ${dragPos.y}px)` }}>
-                        {isFolderId(dragId)
-                            ? <div style={{ transform: 'scale(1.1)' }}><FolderTile label={folders[folderKeyOf(dragId)]?.name ?? ''} apps={folderApps(folderKeyOf(dragId))} badge={folderBadge(folderKeyOf(dragId))} onOpen={() => { /* lifted */ }} /></div>
-                            : appMap.get(dragId) && <EditTile app={appMap.get(dragId)!} dragging swapTarget={false} plopping={false} removable={false} merging={false} onRemove={() => { /* lifted */ }} />}
+                {pillAt && (
+                    <div
+                        className="pointer-events-none absolute left-0 top-0 z-[60] whitespace-nowrap rounded-full bg-black/85 px-3.5 py-2 font-sf text-[14px] font-semibold leading-none tracking-[-0.01em] text-white backdrop-blur-xl"
+                        style={{
+                            transform: `translate(${pillAt.x}px, ${pillAt.y}px) translateX(-50%)`,
+                            border: '0.5px solid rgba(255,255,255,0.28)',
+                            boxShadow: '0 6px 20px rgba(0,0,0,0.45)',
+                        }}
+                    >
+                        {reflowNote.count === 1
+                            ? t('home.widgetMovesApp', '1 app moves to page {page}', { page: reflowNote.page + 1 })
+                            : t('home.widgetMovesApps', '{count} apps move to page {page}', { count: reflowNote.count, page: reflowNote.page + 1 })}
                     </div>
                 )}
+
             </div>
+
+            {editing && dragId && (
+                <div className="pointer-events-none absolute left-0 top-0 z-[60]" style={{ width: ICON, transform: `translate(${dragPos.x}px, ${stripTop + dragPos.y}px)` }}>
+                    {isFolderId(dragId)
+                        ? <div style={{ transform: 'scale(1.1)' }}><FolderTile label={folders[folderKeyOf(dragId)]?.name ?? ''} apps={folderApps(folderKeyOf(dragId))} badge={folderBadge(folderKeyOf(dragId))} onOpen={() => { /* lifted */ }} /></div>
+                        : appMap.get(dragId) && <EditTile app={appMap.get(dragId)!} dragging swapTarget={false} plopping={false} removable={false} merging={false} onRemove={() => { /* lifted */ }} />}
+                </div>
+            )}
+
+            {dragW && dragWidget && dragWidgetDef && dragWidgetBox && dragWidgetPos && (
+                <div
+                    className="absolute left-0 top-0 z-[60]"
+                    style={{
+                        transform: `translate(${dragW.x}px, ${stripTop + dragW.y}px) scale(1.06)`,
+                        touchAction: 'none',
+                        filter: 'drop-shadow(0 12px 22px rgba(0,0,0,0.45))',
+                        '--glass-img': `url(${resolveWallpaper(wallpaper)})`,
+                        '--glass-w': `${SCREEN_W}px`,
+                        '--glass-h': `${SCREEN_H}px`,
+                        '--glass-x': `${-dragWidgetPos.x}px`,
+                        '--glass-y': `${-(stripTop + dragWidgetPos.y)}px`,
+                    } as CSSProperties}
+                >
+                    <div>
+                        {dragWidgetDef.render({ size: dragWidget.size, width: dragWidgetBox.width, height: dragWidgetBox.height, align: dragWidget.align ?? 'left', theme: dragWidget.theme ?? 'dark', picks: dragWidget.picks,
+                            onPicks: ids => setWidgets(prev => prev.map(o => (o.uid === dragWidget.uid ? { ...o, picks: ids.length ? ids : undefined } : o))) })}
+                    </div>
+                    {editing && (
+                        <button
+                            type="button"
+                            aria-label={t('widgets.remove', 'Remove widget')}
+                            onPointerDown={e => e.stopPropagation()}
+                            onClick={e => { e.stopPropagation(); removeWidget(dragWidget.uid); }}
+                            className="absolute -left-1.5 -top-1.5 flex h-[24px] w-[24px] items-center justify-center rounded-full bg-[#1c1c1e] text-white shadow-lg"
+                            style={{ border: '0.5px solid rgba(255,255,255,0.25)' }}
+                        >
+                            <Minus className="h-[15px] w-[15px]" strokeWidth={3} />
+                        </button>
+                    )}
+                </div>
+            )}
 
             <div className="absolute bottom-[132px] left-0 right-0 z-10 flex justify-center">
                 {visiblePages > 1 && (
@@ -555,19 +1084,64 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                 )}
             </div>
 
-            <div className="absolute bottom-5 left-4 right-4 z-10">
-                <div className="flex items-center justify-around rounded-[28px] border border-white/20 bg-white/15 px-4 py-3.5 backdrop-blur-2xl">
-                    {dockApps.map((app, di) => (
+            <div
+                ref={dockRef}
+                className="absolute bottom-5 left-4 right-4 z-10"
+                onPointerDown={armLongPress}
+                onPointerMove={longPressMove}
+                onPointerUp={clearLP}
+                onPointerCancel={clearLP}
+            >
+                <div ref={dockRowRef} className="flex items-center rounded-[28px] border border-white/20 bg-white/15 px-4 py-3.5 backdrop-blur-2xl">
+                    {dockView.map((app, di) => (
                         <div
                             key={app.id}
-                            className={editing ? 'animate-app-jiggle' : ''}
-                            style={editing
-                                ? { animationDelay: `${jiggleDelay(app.id)}ms` }
-                                : (bloom ? { animation: 'home-icon-in 0.38s cubic-bezier(0.34,1.3,0.64,1) both', animationDelay: `${140 + di * 25}ms` } : undefined)}
+                            data-dock-idx={di}
+                            data-dock-id={app.id}
+                            onPointerDown={e => onDockIconDown(e, app.id, di)}
+                            className="relative flex flex-1 justify-center"
+                            style={{ touchAction: 'none' }}
                         >
-                            <AppIcon app={app} label={false} onOpen={launch} badge={badges?.[app.id]} />
+                            {!!dragId && (dockOver === di || app.id === dockPlan?.intoDock) && (
+                                <div
+                                    className="pointer-events-none absolute left-1/2 top-0 h-[78px] w-[78px] -translate-x-1/2"
+                                    style={{ borderRadius: '27.6%', boxShadow: '0 0 0 3.5px rgba(255,255,255,0.92), 0 2px 12px rgba(0,0,0,0.42)' }}
+                                />
+                            )}
+                            {app.id === dragId
+                                ? <div className="h-[78px] w-[78px]" />
+                                : (
+                                    <div
+                                        className={editing ? 'animate-app-jiggle' : ''}
+                                        style={editing
+                                            ? { animationDelay: `${jiggleDelay(app.id)}ms` }
+                                            : (bloom ? { animation: 'home-icon-in 0.38s cubic-bezier(0.34,1.3,0.64,1) both', animationDelay: `${140 + di * 25}ms` } : undefined)}
+                                    >
+                                        <AppIcon app={app} label={false} onOpen={launch} badge={badges?.[app.id]} />
+                                        {editing && !app.base && (
+                                            <button
+                                                type="button"
+                                                aria-label={t('shell.removeApp','Remove {label}', { label: app.label })}
+                                                onPointerDown={e => e.stopPropagation()}
+                                                onClick={() => setConfirmRemove(app)}
+                                                className="absolute z-10 flex h-[24px] w-[24px] items-center justify-center rounded-full bg-[#e4e4e6] shadow-[0_1px_3px_rgba(0,0,0,0.4)] active:scale-90"
+                                                style={{ left: 'calc(50% - 46px)', top: -7 }}
+                                            >
+                                                <Minus className="h-[16px] w-[16px] text-black/75" strokeWidth={3} />
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                         </div>
                     ))}
+                    {dockOver !== null && !dragFromDock && dockView.length < DOCK_MAX && (
+                        <div data-dock-idx={dockView.length} className="relative flex flex-1 justify-center" style={{ touchAction: 'none' }}>
+                            <div
+                                className="h-[78px] w-[78px] border border-white/40 bg-white/10"
+                                style={{ borderRadius: '27.6%', boxShadow: dockOver === dockView.length ? '0 0 0 3.5px rgba(255,255,255,0.92)' : undefined }}
+                            />
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -606,14 +1180,29 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
 }
 
 function EditTile({ app, dragging, swapTarget, plopping, removable, merging, badge, onRemove }: { app: AppDef; dragging: boolean; swapTarget: boolean; plopping: boolean; removable: boolean; merging: boolean; badge?: number; onRemove: () => void }): ReactNode {
+    const showNames = useShowAppNames();
+    const {
+        background, glyph, art, radius, glyphSize, glyphWeight, boxShadow,
+        labelColor, labelWeight, labelShow, icon: glyphOverride,
+    } = useIconAppearance(app.id, app.accent);
+    const showLabel = labelShow ?? showNames;
     return (
         <div className={dragging ? '' : 'animate-app-jiggle'} style={{ animationDelay: `${jiggleDelay(app.id)}ms` }}>
             <div className="relative">
                 {merging && <div className="pointer-events-none absolute -inset-[8px] rounded-[30%] bg-white/25 backdrop-blur-sm" />}
-                <div className={`relative h-[78px] w-[78px] overflow-hidden transition-[box-shadow,transform] duration-150 ${plopping ? 'animate-plop' : ''}`} style={{ borderRadius: '27.6%', boxShadow: swapTarget ? '0 2px 12px rgba(0,0,0,0.42), 0 0 0 3.5px rgba(255,255,255,0.92)' : '0 2px 10px rgba(0,0,0,0.38), 0 0 0 0.5px rgba(0,0,0,0.12)', transform: dragging || merging ? 'scale(1.12)' : undefined }}>
-                    <div style={{ width: 60, height: 60, transform: 'scale(1.3)', transformOrigin: '0 0' }}>
-                        <AppIconSVG icon={app.icon} />
-                    </div>
+                <div className={`relative h-[78px] w-[78px] overflow-hidden transition-[box-shadow,transform] duration-150 ${plopping ? 'animate-plop' : ''}`} style={{ borderRadius: radiusPct(radius), boxShadow: [swapTarget ? '0 2px 12px rgba(0,0,0,0.42), 0 0 0 3.5px rgba(255,255,255,0.92)' : TILE_SHADOW, boxShadow].filter(Boolean).join(', '), transform: dragging || merging ? 'scale(1.12)' : undefined }}>
+                    {art === 'native' ? (
+                        <div style={{ width: 60, height: 60, transform: 'scale(1.3)', transformOrigin: '0 0' }}>
+                            <AppIconSVG icon={app.icon} />
+                        </div>
+                    ) : (
+                        <div className="flex h-full w-full items-center justify-center" style={{ background }}>
+                            <AppGlyph icon={app.icon} override={glyphOverride} label={app.label} color={glyph} size={glyphSize} strokeWidth={glyphWeight} />
+                        </div>
+                    )}
+                    {boxShadow !== '' && (
+                        <div className="pointer-events-none absolute inset-0" style={{ borderRadius: radiusPct(radius), boxShadow }} />
+                    )}
                 </div>
                 {!dragging && <AppBadge count={badge} />}
                 {removable && (
@@ -622,22 +1211,42 @@ function EditTile({ app, dragging, swapTarget, plopping, removable, merging, bad
                     </button>
                 )}
             </div>
-            <span className="mt-[7px] block w-full truncate text-center font-sf text-[13px] font-semibold tracking-[0.01em] text-white" style={{ textShadow: '0 0 2px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.95), 0 2px 6px rgba(0,0,0,0.5)' }}>{app.label}</span>
+            {showLabel && <span className="mt-[7px] block w-full truncate text-center font-sf text-[13px] font-semibold tracking-[0.01em] text-white" style={{ textShadow: '0 0 2px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.95), 0 2px 6px rgba(0,0,0,0.5)', color: labelColor, fontWeight: labelWeight }}>{app.label}</span>}
         </div>
     );
 }
 
-function FolderMini({ icon }: { icon: string }): ReactNode {
+const TILE_RADIUS = 0.276;
+const MINI_RADIUS = 0.30;
+const TILE_GLYPH  = 40;
+const MINI_GLYPH  = 10;
+
+function FolderMini({ app }: { app: AppDef }): ReactNode {
+    const { background, glyph, art, radius, glyphSize, glyphWeight, icon: glyphOverride } = useIconAppearance(app.id, app.accent);
     return (
-        <div className="overflow-hidden" style={{ borderRadius: '30%' }}>
-            <div style={{ width: 60, height: 60, transform: 'scale(0.3)', transformOrigin: '0 0' }}>
-                <AppIconSVG icon={icon} />
-            </div>
+        <div className="overflow-hidden" style={{ borderRadius: radiusPct(radius * (MINI_RADIUS / TILE_RADIUS)) }}>
+            {art === 'native' ? (
+                <div style={{ width: 60, height: 60, transform: 'scale(0.3)', transformOrigin: '0 0' }}>
+                    <AppIconSVG icon={app.icon} />
+                </div>
+            ) : (
+                <div className="flex h-full w-full items-center justify-center" style={{ background }}>
+                    <AppGlyph
+                        icon={app.icon}
+                        override={glyphOverride}
+                        label={app.label}
+                        color={glyph}
+                        size={Math.round(glyphSize * (MINI_GLYPH / TILE_GLYPH))}
+                        strokeWidth={glyphWeight}
+                    />
+                </div>
+            )}
         </div>
     );
 }
 
 function FolderTile({ label, apps, onOpen, merging = false, badge }: { label: string; apps: AppDef[]; onOpen: () => void; merging?: boolean; badge?: number }): ReactNode {
+    const showNames = useShowAppNames();
     return (
         <button type="button" onClick={onOpen} className="group block w-[78px]">
             <div className="relative">
@@ -652,11 +1261,11 @@ function FolderTile({ label, apps, onOpen, merging = false, badge }: { label: st
                         transform: merging ? 'scale(1.14)' : undefined,
                     }}
                 >
-                    {apps.slice(0, 9).map(a => <FolderMini key={a.id} icon={a.icon} />)}
+                    {apps.slice(0, 9).map(a => <FolderMini key={a.id} app={a} />)}
                 </div>
                 <AppBadge count={badge} />
             </div>
-            <span className="mt-[7px] block w-full truncate text-center font-sf text-[13px] font-semibold tracking-[0.01em] text-white" style={{ textShadow: '0 0 2px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.95), 0 2px 6px rgba(0,0,0,0.5)' }}>{label}</span>
+            {showNames && <span className="mt-[7px] block w-full truncate text-center font-sf text-[13px] font-semibold tracking-[0.01em] text-white" style={{ textShadow: '0 0 2px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.95), 0 2px 6px rgba(0,0,0,0.5)' }}>{label}</span>}
         </button>
     );
 }

@@ -6,6 +6,11 @@ local store   = require 'server.weazelnews.store'
 ---@type table Authoritative Weazel News handlers (server.weazelnews.actions): staff gating,
 ---input clamping and envelope responses.
 local actions = require 'server.weazelnews.actions'
+---@type table Shared server helpers (server.util): the configs/apps.lua switch.
+local util    = require 'server.util'
+
+---@type boolean Whether Weazel News is switched on in configs/apps.lua.
+local APP_ENABLED = util.appEnabled('weazelnews')
 
 -- Boot-time schema bootstrap.
 CreateThread(function()
@@ -17,8 +22,11 @@ CreateThread(function()
     boot.schemaReady()
 end)
 
--- Batched view counts: article reads buffer in memory and land in one pass per minute.
+-- Batched view counts: article reads buffer in memory and land in one pass per minute. An app
+-- nobody can open buffers no reads.
 CreateThread(function()
+    if not APP_ENABLED then return end
+
     while true do
         Wait(60000)
         local ok, err = pcall(actions.flushViews)
