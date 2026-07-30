@@ -1,5 +1,7 @@
 ---@type table Weather app config (configs/weather.lua): Enabled toggle, System pin, Resources detection list.
 local W = require 'configs.weather'
+---@type table Everfall atmosphere provider: global-state weather/time reads and subscriptions.
+local efAtmos = require 'bridge.client.providers.ef_atmos'
 
 ---@type table<number, string> Reverse lookup: GTA weather-type joaat hash -> the readable code the app understands.
 local HASHES = {
@@ -26,7 +28,7 @@ end
 local ACTIVE = detect()
 
 ---@type table Weather module; the table returned at end of file. One API over the supported
----weathersyncs (Renewed-Weathersync, qb-weathersync): a live weather/time snapshot plus a
+---weathersyncs (ef_atmos, Renewed-Weathersync, qb-weathersync): a live weather/time snapshot plus a
 ---change subscription.
 local weather = {}
 
@@ -42,6 +44,8 @@ local function hashToCode(h) return HASHES[h] or 'CLEAR' end
 ---state where exposed, else the GTA natives. Read-only.
 ---@return { current: string, next: string, time: { hour: integer, minute: integer } }
 function weather.read()
+    if ACTIVE == 'ef_atmos' then return efAtmos.read() end
+
     local cur
 
     if ACTIVE == 'Renewed-Weathersync' then
@@ -66,7 +70,9 @@ end
 ---sync is detected; repeated calls stack handlers.
 ---@param cb fun()
 function weather.onChange(cb)
-    if ACTIVE == 'Renewed-Weathersync' then
+    if ACTIVE == 'ef_atmos' then
+        efAtmos.onChange(cb)
+    elseif ACTIVE == 'Renewed-Weathersync' then
         AddStateBagChangeHandler('weather', 'global', function() cb() end)
     elseif ACTIVE == 'qb-weathersync' then
         RegisterNetEvent('qb-weathersync:client:SyncWeather', function() cb() end)

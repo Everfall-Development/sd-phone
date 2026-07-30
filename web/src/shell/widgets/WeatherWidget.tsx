@@ -1,15 +1,20 @@
 import { useMemo } from 'react';
 
 import type { WidgetAlign, WidgetSize } from '@/apps/appstore/appsApi';
-import { PROFILES, backgroundFor, buildForecast, formatHour, getWeatherLabel, isDaytime } from '@/apps/weather/data';
-import type { DayForecast, WeatherCode } from '@/apps/weather/data';
+import {
+    PROFILES,
+    backgroundFor,
+    buildForecast,
+    formatHour,
+    getWeatherLabel,
+    isDaytime,
+    weatherCode,
+} from '@/apps/weather/data';
+import type { DayForecast } from '@/apps/weather/data';
 import { WeatherIcon } from '@/apps/weather/WeatherIcon';
 import { t } from '@/i18n';
 import { useWidgetData } from '@/stores/widgetDataStore';
 import { WidgetTile, alignClasses } from './WidgetTile';
-
-const CODES = new Set(['EXTRASUNNY', 'CLEAR', 'CLOUDS', 'OVERCAST', 'RAIN', 'THUNDER', 'CLEARING', 'SMOG', 'FOGGY', 'SNOW', 'BLIZZARD', 'SNOWLIGHT', 'XMAS', 'HALLOWEEN', 'NEUTRAL']);
-const asCode = (v?: string): WeatherCode | null => (v && CODES.has(v) ? (v as WeatherCode) : null);
 
 const RULE = 'rgba(255,255,255,0.18)';
 
@@ -37,8 +42,8 @@ export function WeatherWidget({ size, width, height, align = 'left' }: {
     const payload = useWidgetData(s => s.weather);
 
     const city = useMemo(() => {
-        const cur = asCode(payload?.current);
-        const live = cur ? { current: cur, next: asCode(payload?.next) ?? cur, time: payload?.time } : undefined;
+        const cur = weatherCode(payload?.current);
+        const live = cur ? { current: cur, next: weatherCode(payload?.next) ?? cur, time: payload?.time } : undefined;
         return buildForecast(PROFILES.find(p => p.id === 'los_santos')!, live);
     }, [payload]);
 
@@ -67,7 +72,7 @@ export function WeatherWidget({ size, width, height, align = 'left' }: {
         <div className="flex shrink-0 items-end justify-between gap-1">
             {strip.map((h, i) => (
                 <div key={i} className="flex flex-1 flex-col items-center gap-1">
-                    <span className="text-[10px] tabular-nums opacity-75">{formatHour(h.offset, city.nowTimeGame?.hour)}</span>
+                    <span className="text-[10px] tabular-nums opacity-75">{formatHour(h.offset, city.nowTimeGame)}</span>
                     <WeatherIcon code={h.code} className="opacity-95" style={{ width: px, height: px }} />
                     <span className="text-[12px] font-semibold tabular-nums">{h.tempF}&deg;</span>
                 </div>
