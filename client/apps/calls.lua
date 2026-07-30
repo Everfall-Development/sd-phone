@@ -15,6 +15,10 @@ proxyCallback('sd-phone:call:current', 'sd-phone:server:call:current')
 ---@param action string NUI action name
 ---@param data any payload forwarded unchanged
 local function pushCall(action, data)
+    if LocalPlayer.state.tabletOpen == true then
+        lib.print.debug(('[sd-phone] Tablet owns call presentation; skipped phone NUI action %s'):format(action))
+        return
+    end
     SendNUIMessage({ action = action, data = data })
 end
 
@@ -62,8 +66,12 @@ end)
 ---the ringing payload.
 ---@param data table incoming-call payload from the server
 RegisterNetEvent('sd-phone:client:call:incoming', function(data)
-    exports['sd-phone']:open()
-    Wait(200)
+    if LocalPlayer.state.tabletOpen ~= true then
+        exports['sd-phone']:open()
+        Wait(200)
+    else
+        lib.print.debug('[sd-phone] Incoming call retained on active tablet')
+    end
     pushCall('sd-phone:call:incoming', data)
 end)
 
