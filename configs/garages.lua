@@ -10,12 +10,12 @@ return {
     -- owned vehicles in the framework table (`player_vehicles` on QB/QBox,
     -- `owned_vehicles` on ESX); only the garage-name + state columns differ,
     -- so the bridge resolves those defensively (see bridge profiles).
-    System  = 'auto',
+    System = 'auto',
 
     -- Resources checked, in priority order, when System = 'auto'. The first
     -- one that's `started` wins. Add custom/renamed resources here.
     Resources = {
-        'jg-advancedgarages', 'qbx_garages', 'qb-garages', 'cd_garage',
+        'ef_garages', 'jg-advancedgarages', 'qbx_garages', 'qb-garages', 'cd_garage',
         'okokGarage', 'codem-garage', 'lunar_garage', 'nc_garage',
         'op_garages', 'esx_garage',
     },
@@ -40,7 +40,7 @@ return {
 
     -- Garage waypoint coordinates - used as a FALLBACK. The app first auto-reads
     -- a garage's coords from the running system's own export, so these systems
-    -- need NO setup: qbx_garages, qb-garages, jg-advancedgarages, cd_garage,
+    -- need NO setup: ef_garages, qbx_garages, qb-garages, jg-advancedgarages, cd_garage,
     -- op-garages. Only systems without a usable export (esx, codem, okok, nc,
     -- lunar) need entries here: key by the exact Location TEXT a stored OR
     -- impounded vehicle shows (open one and copy it - e.g. a garage name, or
@@ -52,7 +52,7 @@ return {
         -- ['Impound']              = vec2(409.0, -1623.0),
     },
 
-    -- Mileage is shown ONLY when `jg-vehiclemileage` is running - it's sourced
-    -- from that resource's exports (getMileageByPlate) in its own configured
-    -- unit. Without it, the mileage row is hidden entirely.
+    -- Mileage comes from ef_garages' persisted kilometre field (displayed as miles to match its
+    -- own UI), or from ef_vehicles' mileage module. Without either source, the mileage row is
+    -- hidden.
 }

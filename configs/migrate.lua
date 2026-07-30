@@ -9,13 +9,12 @@
 -- no-op. The join is lb-phone's phone owner id -> framework citizenid, and each player's lb-phone
 -- number is adopted as their sd-phone number so every contact / thread / call log still lines up.
 return {
-    -- Import automatically on resource start. Turn this off to only ever run it by hand, via the
-    -- `sdphone:migrate` server-console command.
-    enabled = true,
+    -- Keep the LB archive available for manual recovery without importing it automatically.
+    -- A manual import can still be started with the `sdphone:migrate` server-console command.
+    enabled = false,
 
-    -- lb-phone's table prefix. Its tables are all phone_* (phone_phones, phone_phone_contacts,
-    -- ...). Only touch this if you renamed them; it must be plain [a-z0-9_] or it is ignored.
-    sourcePrefix = 'phone_',
+    -- Archived lb-phone tables are renamed from phone_* to lb_phone_* during the cutover.
+    sourcePrefix = 'lb_phone_',
 
     -- How an lb-phone phone owner id maps to an sd-phone citizenid:
     --   'auto'      match owner_id against known citizenids first, else treat it as a license

@@ -2,6 +2,7 @@
 import { t } from '@/i18n';
 import { seededRandom } from '@/lib/random';
 import { format12h } from '@/lib/time';
+import type { WeatherPayload } from '@/core/types';
 
 export type WeatherCode =
     | 'EXTRASUNNY' | 'CLEAR'  | 'NEUTRAL' | 'CLEARING'
@@ -14,6 +15,24 @@ interface WeatherSlice {
     offset: number;
     code:   WeatherCode;
     tempF:  number;
+}
+
+interface ScheduledWeatherEvent {
+    code:            WeatherCode;
+    durationMinutes: number;
+}
+
+interface LiveWeatherForecast {
+    events:                  ScheduledWeatherEvent[];
+    currentRemainingSeconds: number;
+    paused:                  boolean;
+}
+
+export interface LiveWeather {
+    current:   WeatherCode;
+    next:      WeatherCode;
+    time?:     { hour: number; minute: number };
+    forecast?: LiveWeatherForecast;
 }
 
 export interface DayForecast {
@@ -37,8 +56,63 @@ export interface CityForecast {
     uvIndex:     number;
     sunriseMin:  number;
     sunsetMin:   number;
+    scheduled:   boolean;
+    paused:      boolean;
     hourly:      WeatherSlice[];
     daily:       DayForecast[];
+}
+
+export function weatherCode(value: string | undefined): WeatherCode | null {
+    switch (value) {
+        case 'EXTRASUNNY':
+        case 'CLEAR':
+        case 'NEUTRAL':
+        case 'CLEARING':
+        case 'CLOUDS':
+        case 'SMOG':
+        case 'FOGGY':
+        case 'OVERCAST':
+        case 'RAIN':
+        case 'THUNDER':
+        case 'SNOWLIGHT':
+        case 'SNOW':
+        case 'BLIZZARD':
+        case 'XMAS':
+        case 'HALLOWEEN':
+            return value;
+        default:
+            return null;
+    }
+}
+
+export function normalizeLiveWeather(payload: WeatherPayload | undefined): LiveWeather | null {
+    const current = weatherCode(payload?.current);
+    if (!current) return null;
+
+    const events: ScheduledWeatherEvent[] = [];
+    for (const event of payload?.forecast?.weatherEvents ?? []) {
+        const code = weatherCode(event.weatherType);
+        const durationMinutes = Math.floor(event.timeRemaining);
+        if (code && Number.isFinite(durationMinutes) && durationMinutes > 0) {
+            events.push({ code, durationMinutes });
+        }
+    }
+
+    const remaining = Math.max(0, Math.floor(payload?.forecast?.currentEventRemainingSeconds ?? 0));
+    const forecast = events.length > 0
+        ? {
+            events,
+            currentRemainingSeconds: remaining,
+            paused: payload?.forecast?.isWeatherPaused === true,
+        }
+        : undefined;
+
+    return {
+        current,
+        next: weatherCode(payload?.next) ?? events[1]?.code ?? current,
+        time: payload?.time,
+        forecast,
+    };
 }
 
 
@@ -169,24 +243,42 @@ function tempForCode(code: WeatherCode, base: number, variance: number, rnd: () 
 
 export function buildForecast(
     profile: ClimateProfile,
-    live?: { current: WeatherCode; next: WeatherCode; time?: { hour: number; minute: number } },
+    live?: LiveWeather,
 ): CityForecast {
     const rnd = seededRandom(seedFor(profile.id));
     const baseHour = live?.time?.hour ?? new Date().getHours();
+    const baseMinute = live?.time?.minute ?? new Date().getMinutes();
 
     const nowCode = live?.current ?? profile.pool[Math.floor(rnd() * profile.pool.length)];
     const nextCode = live?.next   ?? profile.pool[Math.floor(rnd() * profile.pool.length)];
     const nowTempF = tempForCode(nowCode, profile.baseTempF, profile.variance, rnd);
 
     const hourly: WeatherSlice[] = [];
-    for (let i = 0; i < 24; i++) {
-        const code = i === 0 ? nowCode
-                   : i === 1 ? nextCode
-                   : profile.pool[Math.floor(rnd() * profile.pool.length)];
-        const tempBase = tempForCode(code, profile.baseTempF, profile.variance, rnd);
-        const hourOfDay = (baseHour + i) % 24;
-        const diurnal   = Math.sin(((hourOfDay - 6) / 24) * Math.PI * 2) * 6;
-        hourly.push({ offset: i * 60, code, tempF: Math.round(tempBase + diurnal) });
+    if (live?.forecast) {
+        let offsetMinutes = 0;
+        for (let index = 0; index < live.forecast.events.length; index++) {
+            const event = live.forecast.events[index];
+            const code = index === 0 ? nowCode : event.code;
+            const tempBase = tempForCode(code, profile.baseTempF, profile.variance, rnd);
+            const hourOfDay = (baseHour + (baseMinute + offsetMinutes) / 60) % 24;
+            const diurnal = Math.sin(((hourOfDay - 6) / 24) * Math.PI * 2) * 6;
+            hourly.push({ offset: offsetMinutes, code, tempF: Math.round(tempBase + diurnal) });
+
+            const durationMinutes = index === 0
+                ? Math.max(1, Math.ceil(live.forecast.currentRemainingSeconds / 60))
+                : event.durationMinutes;
+            offsetMinutes += durationMinutes;
+        }
+    } else {
+        for (let i = 0; i < 24; i++) {
+            const code = i === 0 ? nowCode
+                       : i === 1 ? nextCode
+                       : profile.pool[Math.floor(rnd() * profile.pool.length)];
+            const tempBase = tempForCode(code, profile.baseTempF, profile.variance, rnd);
+            const hourOfDay = (baseHour + i) % 24;
+            const diurnal   = Math.sin(((hourOfDay - 6) / 24) * Math.PI * 2) * 6;
+            hourly.push({ offset: i * 60, code, tempF: Math.round(tempBase + diurnal) });
+        }
     }
 
     const todayTemps = hourly.slice(0, 24).map(h => h.tempF);
@@ -223,6 +315,8 @@ export function buildForecast(
         uvIndex:     Math.max(0, Math.round(10 - (24 - hourly.length) - rnd() * 4)),
         sunriseMin:  profile.sunrise,
         sunsetMin:   profile.sunset,
+        scheduled:   live?.forecast !== undefined,
+        paused:      live?.forecast?.paused === true,
         hourly,
         daily,
     };
@@ -234,14 +328,15 @@ export function isDaytime(hour?: number): boolean {
     return h >= 6 && h < 20;
 }
 
-export function formatHour(offsetMin: number, baseHour?: number): string {
+export function formatHour(offsetMin: number, baseTime?: { hour: number; minute: number }): string {
     if (offsetMin === 0) return t('weather.now', 'Now');
-    const h = baseHour !== undefined
-        ? (baseHour + Math.round(offsetMin / 60)) % 24
-        : new Date(Date.now() + offsetMin * 60_000).getHours();
-    const p = h >= 12 ? 'PM' : 'AM';
-    const h12 = h % 12 === 0 ? 12 : h % 12;
-    return `${h12} ${p}`;
+    if (!baseTime) {
+        const date = new Date(Date.now() + offsetMin * 60_000);
+        return format12h(date.getHours(), date.getMinutes());
+    }
+
+    const minuteOfDay = (baseTime.hour * 60 + baseTime.minute + offsetMin) % (24 * 60);
+    return format12h(Math.floor(minuteOfDay / 60), minuteOfDay % 60);
 }
 
 export function formatTimeOfDay(minutes: number): string {

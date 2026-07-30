@@ -3,6 +3,8 @@ local proxyCallback = require 'client.nui'
 ---@type table Scripted phone camera (client.phonecam): owns the view whenever the video call is
 ---allowed to keep the player moving, since the native cell cam pins the ped at engine level.
 local phonecam = require 'client.phonecam'
+---@type table HUD bridge: optional Everfall cinematic suppression.
+local HUD = require 'bridge.client.providers.ef_hud'
 
 -- Thin delegates: each call action proxies straight into its server callback.
 proxyCallback('sd-phone:call:dial',    'sd-phone:server:call:dial')
@@ -110,13 +112,23 @@ end)
 ---The old raw hash (0x2491A93618B7D838) is stale on current builds and threw "invalid native";
 ---the name lets FiveM cross-map it, and a missing native no-ops quietly.
 ---@param on boolean true for the front (selfie) lens
-local CellFrontCamActivate = function(on)
+local function activateFrontCamera(on)
     local fn = CellCamActivateSelfieMode
     if fn then pcall(fn, on) end
 end
 
 ---@type boolean Whether a camera currently owns the local view (video call active).
 local videoCamActive = false
+
+local hiddenHUDComponents = { 1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 15, 18, 19 }
+
+local function hideNativeHUDThisFrame()
+    HideHelpTextThisFrame()
+
+    for index = 1, #hiddenHUDComponents do
+        HideHudComponentThisFrame(hiddenHUDComponents[index])
+    end
+end
 
 ---Toggles the camera takeover for a video call and hides the HUD per frame while active. The
 ---scripted cam frames it wherever movement is allowed, the native cell cam otherwise. Idempotent
@@ -136,17 +148,18 @@ local function setVideoCamera(on, front)
                 CellCamActivate(true, true)
             end
             TriggerEvent('sd-phone:client:cameraMode', true, 'video')
+            HUD.setHUDCinematicMode(true)
             CreateThread(function()
                 while videoCamActive do
                     Wait(0)
-                    HideHudAndRadarThisFrame()
+                    hideNativeHUDThisFrame()
                 end
             end)
         end
         if phonecam.active() then
             phonecam.setSelfie(front ~= false)
         else
-            CellFrontCamActivate(front ~= false)
+            activateFrontCamera(front ~= false)
         end
     elseif videoCamActive then
         videoCamActive = false
@@ -157,6 +170,7 @@ local function setVideoCamera(on, front)
             DestroyMobilePhone()
         end
         TriggerEvent('sd-phone:client:cameraMode', false, 'video')
+        HUD.setHUDCinematicMode(false)
     end
 end
 
@@ -185,3 +199,14 @@ RegisterNetEvent('sd-phone:client:call:video:request', function()      pushCall(
 RegisterNetEvent('sd-phone:client:call:video:accept',  function()      pushCall('sd-phone:video:accept',  nil) end)
 RegisterNetEvent('sd-phone:client:call:video:stop',    function()      pushCall('sd-phone:video:stop',    nil) end)
 RegisterNetEvent('sd-phone:client:call:video:signal',  function(data)  pushCall('sd-phone:video:signal',  data) end)
+
+AddEventHandler('onClientResourceStart', function(resourceName)
+    if resourceName == 'ef_hud' and videoCamActive then
+        HUD.setHUDCinematicMode(true)
+    end
+end)
+
+AddEventHandler('onResourceStop', function(resourceName)
+    if resourceName ~= GetCurrentResourceName() or not videoCamActive then return end
+    setVideoCamera(false)
+end)

@@ -1,46 +1,31 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Sunrise, Sunset } from 'lucide-react';
 
 import { t } from '@/i18n';
-import { fetchNui } from '@/core/nui';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { useStatusBarLight } from '@/shell/useStatusBarLight';
-import type { WeatherPayload } from '@/core/types';
 import {
     backgroundFor, buildForecast, formatHour, formatTimeOfDay, isDaytime,
     PROFILES, getWeatherLabel,
 } from './data';
-import type { WeatherCode } from './data';
+import { ingestWeather, requestWeatherSnapshot, useWeatherStore } from './store';
 import { WeatherIcon } from './WeatherIcon';
 
 const SB_H = 54;
 
-interface LiveWeather {
-    current: WeatherCode;
-    next:    WeatherCode;
-    time?:   { hour: number; minute: number };
-}
+void requestWeatherSnapshot();
 
-const KNOWN_CODES = new Set<WeatherCode>([
-    'EXTRASUNNY','CLEAR','NEUTRAL','CLEARING','CLOUDS','SMOG','FOGGY',
-    'OVERCAST','RAIN','THUNDER','SNOWLIGHT','SNOW','BLIZZARD','XMAS','HALLOWEEN',
-]);
-
-function asCode(s: string | undefined): WeatherCode | null {
-    return s && KNOWN_CODES.has(s as WeatherCode) ? (s as WeatherCode) : null;
+function getForecastTitle(scheduled: boolean, paused: boolean): string {
+    if (paused) return t('weather.forecastPaused', 'Forecast Paused');
+    if (scheduled) return t('weather.forecast', 'Forecast');
+    return t('weather.next24Hours', 'Next 24 Hours');
 }
 
 export function Weather({ onClose }: { onClose: () => void }) {
-    const [live, setLive] = useState<LiveWeather | null>(null);
+    const live = useWeatherStore(state => state.live);
     const WEATHER_LABEL = getWeatherLabel();
 
-    const applyWeather = useCallback((data?: WeatherPayload) => {
-        const cur = asCode(data?.current);
-        if (!cur) return;
-        setLive({ current: cur, next: asCode(data!.next) ?? cur, time: data!.time });
-    }, []);
-    useNuiEvent('sd-phone:weather', applyWeather);
-    useEffect(() => { void fetchNui<WeatherPayload>('sd-phone:weather:get').then(applyWeather); }, [applyWeather]);
+    useNuiEvent('sd-phone:weather', ingestWeather);
 
     useStatusBarLight(true);
 
@@ -93,12 +78,12 @@ export function Weather({ onClose }: { onClose: () => void }) {
 
                 <Card>
                     <div className="border-b border-white/15 px-3.5 pb-2 pt-2.5 text-[12px] uppercase tracking-wider text-white/70">
-                        {t('weather.next24Hours', 'Next 24 Hours')}
+                        {getForecastTitle(city.scheduled, city.paused)}
                     </div>
                     <div className="flex gap-4 overflow-x-auto no-scrollbar px-3.5 py-4">
                         {city.hourly.map(h => (
                             <div key={h.offset} className="flex w-[50px] shrink-0 flex-col items-center gap-1.5">
-                                <span className="text-[13px] text-white/80">{formatHour(h.offset, city.nowTimeGame?.hour)}</span>
+                                <span className="text-[13px] text-white/80">{formatHour(h.offset, city.nowTimeGame)}</span>
                                 <WeatherIcon code={h.code} className="h-[30px] w-[30px]" strokeWidth={1.8} />
                                 <span className="text-[18px] font-medium tabular-nums">{h.tempF}°</span>
                             </div>

@@ -140,7 +140,7 @@ lib.callback.register('sd-phone:server:payphone:insertCoin', function(src, paylo
     local cost = tonumber(coinCfg().Cost) or 1
     local account = coinCfg().Account or 'cash'
     if money.get(src, account) < cost then return fail('No coins') end
-    money.remove(src, account, cost, 'payphone-call')
+    if not money.remove(src, account, cost, 'payphone-call') then return fail('Payment was declined') end
     credits[src] = true
     return ok({ credited = true })
 end)

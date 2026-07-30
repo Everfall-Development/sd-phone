@@ -14,5 +14,5 @@ return {
     System = 'auto',
 
     -- Checked in order when System = 'auto'. Add a custom/renamed sync here.
-    Resources = { 'Renewed-Weathersync', 'qb-weathersync' },
+    Resources = { 'ef_atmos', 'Renewed-Weathersync', 'qb-weathersync' },
 }

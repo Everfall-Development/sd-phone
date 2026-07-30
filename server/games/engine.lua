@@ -114,8 +114,7 @@ local function wagerGet(src, game)
     return money.get(src, 'bank')
 end
 
----Debits a wager stake in the game's currency. The chips path is all-or-nothing; the bank path
----always reports success.
+---Debits a wager stake in the game's currency. Both paths report whether the full stake landed.
 ---@param src integer player server id
 ---@param game string game id
 ---@param amount integer stake to take
@@ -123,8 +122,7 @@ end
 ---@return boolean taken false when the chips debit could not cover the full stake
 local function wagerTake(src, game, amount, reason)
     if currencyOf(game) == 'chips' then return chips.remove(cidOf(src), amount) ~= nil end
-    money.remove(src, 'bank', amount, reason)
-    return true
+    return money.remove(src, 'bank', amount, reason)
 end
 
 ---Credit a wager payout / refund in the game's currency.
@@ -133,8 +131,8 @@ end
 ---@param amount integer amount to credit
 ---@param reason string framework money-log reason
 local function wagerGive(src, game, amount, reason)
-    if currencyOf(game) == 'chips' then chips.add(cidOf(src), amount)
-    else money.add(src, 'bank', amount, reason) end
+    if currencyOf(game) == 'chips' then return chips.add(cidOf(src), amount) ~= nil end
+    return money.add(src, 'bank', amount, reason)
 end
 
 ---@return boolean true when src is already in a lobby or a game (one at a time)

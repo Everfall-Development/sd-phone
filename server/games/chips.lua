@@ -99,7 +99,9 @@ function chips.buy(src, amount, game)
     amount = clampTx(amount)
     if amount <= 0 then return nil, 'Enter a valid amount' end
     if (money.get(src, 'bank') or 0) < amount then return nil, 'Not enough money in the bank' end
-    money.remove(src, 'bank', amount, 'casino-chips')
+    if not money.remove(src, 'bank', amount, 'casino-chips') then
+        return nil, 'The bank declined that purchase'
+    end
     local bal = chips.add(cid, amount)
     banking.addExternal(cid, { label = 'Chip purchase', amount = -amount, category = categoryOf(game) })
     return { chips = bal, bank = money.get(src, 'bank') or 0 }
@@ -117,7 +119,10 @@ function chips.sell(src, amount, game)
     if amount <= 0 then return nil, 'Enter a valid amount' end
     local bal = chips.remove(cid, amount)
     if not bal then return nil, 'Not enough chips' end
-    money.add(src, 'bank', amount, 'casino-chips')
+    if not money.add(src, 'bank', amount, 'casino-chips') then
+        chips.add(cid, amount)
+        return nil, 'The bank declined that cashout'
+    end
     banking.addExternal(cid, { label = 'Chip cashout', amount = amount, category = categoryOf(game) })
     return { chips = bal, bank = money.get(src, 'bank') or 0 }
 end

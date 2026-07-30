@@ -108,10 +108,27 @@ export interface CustomAppDef {
     resource:    string;
 }
 
+export interface WeatherForecastEventPayload {
+    eventId?: number;
+    weatherType: string;
+    timeRemaining: number;
+}
+
+export interface WeatherForecastPayload {
+    weatherEvents: WeatherForecastEventPayload[];
+    currentEventRemainingSeconds: number;
+    currentEventStartTime?: number;
+    currentEventEndTime?: number;
+    forecastStartTime?: number;
+    isWeatherPaused?: boolean;
+    serverTime?: number;
+}
+
 export interface WeatherPayload {
     current: string;
     next:    string;
     time?:   { hour: number; minute: number };
+    forecast?: WeatherForecastPayload;
 }
 
 interface SessionPayload {

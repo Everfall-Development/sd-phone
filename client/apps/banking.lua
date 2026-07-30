@@ -37,6 +37,5 @@ end
 
 -- Framework money-change broadcasts, so the balance ticks live even when ANOTHER script moves
 -- money. Whichever framework is absent simply never fires its event; the handlers are inert.
-RegisterNetEvent('hud:client:OnMoneyChange', nudgeWallet)
 RegisterNetEvent('QBCore:Client:OnMoneyChange', nudgeWallet)
 RegisterNetEvent('esx:setAccountMoney', nudgeWallet)

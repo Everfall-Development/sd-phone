@@ -4,6 +4,8 @@ local framework   = require 'bridge.shared.framework'
 local inventoryId = require 'bridge.shared.inventory_id'
 ---@type table Player bridge (bridge.server.player): framework-native player object resolution.
 local player_mod  = require 'bridge.server.player'
+---@type table Everfall banking provider: authoritative personal bank mutations when running.
+local efBanking   = require 'bridge.server.providers.ef_banking'
 
 ---@type table Money module; the table returned at end of file. Personal money + black-money
 ---operations. Black money is the black_money item on ox_inventory, the markedbills item with
@@ -20,38 +22,52 @@ local function convertType(t)
     return t
 end
 
----Credit one of the player's framework accounts (cash, bank, ...). Returns nothing by contract;
----a no-op when the player can't be resolved.
+---Credit one of the player's accounts. Everfall bank mutations stay inside ef_banking; all other
+---account types use the framework. Returns true only when the credit was accepted.
 ---@param source number
 ---@param moneyType string
 ---@param amount number
 ---@param reason? string Optional reason string passed to the framework's logger.
+---@return boolean
 function money.add(source, moneyType, amount, reason)
+    if convertType(moneyType) == 'bank' and efBanking.active() then
+        return efBanking.addMoney(source, amount, reason)
+    end
+
     local p = player_mod.get(source)
-    if not p then return end
+    if not p then return false end
 
     if framework.qb then
-        p.Functions.AddMoney(convertType(moneyType), amount, reason)
+        return p.Functions.AddMoney(convertType(moneyType), amount, reason) ~= false
     elseif framework.name == 'esx' then
         p.addAccountMoney(convertType(moneyType), amount)
+        return true
     end
+    return false
 end
 
----Debit one of the player's framework accounts. Returns nothing and cannot report a declined
----debit; callers must pre-check money.get(src, type) >= amount first.
+---Debit one of the player's accounts. Everfall bank mutations stay inside ef_banking; all other
+---account types use the framework. Returns true only when the debit was accepted.
 ---@param source number
 ---@param moneyType string
 ---@param amount number
 ---@param reason? string Optional reason string passed to the framework's logger.
+---@return boolean
 function money.remove(source, moneyType, amount, reason)
+    if convertType(moneyType) == 'bank' and efBanking.active() then
+        return efBanking.removeMoney(source, amount, reason)
+    end
+
     local p = player_mod.get(source)
-    if not p then return end
+    if not p then return false end
 
     if framework.qb then
-        p.Functions.RemoveMoney(convertType(moneyType), amount, reason)
+        return p.Functions.RemoveMoney(convertType(moneyType), amount, reason) ~= false
     elseif framework.name == 'esx' then
         p.removeAccountMoney(convertType(moneyType), amount)
+        return true
     end
+    return false
 end
 
 ---The player's current balance for one of their accounts. Read-only; 0 when the player or
