@@ -39,6 +39,7 @@ return {
         'grabify.link', '*.grabify.link',
         'iplogger.org', '*.iplogger.org',
         'bit.ly', 'tinyurl.com', 't.co',
+        'discordapp.com', 'discord.com', '*.discordapp.com', '*.discord.com'
     },
 
     -- If non-empty, ONLY these hosts are allowed (the blocklist still applies on top).

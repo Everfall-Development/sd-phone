@@ -5,6 +5,6 @@
 -- player. Put the key in configs/server/apikeys.lua (server-only, never shipped)
 -- instead. Only the two display tunables below ship to clients.
 return {
-    Limit  = 24,          -- GIFs fetched per search / trending request
-    Rating = 'pg-13',     -- content rating filter: g, pg, pg-13, or r
+    Limit  = 24,  -- GIFs fetched per search / trending request
+    Rating = 'r', -- content rating filter: g, pg, pg-13, or r
 }

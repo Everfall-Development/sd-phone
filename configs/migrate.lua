@@ -11,7 +11,7 @@
 return {
     -- Keep the LB archive available for manual recovery without importing it automatically.
     -- A manual import can still be started with the `sdphone:migrate` server-console command.
-    enabled = false,
+    enabled = true,
 
     -- Archived lb-phone tables are renamed from phone_* to lb_phone_* during the cutover.
     sourcePrefix = 'lb_phone_',
@@ -21,7 +21,7 @@ return {
     --   'citizenid' owner_id is already the citizenid (skip the license fallback)
     --   'license'   owner_id is a license; always map through the players table
     -- 'auto' is right for almost everyone (it covers both lb-phone identifier setups).
-    identifierMode = 'auto',
+    identifierMode = 'citizenid',
 
     -- Dry run: count everything and log the plan, but write nothing. Run the console command with
     -- `sdphone:migrate dry` for a preview without flipping this.

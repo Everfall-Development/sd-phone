@@ -28,11 +28,11 @@ return {
         -- speed) so the ETA doesn't jump around at red lights. ~16 m/s ≈ 36 mph
         -- average city driving; 1.7 m/s is a brisk walk.
         DriveSpeed = 16.0,
-        WalkSpeed  = 1.7,
+        WalkSpeed = 1.7,
 
-        -- 'metric'  → metres / kilometres.
+        -- 'metric'→ metres / kilometres.
         -- 'imperial'→ feet / miles.
-        Units = 'metric',
+        Units = 'imperial',
 
         -- How often (ms) the open ETA card refreshes its distance/time while you
         -- move. The card polls the client for a fresh road-distance reading.

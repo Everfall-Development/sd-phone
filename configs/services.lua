@@ -18,7 +18,7 @@ return {
     -- Jobs tab (multi-job). Only active on QBCore/QBox; the tab is hidden on ESX.
     -- Max jobs a player can keep saved at once. Set to 0 to disable the cap
     -- (unlimited saved jobs) - this also hides the X/X capacity bar in the app.
-    MaxSavedJobs = 5,
+    MaxSavedJobs = GetConvarInt('qbx:maxJobsPerPlayer', 1),
     -- Jobs never listed, switchable, or accept-able from the Jobs tab (resign to
     -- unemployed via the Actions tab's Quit instead).
     JobBlacklist = { 'unemployed' },
@@ -33,7 +33,7 @@ return {
     -- business account; otherwise it falls back to the sending employee's own
     -- bank (see bridge/server/society.lua). A per-company `commission` (below)
     -- splits off a cut of the society-credited payment to the sending employee.
-    InvoicesEnabled = true,
+    InvoicesEnabled = false,
     -- Smallest and largest amount a single invoice may be for.
     MinInvoiceAmount = 1,
     MaxInvoiceAmount = 1000000,

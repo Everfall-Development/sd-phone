@@ -16,23 +16,23 @@ return {
     -- network the floor below is on.
     Networks = {
         -- Open networks: public places that would plausibly hand out free Wi-Fi.
-        { id = 'legion',    ssid = 'Legion Square Free',    coords = vec3(  195.0,  -935.0,  30.7), range = 55.0 },
-        { id = 'pier',      ssid = 'Del Perro Pier Guest',  coords = vec3(-1850.0, -1240.0,   8.6), range = 65.0 },
-        { id = 'lsia',      ssid = 'LSIA Terminal WiFi',    coords = vec3(-1035.0, -2730.0,  20.2), range = 80.0 },
-        { id = 'pillbox',   ssid = 'Pillbox Medical',       coords = vec3(  298.0,  -584.0,  43.3), range = 50.0 },
+        { id = 'legion',      ssid = 'Legion Square Free',   coords = vec3(195.0, -935.0, 30.7),     range = 55.0 },
+        { id = 'pier',        ssid = 'Del Perro Pier Guest', coords = vec3(-1850.0, -1240.0, 8.6),   range = 65.0 },
+        { id = 'lsia',        ssid = 'LSIA Terminal WiFi',   coords = vec3(-1035.0, -2730.0, 20.2),  range = 80.0 },
+        { id = 'pillbox',     ssid = 'Pillbox Medical',      coords = vec3(298.0, -584.0, 43.3),     range = 50.0 },
 
         -- Secured networks: somewhere with a reason to keep people out.
-        { id = 'missionrow', ssid = 'LSPD-Secure',          coords = vec3(  441.0,  -982.0,  30.7), range = 45.0, password = 'lspd1234' },
-        { id = 'mazebank',   ssid = 'MazeBank-Corporate',   coords = vec3(  -70.0,  -800.0,  44.2), range = 50.0, password = 'maze2024' },
-        { id = 'lifeinvader',ssid = 'LifeInvader-Staff',    coords = vec3(-1047.9,  -233.5,  39.0), range = 40.0, password = 'gofuckyourself' },
-        { id = 'unicorn',    ssid = 'Unicorn-VIP',          coords = vec3(  127.0, -1298.0,  29.2), range = 35.0, password = 'backstage' },
-        { id = 'casino',     ssid = 'Diamond-Guest',        coords = vec3(  925.0,    46.0,  81.1), range = 60.0, password = 'jackpot' },
+        { id = 'missionrow',  ssid = 'LSPD-Secure',          coords = vec3(441.0, -982.0, 30.7),     range = 45.0, password = 'lspd1234' },
+        { id = 'mazebank',    ssid = 'MazeBank-Corporate',   coords = vec3(-70.0, -800.0, 44.2),     range = 50.0, password = 'maze2024' },
+        { id = 'lifeinvader', ssid = 'LifeInvader-Staff',    coords = vec3(-1047.9, -233.5, 39.0),   range = 40.0, password = 'gofuckyourself' },
+        { id = 'unicorn',     ssid = 'Unicorn-VIP',          coords = vec3(127.0, -1298.0, 29.2),    range = 35.0, password = 'backstage' },
+        { id = 'casino',      ssid = 'Diamond-Guest',        coords = vec3(925.0, 46.0, 81.1),       range = 60.0, password = 'jackpot' },
 
         -- Out in the sticks, where the towers do not reach. This one is the point of the whole
         -- feature: a dead zone you can still get data in, if you know where to stand.
-        { id = 'gordo',      ssid = 'Gordo Ranger Station', coords = vec3( 2900.0,  5800.0,  98.0), range = 70.0, password = 'ranger' },
-        { id = 'sandy',      ssid = 'Sandy Medical',        coords = vec3( 1839.0,  3672.0,  34.3), range = 45.0 },
-        { id = 'paleto',     ssid = 'Paleto Sheriff',       coords = vec3( -448.0,  6012.0,  31.7), range = 45.0, password = 'paleto' },
+        { id = 'gordo',       ssid = 'Gordo Ranger Station', coords = vec3(2900.0, 5800.0, 98.0),    range = 70.0, password = 'ranger' },
+        { id = 'sandy',       ssid = 'Sandy Medical',        coords = vec3(1839.0, 3672.0, 34.3),    range = 45.0 },
+        { id = 'paleto',      ssid = 'Paleto Sheriff',       coords = vec3(-448.0, 6012.0, 31.7),    range = 45.0, password = 'paleto' },
     },
 
     -- What a connection actually carries. Data is the whole point of Wi-Fi, so it is on; calls
@@ -40,8 +40,8 @@ return {
     -- Wi-Fi calling on here, which is a real thing phones do.
     Provides = {
         Data = true,
-        Call = false,
-        Text = false,
+        Call = true,
+        Text = true,
     },
 
     -- Rejoin a network the player has connected to before as soon as they walk back into it,

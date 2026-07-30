@@ -9,7 +9,7 @@ return {
 
     -- Show the date row above the time. Mirrors iOS - disabling
     -- gives the clock the full top half of the screen.
-    ShowDate  = true,
+    ShowDate = true,
 
     -- 24-hour or 12-hour clock. iOS default is the device locale;
     -- here we let the server author pick once.

@@ -36,6 +36,10 @@ store.lbTable = lbt
 ---defined earlier, and they would silently see a nil global instead.
 local OWNED = '_sdphone_migrate_owned'
 
+---Rows fetched per migration read. oxmysql warns at 1,000 rows by default; keeping these one-off
+---catalog scans below that threshold avoids a giant bridge result without changing the import.
+local READ_CHUNK_SIZE = 500
+
 ---Resolves an lb-phone source table, or nil when this database has no lb data for it.
 ---
 ---Checking only that `phone_<name>` exists is not enough: for the names lb-phone and sd-phone share
@@ -174,39 +178,101 @@ function store.backfillLegacyDomains(legacyName, keys)
     return true
 end
 
----Loads the framework's persistent character roster: qb/QBox reads `players` (citizenid + license),
----ESX reads `users` (identifier). A non-standard schema degrades to empty maps.
----@param frameworkName 'qb'|'esx'
+---Loads the framework's persistent character roster. Current QBox normalizes account identifiers
+---into `users` and links characters through `players.userId`; legacy QBCore keeps the license on
+---`players`, while ESX uses `users.identifier`. A non-standard schema logs the query error and
+---degrades to empty maps so the migration can abort without writing partial ownership data.
+---@param frameworkName 'qbx'|'qb'|'esx'
 ---@return { cids: table<string, boolean>, licenseToCids: table<string, string[]> }
 function store.loadRoster(frameworkName)
     local cids, licenseToCids = {}, {}
-    local ok, rows = pcall(function()
-        if frameworkName == 'esx' then
-            return MySQL.query.await('SELECT identifier AS citizenid, NULL AS license FROM users') or {}
-        end
-        return MySQL.query.await('SELECT citizenid, license FROM players') or {}
-    end)
-    if not ok or type(rows) ~= 'table' then return { cids = cids, licenseToCids = licenseToCids } end
 
-    for _, r in ipairs(rows) do
-        local cid = r.citizenid
-        if cid and cid ~= '' then
-            cids[cid] = true
-            local lic = r.license
-            if lic and lic ~= '' then
-                local bucket = licenseToCids[lic]
-                if not bucket then bucket = {}; licenseToCids[lic] = bucket end
-                bucket[#bucket + 1] = cid
-            end
+    local function addLicense(cid, license)
+        if not license or license == '' then return end
+        local bucket = licenseToCids[license]
+        if not bucket then
+            bucket = {}
+            licenseToCids[license] = bucket
         end
+        bucket[#bucket + 1] = cid
     end
+
+    local ok, err = pcall(function()
+        local lastCid = ''
+
+        while true do
+            local rows
+            if frameworkName == 'esx' then
+                rows = MySQL.query.await(([[
+                    SELECT identifier AS citizenid, NULL AS license, NULL AS license2
+                    FROM users
+                    WHERE identifier > ?
+                    ORDER BY identifier
+                    LIMIT %d
+                ]]):format(READ_CHUNK_SIZE), { lastCid }) or {}
+            elseif frameworkName == 'qbx' then
+                rows = MySQL.query.await(([[
+                    SELECT p.citizenid, u.license, u.license2
+                    FROM players p
+                    LEFT JOIN users u ON u.userId = p.userId
+                    WHERE p.citizenid > ?
+                    ORDER BY p.citizenid
+                    LIMIT %d
+                ]]):format(READ_CHUNK_SIZE), { lastCid }) or {}
+            else
+                rows = MySQL.query.await(([[
+                    SELECT citizenid, license, NULL AS license2
+                    FROM players
+                    WHERE citizenid > ?
+                    ORDER BY citizenid
+                    LIMIT %d
+                ]]):format(READ_CHUNK_SIZE), { lastCid }) or {}
+            end
+
+            for _, r in ipairs(rows) do
+                local cid = r.citizenid
+                if cid and cid ~= '' then
+                    cids[cid] = true
+                    addLicense(cid, r.license)
+                    if r.license2 ~= r.license then addLicense(cid, r.license2) end
+                end
+            end
+
+            if #rows < READ_CHUNK_SIZE then break end
+            lastCid = rows[#rows].citizenid
+        end
+    end)
+
+    if not ok then
+        print(('^1[sd-phone:migrate] failed to load the character roster: %s^0'):format(tostring(err)))
+        return { cids = {}, licenseToCids = {} }
+    end
+
     return { cids = cids, licenseToCids = licenseToCids }
 end
 
----Every lb-phone phone: its owner id, number and lock pin. Read-only.
+---Every lb-phone phone: its owner id, number and lock pin. Read-only and paged so a large archive
+---does not cross oxmysql's oversized-result warning threshold in a single query.
 ---@return { id: any, owner_id: string, phone_number: string, pin: string|nil }[]
 function store.lbPhones()
-    return MySQL.query.await(('SELECT id, owner_id, phone_number, pin FROM %s'):format(lbt('phones'))) or {}
+    local tableName = lbt('phones')
+    local phones, lastId = {}, ''
+
+    while true do
+        local rows = MySQL.query.await(([[
+            SELECT id, owner_id, phone_number, pin
+            FROM %s
+            WHERE id > ?
+            ORDER BY id
+            LIMIT %d
+        ]]):format(tableName, READ_CHUNK_SIZE), { lastId }) or {}
+
+        for _, row in ipairs(rows) do phones[#phones + 1] = row end
+        if #rows < READ_CHUNK_SIZE then break end
+        lastId = rows[#rows].id
+    end
+
+    return phones
 end
 
 ---Every lb-phone contact, tagged with its owner's number (`phone_number`). Read-only.
@@ -227,14 +293,33 @@ function store.lbBlocked()
 end
 
 ---Every lb-phone call, with the timestamp pre-converted to a unix epoch in SECONDS (sd-phone's
----called_at contract). Read-only.
+---called_at contract). Read-only. The two scalar ownership probes are deliberately separate: the
+---single `owner = caller OR owner = callee` subquery makes MariaDB scan the entire owned-number
+---table once per call. Each probe is instead a primary-key lookup, and keyset pages keep the result
+---below oxmysql's warning threshold.
 ---@return { id: any, caller: string, callee: string, duration: number, answered: any, ts: number }[]
 function store.lbCalls()
-    return MySQL.query.await(([[
-        SELECT c.id, c.caller, c.callee, c.duration, c.answered, UNIX_TIMESTAMP(c.timestamp) AS ts
-        FROM %s c
-        WHERE EXISTS (SELECT 1 FROM `%s` o WHERE o.number = c.caller OR o.number = c.callee)
-    ]]):format(lbt('phone_calls'), OWNED)) or {}
+    local tableName = lbt('phone_calls')
+    local calls, lastId = {}, 0
+
+    while true do
+        local rows = MySQL.query.await(([[
+            SELECT c.id, c.caller, c.callee, c.duration, c.answered,
+                   UNIX_TIMESTAMP(c.timestamp) AS ts
+            FROM %s c
+            WHERE c.id > ?
+              AND ((SELECT o1.number FROM `%s` o1 WHERE o1.number = c.caller LIMIT 1) IS NOT NULL
+                   OR (SELECT o2.number FROM `%s` o2 WHERE o2.number = c.callee LIMIT 1) IS NOT NULL)
+            ORDER BY c.id
+            LIMIT %d
+        ]]):format(tableName, OWNED, OWNED, READ_CHUNK_SIZE), { lastId }) or {}
+
+        for _, row in ipairs(rows) do calls[#calls + 1] = row end
+        if #rows < READ_CHUNK_SIZE then break end
+        lastId = rows[#rows].id
+    end
+
+    return calls
 end
 
 ---Every lb-phone message channel, newest-activity epoch as `created_at` (seconds). Read-only.
@@ -550,8 +635,27 @@ end
 
 ---@return { phone_number: string, app: string, username: string }[]
 function store.lbLoggedIn()
-    return MySQL.query.await(
-        ('SELECT phone_number, app, username FROM %s'):format(lbt('logged_in_accounts'))) or {}
+    local tableName = lbt('logged_in_accounts')
+    local accounts = {}
+    local lastPhone, lastApp, lastUsername = '', '', ''
+
+    while true do
+        local rows = MySQL.query.await(([[
+            SELECT phone_number, app, username
+            FROM %s
+            WHERE (phone_number, app, username) > (?, ?, ?)
+            ORDER BY phone_number, app, username
+            LIMIT %d
+        ]]):format(tableName, READ_CHUNK_SIZE), { lastPhone, lastApp, lastUsername }) or {}
+
+        for _, row in ipairs(rows) do accounts[#accounts + 1] = row end
+        if #rows < READ_CHUNK_SIZE then break end
+
+        local last = rows[#rows]
+        lastPhone, lastApp, lastUsername = last.phone_number, last.app, last.username
+    end
+
+    return accounts
 end
 
 ---@param rows any[][] { email, password_hash, display_name, messages, logged_in_citizens }
@@ -734,7 +838,7 @@ function store.grantMigratedLogins(entries)
             app VARCHAR(24) NOT NULL, username VARCHAR(64) NOT NULL, citizenid VARCHAR(64) NOT NULL,
             plain VARCHAR(64) NOT NULL, hash VARCHAR(64) NOT NULL, email VARCHAR(120) NULL,
             PRIMARY KEY (app, username, citizenid)
-        ) ENGINE=MEMORY DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ]]):format(tmp))
 
     for i = 1, #entries, 300 do

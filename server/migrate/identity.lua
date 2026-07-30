@@ -43,7 +43,7 @@ end
 ---Builds the identity context: reads every lb-phone phone, resolves owners, and produces the
 ---lookups the porters use. Also tallies resolved / unresolved / ambiguous counts.
 ---@param cfg table config.Migrate
----@param framework { name: 'qb'|'esx' }
+---@param framework { name: 'qbx'|'qb'|'esx' }
 ---@return { resolvedPhones: { cid: string, number: string, pin: string|nil }[], numberToCid: table<string, string>, cids: string[], stats: { total: number, resolved: number, unresolved: number, ambiguous: number } }
 function identity.build(cfg, framework)
     local roster = store.loadRoster(framework.name)

@@ -267,7 +267,11 @@ local function run(opts)
             :format(unmatched, s.total, pct)
         log(line)
         if pct >= 25 then
-            log('^1that is a high proportion. Check configs/migrate.lua identifierMode before continuing.^0')
+            if s.resolved == 0 then
+                log('^1that is a high proportion. Check configs/migrate.lua identifierMode before continuing.^0')
+            else
+                log('^3resolved phones will still import; unmatched owners have no character in the current roster.^0')
+            end
         end
     end
     if s.resolved == 0 then

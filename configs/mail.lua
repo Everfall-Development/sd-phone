@@ -6,7 +6,7 @@ return {
     -- The one email domain players register under. Sign-up asks for the
     -- username only and the domain is appended server-side; full addresses
     -- on any other domain are rejected.
-    Domain = 'lifeinvader.com',
+    Domain = 'everfall.com',
 
     -- Per-player cap on simultaneously logged-in accounts. Prevents one
     -- player hoarding hundreds of inboxes.
