@@ -633,20 +633,21 @@ function store.lbMailMessages()
     ]]):format(lbt('mail_messages'))) or {}
 end
 
----@return { phone_number: string, app: string, username: string }[]
+---@return { phone_number: string, app: string, username: string }[] Active app logins only.
 function store.lbLoggedIn()
     local tableName = lbt('logged_in_accounts')
     local accounts = {}
     local lastPhone, lastApp, lastUsername = '', '', ''
+    local activeWhere = store.tableHasColumn(tableName, 'active') and 'active = 1 AND' or ''
 
     while true do
         local rows = MySQL.query.await(([[
             SELECT phone_number, app, username
             FROM %s
-            WHERE (phone_number, app, username) > (?, ?, ?)
+            WHERE %s (phone_number, app, username) > (?, ?, ?)
             ORDER BY phone_number, app, username
             LIMIT %d
-        ]]):format(tableName, READ_CHUNK_SIZE), { lastPhone, lastApp, lastUsername }) or {}
+        ]]):format(tableName, activeWhere, READ_CHUNK_SIZE), { lastPhone, lastApp, lastUsername }) or {}
 
         for _, row in ipairs(rows) do accounts[#accounts + 1] = row end
         if #rows < READ_CHUNK_SIZE then break end
@@ -656,6 +657,61 @@ function store.lbLoggedIn()
     end
 
     return accounts
+end
+
+---Every legacy Twitter account, paged by its unique username.
+---@return table[]
+function store.lbTwitterAccounts()
+    local tableName = store.lbSource('twitter_accounts')
+    if not tableName then return {} end
+
+    local accounts, lastUsername = {}, ''
+    while true do
+        local rows = MySQL.query.await(([[
+            SELECT username, display_name, password, phone_number, bio, profile_image,
+                   profile_header, verified, private, UNIX_TIMESTAMP(date_joined) AS ts
+            FROM %s
+            WHERE username > ?
+            ORDER BY username
+            LIMIT %d
+        ]]):format(tableName, READ_CHUNK_SIZE), { lastUsername }) or {}
+
+        for _, row in ipairs(rows) do accounts[#accounts + 1] = row end
+        if #rows < READ_CHUNK_SIZE then break end
+        lastUsername = rows[#rows].username
+    end
+
+    return accounts
+end
+
+---Existing Birdy identities and account handles, used to keep a forced import from claiming a
+---live profile or attaching migrated content to the wrong account.
+---@return { cids: table<string, table>, handles: table<string, string|true>, sessions: table<string, boolean> }
+function store.existingBirdyIdentities()
+    local out = { cids = {}, handles = {}, sessions = {} }
+    local profiles = MySQL.query.await([[
+        SELECT p.citizenid, p.handle, a.phone, UNIX_TIMESTAMP(p.created_at) AS created_ts
+        FROM phone_birdy_profiles p
+        LEFT JOIN phone_app_accounts a ON a.app = 'birdy' AND a.username = p.handle
+    ]]) or {}
+    for _, profile in ipairs(profiles) do
+        out.cids[profile.citizenid] = profile
+        out.handles[profile.handle] = profile.citizenid
+    end
+
+    local accounts = MySQL.query.await("SELECT username FROM phone_app_accounts WHERE app = 'birdy'") or {}
+    for _, account in ipairs(accounts) do
+        if out.handles[account.username] == nil then out.handles[account.username] = true end
+    end
+
+    local sessions = MySQL.query.await([[
+        SELECT DISTINCT s.citizenid
+        FROM phone_app_sessions s
+        JOIN phone_app_accounts a ON a.id = s.account_id
+        WHERE s.app = 'birdy' AND a.app = 'birdy'
+    ]]) or {}
+    for _, session in ipairs(sessions) do out.sessions[session.citizenid] = true end
+    return out
 end
 
 ---@param rows any[][] { email, password_hash, display_name, messages, logged_in_citizens }
@@ -794,6 +850,263 @@ function store.insertPgNotifications(rows)
     insertMulti('INSERT IGNORE INTO phone_photogram_notifications (id, recipient, kind, actor, post_id, seen, created_at) VALUES', 7, rows)
 end
 
+---@type string[] Scratch tables used by the set-based Twitter -> Birdy import.
+local BIRDY_STAGES = {
+    '_sdphone_migrate_birdy_profiles',
+    '_sdphone_migrate_birdy_posts',
+}
+
+local function dropBirdyStages()
+    for _, tableName in ipairs(BIRDY_STAGES) do
+        MySQL.query.await(('DROP TABLE IF EXISTS `%s`'):format(tableName))
+    end
+end
+
+---Copies the selected legacy Twitter graph into Birdy. Profile selection happens in the porter;
+---this function stages that identity map and moves the large content tables with set-based SQL so
+---hundreds of thousands of rows never cross the Lua bridge.
+---@param profiles any[][] { legacy username, citizenid, final Birdy handle, logged in }
+---@param dryRun boolean
+---@return table counts
+function store.migrateBirdy(profiles, dryRun)
+    local out = {
+        profiles = 0, accounts = 0, posts = 0, likes = 0, reposts = 0,
+        follows = 0, dms = 0, notifications = 0, skipped = 0, orphan = 0,
+    }
+    local accountsTable = store.lbSource('twitter_accounts')
+    if not accountsTable or #profiles == 0 then return out end
+
+    local tweetsTable = store.lbSource('twitter_tweets')
+    local likesTable = store.lbSource('twitter_likes')
+    local repostsTable = store.lbSource('twitter_retweets')
+    local followsTable = store.lbSource('twitter_follows')
+    local dmsTable = store.lbSource('twitter_messages')
+    local notificationsTable = store.lbSource('twitter_notifications')
+    local profileStage, postStage = BIRDY_STAGES[1], BIRDY_STAGES[2]
+
+    dropBirdyStages()
+    MySQL.query.await(([=[
+        CREATE TABLE `%s` (
+            source_username VARCHAR(20) NOT NULL,
+            citizenid VARCHAR(64) NOT NULL,
+            handle VARCHAR(32) NOT NULL,
+            logged_in TINYINT(1) NOT NULL DEFAULT 0,
+            PRIMARY KEY (source_username),
+            UNIQUE KEY uq_birdy_stage_cid (citizenid),
+            UNIQUE KEY uq_birdy_stage_handle (handle)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ]=]):format(profileStage))
+    insertMulti(
+        ('INSERT IGNORE INTO `%s` (source_username, citizenid, handle, logged_in) VALUES'):format(profileStage),
+        4,
+        profiles
+    )
+
+    MySQL.query.await(([=[
+        CREATE TABLE `%s` (
+            source_id VARCHAR(50) NOT NULL,
+            post_id VARCHAR(16) NOT NULL,
+            PRIMARY KEY (source_id),
+            UNIQUE KEY uq_birdy_stage_post (post_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ]=]):format(postStage))
+
+    if tweetsTable then
+        MySQL.query.await(([=[
+            INSERT IGNORE INTO `%s` (source_id, post_id)
+            SELECT t.id, CONCAT('tw', t.id)
+            FROM %s t
+            JOIN `%s` author ON author.source_username = t.username
+            WHERE t.reply_to IS NULL OR t.reply_to = ''
+        ]=]):format(postStage, tweetsTable, profileStage))
+
+        while true do
+            local inserted = tonumber(MySQL.update.await(([=[
+                INSERT IGNORE INTO `%s` (source_id, post_id)
+                SELECT t.id, CONCAT('tw', t.id)
+                FROM %s t
+                JOIN `%s` author ON author.source_username = t.username
+                JOIN `%s` parent ON parent.source_id = t.reply_to
+                WHERE t.reply_to IS NOT NULL AND t.reply_to <> ''
+            ]=]):format(postStage, tweetsTable, profileStage, postStage))) or 0
+            if inserted == 0 then break end
+        end
+    end
+
+    local function count(sql)
+        return tonumber(MySQL.scalar.await(sql)) or 0
+    end
+
+    out.profiles = count(('SELECT COUNT(*) FROM `%s`'):format(profileStage))
+    out.accounts = out.profiles
+    out.skipped = math.max(0, count(('SELECT COUNT(*) FROM %s'):format(accountsTable)) - out.profiles)
+    out.posts = count(('SELECT COUNT(*) FROM `%s`'):format(postStage))
+    if tweetsTable then
+        local selectedTweets = count(([=[
+            SELECT COUNT(*) FROM %s t
+            JOIN `%s` author ON author.source_username = t.username
+        ]=]):format(tweetsTable, profileStage))
+        out.orphan = math.max(0, selectedTweets - out.posts)
+    end
+
+    if likesTable and tweetsTable then
+        out.likes = count(([=[
+            SELECT COUNT(*) FROM %s l
+            JOIN `%s` actor ON actor.source_username = l.username
+            JOIN `%s` post ON post.source_id = l.tweet_id
+        ]=]):format(likesTable, profileStage, postStage))
+    end
+    if repostsTable and tweetsTable then
+        out.reposts = count(([=[
+            SELECT COUNT(*) FROM %s r
+            JOIN `%s` actor ON actor.source_username = r.username
+            JOIN `%s` post ON post.source_id = r.tweet_id
+        ]=]):format(repostsTable, profileStage, postStage))
+    end
+    if followsTable then
+        out.follows = count(([=[
+            SELECT COUNT(*) FROM %s f
+            JOIN `%s` follower ON follower.source_username = f.follower
+            JOIN `%s` target ON target.source_username = f.followed
+            WHERE follower.citizenid <> target.citizenid
+        ]=]):format(followsTable, profileStage, profileStage))
+    end
+    if dmsTable then
+        out.dms = count(([=[
+            SELECT COUNT(*) FROM %s d
+            JOIN `%s` sender ON sender.source_username = d.sender
+            JOIN `%s` recipient ON recipient.source_username = d.recipient
+        ]=]):format(dmsTable, profileStage, profileStage))
+    end
+    if notificationsTable then
+        out.notifications = count(([=[
+            SELECT COUNT(*) FROM %s n
+            JOIN `%s` recipient ON recipient.source_username = n.username
+            JOIN `%s` actor ON actor.source_username = n.`from`
+            LEFT JOIN `%s` post ON post.source_id = n.tweet_id
+            WHERE n.type = 'follow' OR post.source_id IS NOT NULL
+        ]=]):format(notificationsTable, profileStage, profileStage, postStage))
+    end
+
+    if not dryRun then
+        MySQL.query.await(([=[
+            INSERT IGNORE INTO phone_birdy_profiles
+                (citizenid, handle, display_name, password, bio, verified, logged_in,
+                 join_label, protected, created_at, avatar, banner)
+            SELECT m.citizenid, m.handle,
+                   COALESCE(NULLIF(LEFT(a.display_name, 32), ''), m.handle), LEFT(a.password, 64),
+                   LEFT(COALESCE(a.bio, ''), 160), IF(a.verified = 1, 1, 0), m.logged_in,
+                   DATE_FORMAT(a.date_joined, '%%M %%Y'), IF(a.private = 1, 1, 0),
+                   a.date_joined, LEFT(a.profile_image, 512), LEFT(a.profile_header, 512)
+            FROM `%s` m
+            JOIN %s a ON a.username = m.source_username
+        ]=]):format(profileStage, accountsTable))
+
+        MySQL.query.await(([=[
+            INSERT IGNORE INTO phone_app_accounts
+                (app, username, display_name, password_hash, phone, created_at)
+            SELECT 'birdy', m.handle,
+                   COALESCE(NULLIF(LEFT(a.display_name, 50), ''), m.handle), LEFT(a.password, 64),
+                   REGEXP_REPLACE(a.phone_number, '[^0-9]', ''), a.date_joined
+            FROM `%s` m
+            JOIN %s a ON a.username = m.source_username
+        ]=]):format(profileStage, accountsTable))
+
+        if tweetsTable then
+            MySQL.query.await(([=[
+                INSERT IGNORE INTO phone_birdy_posts
+                    (id, author_cid, body, parent_id, images, views, created_at)
+                SELECT staged.post_id, author.citizenid, LEFT(COALESCE(t.content, ''), 280),
+                       parent.post_id,
+                       CASE WHEN JSON_VALID(t.attachments) = 1 AND JSON_LENGTH(t.attachments) > 0
+                            THEN t.attachments ELSE NULL END,
+                       0, t.`timestamp`
+                FROM `%s` staged
+                JOIN %s t ON t.id = staged.source_id
+                JOIN `%s` author ON author.source_username = t.username
+                LEFT JOIN `%s` parent ON parent.source_id = t.reply_to
+                JOIN phone_birdy_profiles profile
+                  ON profile.citizenid = author.citizenid AND profile.handle = author.handle
+            ]=]):format(postStage, tweetsTable, profileStage, postStage))
+        end
+
+        if likesTable then
+            MySQL.query.await(([=[
+                INSERT IGNORE INTO phone_birdy_likes (post_id, citizenid, created_at)
+                SELECT post.post_id, actor.citizenid, l.`timestamp`
+                FROM %s l
+                JOIN `%s` actor ON actor.source_username = l.username
+                JOIN `%s` post ON post.source_id = l.tweet_id
+                JOIN phone_birdy_posts p ON p.id = post.post_id
+            ]=]):format(likesTable, profileStage, postStage))
+        end
+
+        if repostsTable then
+            MySQL.query.await(([=[
+                INSERT IGNORE INTO phone_birdy_reposts (post_id, citizenid, created_at)
+                SELECT post.post_id, actor.citizenid, r.`timestamp`
+                FROM %s r
+                JOIN `%s` actor ON actor.source_username = r.username
+                JOIN `%s` post ON post.source_id = r.tweet_id
+                JOIN phone_birdy_posts p ON p.id = post.post_id
+            ]=]):format(repostsTable, profileStage, postStage))
+        end
+
+        if followsTable then
+            MySQL.query.await(([=[
+                INSERT IGNORE INTO phone_birdy_follows (follower_cid, target_cid, created_at)
+                SELECT follower.citizenid, target.citizenid,
+                       GREATEST(followerAccount.date_joined, targetAccount.date_joined)
+                FROM %s f
+                JOIN `%s` follower ON follower.source_username = f.follower
+                JOIN `%s` target ON target.source_username = f.followed
+                JOIN %s followerAccount ON followerAccount.username = f.follower
+                JOIN %s targetAccount ON targetAccount.username = f.followed
+                WHERE follower.citizenid <> target.citizenid
+            ]=]):format(followsTable, profileStage, profileStage, accountsTable, accountsTable))
+        end
+
+        if dmsTable then
+            MySQL.query.await(([=[
+                INSERT IGNORE INTO phone_birdy_dms
+                    (id, from_cid, to_cid, body, kind, meta, reactions, read_flag, created_at)
+                SELECT CONCAT('tw', d.id), sender.citizenid, recipient.citizenid,
+                       COALESCE(d.content, ''),
+                       CASE WHEN JSON_VALID(d.attachments) = 1 AND JSON_LENGTH(d.attachments) > 0
+                            THEN 'image' ELSE 'text' END,
+                       CASE WHEN JSON_VALID(d.attachments) = 1 AND JSON_LENGTH(d.attachments) > 0
+                            THEN JSON_OBJECT(
+                                'gifUrl', JSON_UNQUOTE(JSON_EXTRACT(d.attachments, '$[0]')),
+                                'attachments', JSON_EXTRACT(d.attachments, '$')
+                            ) ELSE NULL END,
+                       NULL, 1, d.`timestamp`
+                FROM %s d
+                JOIN `%s` sender ON sender.source_username = d.sender
+                JOIN `%s` recipient ON recipient.source_username = d.recipient
+            ]=]):format(dmsTable, profileStage, profileStage))
+        end
+
+        if notificationsTable then
+            MySQL.query.await(([=[
+                INSERT IGNORE INTO phone_birdy_notifications
+                    (id, recipient_cid, kind, actor_cid, post_id, seen, created_at)
+                SELECT CONCAT('tw', n.id), recipient.citizenid,
+                       CASE n.type WHEN 'tweet' THEN 'post' WHEN 'retweet' THEN 'repost'
+                            ELSE LEFT(n.type, 16) END,
+                       actor.citizenid, post.post_id, 1, n.`timestamp`
+                FROM %s n
+                JOIN `%s` recipient ON recipient.source_username = n.username
+                JOIN `%s` actor ON actor.source_username = n.`from`
+                LEFT JOIN `%s` post ON post.source_id = n.tweet_id
+                WHERE n.type = 'follow' OR post.source_id IS NOT NULL
+            ]=]):format(notificationsTable, profileStage, profileStage, postStage))
+        end
+    end
+
+    dropBirdyStages()
+    return out
+end
+
 ---Accounts-engine rows for migrated app accounts.
 ---@param rows any[][] { app, username, display_name, password_hash }
 function store.insertPgAccounts(rows)
@@ -866,6 +1179,15 @@ function store.grantMigratedLogins(entries)
         UPDATE phone_app_accounts a JOIN `%s` t ON t.app = a.app AND t.username = a.username
         SET a.password_hash = t.hash
     ]]):format(tmp))) or 0
+
+    -- Birdy keeps a compatibility password hash on the profile as well as in the shared accounts
+    -- engine. Keep both copies aligned so any later legacy-account reconciliation cannot revive the
+    -- unusable lb-phone bcrypt value.
+    MySQL.update.await(([[
+        UPDATE phone_birdy_profiles p JOIN `%s` t
+          ON t.app = 'birdy' AND t.username = p.handle
+        SET p.password = t.hash
+    ]]):format(tmp))
 
     MySQL.query.await(([[
         INSERT INTO phone_passwords (citizenid, app, username, password, email)

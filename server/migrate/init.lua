@@ -28,10 +28,11 @@ local PORTS = {
     { key = 'notes',      label = 'notes',      run = require('server.migrate.port.notes').run },
     { key = 'settings',   label = 'settings',   run = require('server.migrate.port.settings').run },
     { key = 'photogram',  label = 'photogram',  run = require('server.migrate.port.photogram').run },
+    { key = 'birdy',      label = 'birdy',      run = require('server.migrate.port.birdy').run },
     { key = 'mail',       label = 'mail',       run = require('server.migrate.port.mail').run },
     { key = 'wallet',     label = 'wallet',     run = require('server.migrate.port.wallet').run },
     { key = 'voicememos', label = 'voicememos', run = require('server.migrate.port.voicememos').run },
-    -- Last: links sessions to the accounts the photogram porter created.
+    -- Last: links Photogram sessions to the accounts its porter created.
     { key = 'sessions',   label = 'sessions',   run = require('server.migrate.port.sessions').run },
 }
 
@@ -48,6 +49,9 @@ local TARGETS = {
     'phone_photogram_likes', 'phone_photogram_comment_likes', 'phone_photogram_follows',
     'phone_photogram_stories', 'phone_photogram_story_views', 'phone_photogram_dms',
     'phone_photogram_notifications', 'phone_app_accounts', 'phone_app_sessions',
+    'phone_birdy_profiles', 'phone_birdy_posts', 'phone_birdy_likes',
+    'phone_birdy_reposts', 'phone_birdy_follows', 'phone_birdy_dms',
+    'phone_birdy_notifications', 'phone_passwords',
     { 'phone_mail_accounts', 'password_hash' }, { 'phone_message_reactions', 'mid' },
     'phone_bank_transactions', 'phone_voice_memos',
 }
@@ -68,6 +72,10 @@ local DOMAIN_SOURCES = {
         'instagram_accounts', 'instagram_posts', 'instagram_comments', 'instagram_likes',
         'instagram_follows', 'instagram_follow_requests', 'instagram_stories',
         'instagram_stories_views', 'instagram_messages', 'instagram_notifications',
+    },
+    birdy      = {
+        'twitter_accounts', 'twitter_tweets', 'twitter_likes', 'twitter_retweets',
+        'twitter_follows', 'twitter_messages', 'twitter_notifications', 'logged_in_accounts',
     },
     mail       = { 'mail_accounts', 'mail_messages' },
     wallet     = { 'wallet_transactions' },
@@ -133,15 +141,15 @@ local SUMMARY_FIELDS = {
         { 'profiles', 'Photogram account' }, { 'posts', 'post' }, { 'comments', 'comment' },
         { 'stories', 'story' }, { 'dms', 'direct message' }, { 'follows', 'follow' },
     },
+    birdy      = {
+        { 'profiles', 'Birdy profile' }, { 'posts', 'post' }, { 'likes', 'like' },
+        { 'reposts', 'repost' }, { 'follows', 'follow' }, { 'dms', 'direct message' },
+        { 'notifications', 'notification' }, { 'sessions', 'signed-in account' },
+    },
     mail       = { { 'accounts', 'mailbox' }, { 'messages', 'email' } },
     wallet     = { { 'imported', 'wallet transaction' } },
     voicememos = { { 'imported', 'voice memo' } },
-    -- A third element supplies the plural outright, for phrases where the head noun is not the last
-    -- word: "login held for Squawk" pluralises at the front, not the end.
-    sessions   = {
-        { 'written', 'signed-in account' },
-        { 'deferred', 'login held for Squawk', 'logins held for Squawk' },
-    },
+    sessions   = { { 'written', 'signed-in account' } },
 }
 
 
@@ -320,8 +328,7 @@ local function run(opts)
             results[port.key] = res
             log((' -> %-11s %s (%s, %d%%)'):format(port.label, describe(res), elapsed(at), pct))
             -- A porter can report that it has work it could not finish yet. Marking it done would
-            -- retire it permanently: the sessions porter holds Twitter logins until Squawk's porter
-            -- exists, and recording it complete would strand them for good.
+            -- retire it permanently and strand those rows.
             if type(res) == 'table' and res.retry then
                 log(('    %s left pending; it runs again next start.'):format(port.label))
             elseif not dryRun then

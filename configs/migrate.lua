@@ -30,12 +30,13 @@ return {
     -- Per-domain switches, if you want to import only some of it. `numbers` must stay on: every
     -- other domain is keyed off the number -> citizenid resolution it establishes.
     --
-    -- `reactions` needs `messages` (it attaches to the messages that porter writes) and
-    -- `sessions` needs `photogram` (it links to the accounts that porter creates).
+    -- `reactions` needs `messages` (it attaches to the messages that porter writes), and
+    -- `sessions` needs `photogram` (it links to the accounts that porter creates). Birdy owns
+    -- both the Twitter content import and its active account sessions.
     --
-    -- lb-phone passwords are bcrypt hashed and cannot be converted to sd-phone's hasher, so
-    -- migrated accounts rely on the pre-seeded sessions to stay signed in. Anyone who logs out
-    -- recovers through the normal in-app password reset.
+    -- lb-phone passwords are bcrypt hashed and cannot be converted to sd-phone's hasher. Active
+    -- sessions are restored, and each resolved account receives a fresh password in Passwords so
+    -- its owner can sign back in later.
     domains = {
         numbers    = true,
         contacts   = true,
@@ -50,13 +51,15 @@ return {
         reactions  = true,
         -- Instagram accounts, posts, comments, likes, follows, stories and DMs
         photogram  = true,
+        -- Twitter accounts, tweets, likes, reposts, follows, DMs, alerts and active login
+        birdy      = true,
         -- mail accounts and their received messages
         mail       = true,
         -- wallet transaction history
         wallet     = true,
         -- voice memo recordings
         voicememos = true,
-        -- keeps players signed into their migrated accounts; needs `photogram`, runs last
+        -- keeps players signed into migrated Photogram accounts; runs last
         sessions   = true,
     },
 }
