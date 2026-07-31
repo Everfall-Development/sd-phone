@@ -6,7 +6,7 @@ import { EmptyState } from '@/ui/EmptyState';
 import { Scroller } from '@/ui/Scroller';
 import { format12h, formatListDate } from '@/lib/time';
 import type { AuditRow, MdtSection } from './data';
-import { mdtRef, mdtRowMeta, mdtRowTitle, mdtRuleX } from './mdtTheme';
+import { mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle, mdtRuleX } from './mdtTheme';
 import { mdtLogs } from './mdtApi';
 import { MdtColumn } from './ui/MdtColumn';
 import { MdtField } from './ui/MdtField';
@@ -192,7 +192,7 @@ export function LogsPane() {
                         type="button"
                         onClick={() => select(String(row.id))}
                         className={`relative w-full px-4 py-3 text-left ${
-                            isSelected ? 'bg-ios-blue/10' : 'active:bg-black/[0.05] dark:active:bg-white/[0.06]'
+                            isSelected ? 'bg-ios-blue/10' : mdtRowHover
                         }`}
                     >
                         <div className="flex items-baseline gap-2">

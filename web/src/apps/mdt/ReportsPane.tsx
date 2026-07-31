@@ -13,7 +13,7 @@ import type { ReportSummary, ReportType } from './data';
 import { mdtReports } from './mdtApi';
 import { REPORT_TYPES, ReportEditor, reportTypeLabel, reportTypeTone } from './ReportEditor';
 import { useMdtSession } from './useMdtSession';
-import { mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle } from './mdtTheme';
+import { mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle, mdtSegmentedDense } from './mdtTheme';
 import { MdtButton } from './ui/MdtButton';
 import { MdtColumn } from './ui/MdtColumn';
 import { MdtMaster } from './ui/MdtMaster';
@@ -114,6 +114,7 @@ export function ReportsPane() {
         >
             <div className="px-3 pb-2">
                 <SegmentedControl<TypeFilter>
+                    className={mdtSegmentedDense}
                     value={filter}
                     onChange={setFilter}
                     options={[

@@ -28,6 +28,50 @@ schema.tables = {
     'phone_mdt_enforcement',
     'phone_mdt_bulletins',
     'phone_mdt_audit',
+    'phone_mdt_protocols',
+    'phone_mdt_medical',
+}
+
+---@type table[] The shipped treatment protocols, the medical terminal's counterpart to the penal
+---code below. Same INSERT IGNORE contract: a protocol edited in-app survives a restart, a protocol
+---added in a later release still lands. code, label, category, priority, description, body.
+local PROTOCOLS = {
+    { 'TP 101', 'Primary Survey', 'assessment', 'immediate', 'Airway, breathing, circulation, disability, exposure, in that order.',
+      'Establish scene safety before approach. Check responsiveness, then airway patency with cervical spine control where trauma is suspected. Assess breathing rate and effort, then circulation by central and peripheral pulse. Record a baseline set of observations before any intervention that is not immediately life saving.' },
+    { 'TP 102', 'Catastrophic Haemorrhage', 'trauma', 'immediate', 'Control life threatening bleeding before anything else.',
+      'Direct pressure first. Escalate to a pressure dressing, then to a tourniquet placed high and tight on the affected limb. Record the time the tourniquet went on and hand that time over verbally; it decides what the receiving team can still save.' },
+    { 'TP 103', 'Airway Obstruction', 'airway', 'immediate', 'Clear and maintain a patent airway.',
+      'Encourage coughing while the patient can. On a failing cough, alternate five back blows with five abdominal thrusts. On unresponsiveness, begin chest compressions and inspect the airway on each ventilation attempt.' },
+    { 'TP 104', 'Cardiac Arrest', 'cardiac', 'immediate', 'Compressions, early defibrillation, minimal interruption.',
+      'Begin compressions at 100 to 120 per minute to a depth of 5 to 6cm. Apply the defibrillator as soon as it is to hand and follow its rhythm analysis. Rotate the compressor every two minutes. Do not stop to move the patient until there is return of circulation or the resuscitation is called.' },
+    { 'TP 105', 'Chest Pain', 'cardiac', 'urgent', 'Treat as cardiac until it is ruled out.',
+      'Sit the patient upright and keep them still. Record observations at first contact and every five minutes. Any pain radiating to jaw or left arm, or accompanied by sweating, nausea or breathlessness, travels as an emergency regardless of how well the patient looks.' },
+    { 'TP 106', 'Anaphylaxis', 'medical', 'immediate', 'Adrenaline first, and early.',
+      'Remove the trigger where it can be removed. Give adrenaline into the outer thigh without waiting for the airway to close. Lay the patient flat with legs raised unless breathing is compromised, in which case sit them up. Repeat after five minutes if there is no improvement.' },
+    { 'TP 107', 'Opioid Overdose', 'medical', 'immediate', 'Support ventilation, then reverse.',
+      'Respiratory failure is what kills, so ventilate before anything else. Give naloxone once ventilation is supported and titrate to breathing rather than to consciousness. Expect the reversal to wear off before the opioid does, and never leave the patient unattended after it.' },
+    { 'TP 108', 'Major Haemorrhage', 'trauma', 'immediate', 'Stop the bleeding, keep them warm, move early.',
+      'Pressure and packing for compressible sites, pelvic binder for a suspected pelvic fracture, splint for long bone fractures. Keep the patient warm; a cold patient stops clotting. This is a load and go, not a stay and play.' },
+    { 'TP 109', 'Spinal Immobilisation', 'trauma', 'urgent', 'Immobilise on mechanism, not on symptoms.',
+      'Manual in line stabilisation from first contact. Apply a collar sized to the patient and move with a scoop or long board. A patient who is walking on arrival may still have an unstable spine; the mechanism of injury decides this, not how they present.' },
+    { 'TP 110', 'Burns', 'trauma', 'urgent', 'Cool the burn, warm the patient.',
+      'Irrigate with cool running water for twenty minutes and no longer. Remove jewellery and constricting clothing early, before swelling sets in. Cover with a clean non adherent dressing. Estimate the surface area involved and pass that figure on; it decides the receiving unit.' },
+    { 'TP 111', 'Seizure', 'medical', 'urgent', 'Protect from harm, time it, do not restrain.',
+      'Clear the space around the patient and cushion the head. Time the seizure from first movement. Never place anything in the mouth. A seizure past five minutes, or a second seizure without recovery in between, is an emergency in its own right.' },
+    { 'TP 112', 'Hypoglycaemia', 'medical', 'urgent', 'Sugar by the safest available route.',
+      'Oral glucose for a patient who can protect their own airway. For a patient who cannot, use the parenteral route. Re-test after ten minutes and feed a longer acting carbohydrate once the patient is alert, or they will simply drop again.' },
+    { 'TP 113', 'Drowning', 'medical', 'immediate', 'Ventilate first; this arrest is hypoxic.',
+      'Give five rescue breaths before compressions, because the cause is oxygen and not rhythm. Assume spinal injury on any dive or fall. Remove wet clothing and insulate the patient early; hypothermia follows immersion faster than it is expected to.' },
+    { 'TP 114', 'Obstetric Emergency', 'medical', 'immediate', 'Two patients, one of whom cannot be assessed.',
+      'Position the mother on her left side to take the weight off the vena cava. If delivery is imminent, prepare for it where you stand rather than moving. Keep the newborn warm and dry and record the time of birth. Any bleeding in pregnancy travels as an emergency.' },
+    { 'TP 115', 'Psychiatric Crisis', 'medical', 'routine', 'Scene safety, then rapport, then assessment.',
+      'Do not enter alone where there is a weapon or a threat of one. Keep an exit behind you. Speak plainly and do not argue with a delusion. Rule out the physical causes that mimic a crisis, low blood sugar and hypoxia among them, before recording it as psychiatric.' },
+    { 'TP 116', 'Death on Scene', 'admin', 'routine', 'Recognition of life extinct and what follows it.',
+      'Resuscitation is not begun where injuries are incompatible with life or where rigor is established. Record the time of recognition, disturb the scene as little as possible, and hand the location over to police. The report for this carries the Death type.' },
+    { 'TP 117', 'Refusal of Treatment', 'admin', 'routine', 'A competent adult may refuse, and that refusal is recorded.',
+      'Establish that the patient has capacity for this decision at this time. Explain the risks in plain language and record that you did. Advise them to call again if anything changes. Document the refusal in a Patient Care report; the report is the protection for both sides.' },
+    { 'TP 118', 'Handover', 'admin', 'routine', 'The structured handover the receiving team expects.',
+      'Age and presenting complaint, mechanism or history, the observations recorded and the trend across them, treatment given and the response to it, and anything outstanding. Deliver it once, to the person taking over, and file the report before going back on the road.' },
 }
 
 ---@type table[] The shipped penal code. Seeded with INSERT IGNORE so a code edited in-app through
@@ -375,12 +419,14 @@ function schema.ensureSchema()
             `author_name`     VARCHAR(96)  NOT NULL,
             `author_callsign` VARCHAR(16)  NULL,
             `department`      VARCHAR(64)  NOT NULL DEFAULT '',
+            `domain`          VARCHAR(8)   NOT NULL DEFAULT 'leo',
             `created_at`      INT          NOT NULL,
             `updated_at`      INT          NOT NULL,
             PRIMARY KEY (`id`),
             UNIQUE KEY uniq_ref (`ref`),
             KEY idx_created (`created_at`),
             KEY idx_type (`type`),
+            KEY idx_domain (`domain`),
             KEY idx_author (`author_cid`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
@@ -596,6 +642,64 @@ function schema.ensureSchema()
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
     migrations.apply('phone_mdt_audit')
+
+    -- One medical file per citizen, written by the medical terminal and readable by nothing else.
+    -- Deliberately NOT part of phone_mdt_person_records: that row is the police sheet, and a
+    -- shared table would put an officer one query away from a patient's history.
+    MySQL.query.await([[
+        CREATE TABLE IF NOT EXISTS phone_mdt_medical (
+            `citizenid`   VARCHAR(64)  NOT NULL,
+            `blood_type`  VARCHAR(8)   NOT NULL DEFAULT '',
+            `allergies`   VARCHAR(512) NOT NULL DEFAULT '',
+            `conditions`  VARCHAR(512) NOT NULL DEFAULT '',
+            `medications` VARCHAR(512) NOT NULL DEFAULT '',
+            `notes`       MEDIUMTEXT   NULL,
+            `dnr`         TINYINT(1)   NOT NULL DEFAULT 0,
+            `updated_by`  VARCHAR(96)  NOT NULL DEFAULT '',
+            `updated_at`  INT          NOT NULL DEFAULT 0,
+            PRIMARY KEY (`citizenid`),
+            KEY idx_updated (`updated_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ]])
+    migrations.apply('phone_mdt_medical')
+
+    MySQL.query.await([[
+        CREATE TABLE IF NOT EXISTS phone_mdt_protocols (
+            `code`        VARCHAR(16)  NOT NULL,
+            `label`       VARCHAR(120) NOT NULL,
+            `category`    VARCHAR(24)  NOT NULL,
+            `priority`    VARCHAR(16)  NOT NULL DEFAULT 'routine',
+            `description` VARCHAR(255) NOT NULL DEFAULT '',
+            `body`        MEDIUMTEXT   NULL,
+            PRIMARY KEY (`code`),
+            KEY idx_category (`category`),
+            KEY idx_label (`label`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ]])
+    migrations.apply('phone_mdt_protocols')
+
+    do
+        local i = 1
+        while i <= #PROTOCOLS do
+            local last = math.min(i + 24, #PROTOCOLS)
+            local marks, args = {}, {}
+            for n = i, last do
+                local p = PROTOCOLS[n]
+                marks[#marks + 1] = '(?, ?, ?, ?, ?, ?)'
+                args[#args + 1] = p[1]
+                args[#args + 1] = p[2]
+                args[#args + 1] = p[3]
+                args[#args + 1] = p[4]
+                args[#args + 1] = p[5]
+                args[#args + 1] = p[6]
+            end
+            MySQL.query.await(
+                'INSERT IGNORE INTO phone_mdt_protocols (`code`, `label`, `category`, `priority`, `description`, `body`) VALUES '
+                    .. table.concat(marks, ', '),
+                args)
+            i = last + 1
+        end
+    end
 
     -- Referential integrity, added on boot so a later install migrates with no manual SQL. Each
     -- call is a no-op once present, orphans are cleared first, and a type or collation mismatch is

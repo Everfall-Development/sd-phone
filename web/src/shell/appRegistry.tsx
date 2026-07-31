@@ -76,6 +76,7 @@ const APP_REGISTRY = {
     streaks:     entry(() => import('@/apps/streaks/Streaks').then(m => ({ default: m.Streaks }))),
     birdy:       entry(() => import('@/apps/birdy/Birdy').then(m => ({ default: m.Birdy }))),
     mdt:         entry(() => import('@/apps/mdt/Mdt').then(m => ({ default: m.Mdt }))),
+    emsmdt:      entry(() => import('@/apps/mdt/Mdt').then(m => ({ default: m.EmsMdt }))),
     appstore: {
         load: () => import('@/apps/appstore/AppStore'),
         render: (ctx) => (

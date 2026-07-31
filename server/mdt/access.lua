@@ -25,6 +25,33 @@ local DEPARTMENTS = MDT.Departments or {}
 local PERMISSIONS = MDT.Permissions or {}
 ---@type boolean Whether a boss of their department holds every key.
 local BOSS_BYPASS = MDT.BossBypass ~= false
+
+---@type table<string, 'leo'|'ems'> Keys that exist on ONE terminal only. A key absent from this
+---table is shared by both (home, reports, cases, roster, dispatch, chat, bulletins, logs).
+---
+---This is declared here rather than in configs/mdt.lua because it is not a setting: it states
+---which service a capability belongs to, and a server owner moving `jail.book` to the medical
+---terminal would be describing something that has no handler behind it.
+local KEY_DOMAIN = {
+    ['patients.view']    = 'ems',
+    ['patients.edit']    = 'ems',
+    ['protocols.view']   = 'ems',
+    ['protocols.manage'] = 'ems',
+
+    ['persons.view']     = 'leo',
+    ['persons.edit']     = 'leo',
+    ['profiles.view']    = 'leo',
+    ['vehicles.view']    = 'leo',
+    ['vehicles.edit']    = 'leo',
+    ['warrants.view']    = 'leo',
+    ['warrants.issue']   = 'leo',
+    ['warrants.close']   = 'leo',
+    ['offences.view']    = 'leo',
+    ['offences.manage']  = 'leo',
+    ['offences.delete']  = 'leo',
+    ['jail.view']        = 'leo',
+    ['jail.book']        = 'leo',
+}
 ---@type string Sequence format auto-generated callsigns are minted with.
 local CALLSIGN_FORMAT = (MDT.Dispatch or {}).CallsignFormat or '%s-%03d'
 
@@ -141,6 +168,14 @@ end
 function access.can(src, key)
     local dept = deptOf(src)
     if not dept then return false end
+
+    -- Which terminal the key belongs to is checked BEFORE the boss bypass, and before the grade.
+    -- The permission table is one flat list of names, so without this a police chief would clear
+    -- `patients.view` on grade alone and read medical files, and a medic would clear `jail.view`.
+    -- A service's own keys are unreachable from the other service at any rank.
+    local only = KEY_DOMAIN[key]
+    if only and only ~= (dept.type == 'ems' and 'ems' or 'leo') then return false end
+
     if BOSS_BYPASS and job.isBoss(src, dept.job, dept.bossGrade or 0) then return true end
 
     local minimum = PERMISSIONS[key]
@@ -197,6 +232,22 @@ function access.belowMe(src, targetCid)
     return true
 end
 
+---The record domain a caller reads and writes: 'ems' for a medical department, 'leo' for everyone
+---else. This is the whole of the separation between the two terminals' paperwork, so it is derived
+---from the CONFIGURED department type and never from anything the client sends.
+---@param me table caller identity from access.identity
+---@return 'leo'|'ems' domain
+function access.domain(me)
+    return me.department.type == 'ems' and 'ems' or 'leo'
+end
+
+---Whether the caller works the medical terminal.
+---@param me table caller identity
+---@return boolean
+function access.isMedical(me)
+    return me.department.type == 'ems'
+end
+
 ---The restriction identifiers that admit this caller to a record: their own citizenid, their job,
 ---and their department type. Report queries fold these into an IN clause, so a department's
 ---paperwork is not merely un-editable by outsiders, it is un-listable.
@@ -226,6 +277,27 @@ end
 local NO_ACCESS = 'You do not have access to this terminal'
 ---@type string Refusal shown when the caller's grade is below the key's threshold.
 local NO_RANK = 'Your rank does not allow that'
+---@type string Refusal shown when a handler faulted instead of answering.
+local NO_ANSWER = 'That did not go through'
+
+---Runs a handler under pcall, so a fault answers the client instead of leaving its callback
+---pending forever. The error is printed, never swallowed.
+---@param label string permission key, or the wrapper name for an ungated handler
+---@param fn fun(src: integer, payload: table, me: table): table, table?
+---@param src integer player server id
+---@param payload table
+---@param me table caller identity
+---@return table envelope
+---@return table? audit
+local function run(label, fn, src, payload, me)
+    local ok, res, audit = pcall(fn, src, payload, me)
+    if not ok then
+        print(('^1[sd-phone:mdt]^0 %s failed: %s'):format(label, res))
+        return util.fail(NO_ANSWER)
+    end
+    if type(res) ~= 'table' then return util.fail(NO_ANSWER) end
+    return res, audit
+end
 
 ---Wraps a READ handler: resolves identity, checks the key, and normalises the payload. The handler
 ---receives `(src, payload, me)` and returns the response envelope.
@@ -238,7 +310,7 @@ function access.gated(key, fn)
         if not me then return util.fail(NO_ACCESS) end
         if not access.can(src, key) then return util.fail(NO_RANK) end
         if type(payload) ~= 'table' then payload = {} end
-        return fn(src, payload, me) or util.fail('That did not go through')
+        return (run(key, fn, src, payload, me))
     end
 end
 
@@ -256,8 +328,7 @@ function access.audited(key, fn)
         if not access.can(src, key) then return util.fail(NO_RANK) end
         if type(payload) ~= 'table' then payload = {} end
 
-        local res, audit = fn(src, payload, me)
-        if type(res) ~= 'table' then return util.fail('That did not go through') end
+        local res, audit = run(key, fn, src, payload, me)
 
         if res.success == true then
             audit = type(audit) == 'table' and audit or {}
@@ -276,7 +347,7 @@ function access.open(fn)
         local me = access.identity(src)
         if not me then return util.fail(NO_ACCESS) end
         if type(payload) ~= 'table' then payload = {} end
-        return fn(src, payload, me) or util.fail('That did not go through')
+        return (run('open', fn, src, payload, me))
     end
 end
 

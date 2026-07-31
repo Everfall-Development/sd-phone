@@ -18,7 +18,7 @@ import {
 import { PersonPicker } from './PersonPicker';
 import { ReportLinker, reportTypeLabel, reportTypeTone } from './ReportEditor';
 import { useMdtSession } from './useMdtSession';
-import { mdtPanePad, mdtRef, mdtRowMeta, mdtRowTitle, mdtSectionHeader, STATUS_TONE } from './mdtTheme';
+import { mdtFieldArea, mdtFieldSm, mdtFieldXs, mdtPanePad, mdtRef, mdtRowMeta, mdtRowTitle, mdtSectionHeader, STATUS_TONE } from './mdtTheme';
 import { MdtButton } from './ui/MdtButton';
 import { MdtCard } from './ui/MdtCard';
 import { MdtField } from './ui/MdtField';
@@ -247,7 +247,7 @@ export function CaseFile({ caseRef, onSaved, onDeleted, onClose, onChanged }: {
                                 value={file.status}
                                 onChange={e => void patch({ status: e.target.value as CaseStatus })}
                                 aria-label={t('mdt.status', 'Status')}
-                                className="rounded-[9px] border border-black/15 bg-white px-3 py-1.5 text-[14px] font-medium text-black outline-none focus:border-ios-blue dark:border-white/20 dark:bg-base/40 dark:text-white"
+                                className={mdtFieldSm}
                             >
                                 {CASE_STATUSES.map((s: CaseStatus) => <option key={s} value={s}>{caseStatusLabel(s)}</option>)}
                             </select>
@@ -255,7 +255,7 @@ export function CaseFile({ caseRef, onSaved, onDeleted, onClose, onChanged }: {
                                 value={file.priority}
                                 onChange={e => void patch({ priority: e.target.value as CasePriority })}
                                 aria-label={t('mdt.priority', 'Priority')}
-                                className="rounded-[9px] border border-black/15 bg-white px-3 py-1.5 text-[14px] font-medium text-black outline-none focus:border-ios-blue dark:border-white/20 dark:bg-base/40 dark:text-white"
+                                className={mdtFieldSm}
                             >
                                 {CASE_PRIORITIES.map((p: CasePriority) => <option key={p} value={p}>{casePriorityLabel(p)}</option>)}
                             </select>
@@ -342,7 +342,7 @@ export function CaseFile({ caseRef, onSaved, onDeleted, onClose, onChanged }: {
                                             onChange={e => void apply(mdtCaseAssign(
                                                 file.ref, officer.citizenid, e.target.value as CaseRole, true))}
                                             aria-label={t('mdt.role', 'Role')}
-                                            className="shrink-0 rounded-[9px] border border-black/15 bg-white px-2 py-1 text-[13px] text-black outline-none focus:border-ios-blue dark:border-white/20 dark:bg-base/40 dark:text-white"
+                                            className={`shrink-0 ${mdtFieldXs}`}
                                         >
                                             {CASE_ROLES.map((role: CaseRole) => (
                                                 <option key={role} value={role}>{caseRoleLabel(role)}</option>
@@ -444,7 +444,7 @@ export function CaseFile({ caseRef, onSaved, onDeleted, onClose, onChanged }: {
                                 rows={2}
                                 maxLength={1000}
                                 placeholder={t('mdt.addNoteHint', 'Add a note to the file')}
-                                className="min-w-0 flex-1 resize-none rounded-[9px] border border-black/15 bg-white px-3 py-2 text-[15px] leading-snug text-black outline-none transition-colors placeholder:text-black/35 focus:border-ios-blue dark:border-white/20 dark:bg-base/40 dark:text-white dark:placeholder:text-white/35"
+                                className={`min-w-0 flex-1 ${mdtFieldArea}`}
                             />
                             <button
                                 type="button"

@@ -9,7 +9,7 @@ import { useNuiEvent } from '@/hooks/useNuiEvent';
 import type { Bulletin, ReportSummary, Unit } from './data';
 import { BulletinsColumn } from './BulletinsColumn';
 import { UnitsColumn } from './UnitsColumn';
-import { mdtPanePad, mdtRef, mdtRowMeta, mdtRowTitle, mdtRuleY } from './mdtTheme';
+import { mdtPanePad, mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle, mdtRuleY } from './mdtTheme';
 import { mdtHome } from './mdtApi';
 import { MdtButton } from './ui/MdtButton';
 import { MdtCard } from './ui/MdtCard';
@@ -97,7 +97,7 @@ export function HomePane() {
                                 key={r.ref}
                                 type="button"
                                 onClick={() => open('reports', r.ref)}
-                                className="relative w-full px-4 py-3 text-left active:bg-black/[0.05] dark:active:bg-white/[0.06]"
+                                className={`relative w-full px-4 py-3 text-left ${mdtRowHover}`}
                             >
                                 <div className="flex items-center gap-2">
                                     <span className={mdtRef}>{r.ref}</span>

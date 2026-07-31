@@ -277,10 +277,11 @@ end)
 ---the department that issued a warrant may close it, however wide the read is.
 warrants.close = access.audited('warrants.close', function(_, payload, me)
     local ref = util.limitedString(payload.ref, 16)
-    local row = ref and MySQL.single.await([[
-        SELECT * FROM phone_mdt_warrants WHERE ref = ? AND (department = ? OR department = ?) LIMIT 1
-    ]], { ref, me.job, '' })
-    if not row then return util.fail('That warrant was issued by another department') end
+    local row = ref and MySQL.single.await('SELECT * FROM phone_mdt_warrants WHERE ref = ? LIMIT 1', { ref })
+    if not row then return util.fail('That warrant no longer exists') end
+    if row.department ~= '' and row.department ~= me.job then
+        return util.fail('That warrant belongs to another department')
+    end
 
     local now = os.time()
     if (tonumber(row.expiry) or 0) <= now then return util.fail('That warrant is already closed') end

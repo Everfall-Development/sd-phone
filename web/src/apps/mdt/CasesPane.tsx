@@ -15,7 +15,7 @@ import {
 import type { CasePriority, CaseStatus, CaseSummary } from './data';
 import { mdtCases } from './mdtApi';
 import { useMdtSession } from './useMdtSession';
-import { mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle, STATUS_TONE } from './mdtTheme';
+import { mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle, mdtSegmented, STATUS_TONE } from './mdtTheme';
 import { MdtButton } from './ui/MdtButton';
 import { MdtColumn } from './ui/MdtColumn';
 import { MdtMaster } from './ui/MdtMaster';
@@ -119,6 +119,7 @@ export function CasesPane() {
         >
             <div className="flex flex-col gap-2 px-3 pb-2">
                 <SegmentedControl<StatusFilter>
+                    className={mdtSegmented}
                     value={status}
                     onChange={setStatus}
                     options={[
@@ -127,6 +128,7 @@ export function CasesPane() {
                     ]}
                 />
                 <SegmentedControl<PriorityFilter>
+                    className={mdtSegmented}
                     value={priority}
                     onChange={setPriority}
                     options={[

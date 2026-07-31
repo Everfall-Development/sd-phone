@@ -29,25 +29,32 @@ local chat      = require 'server.mdt.chat'
 local bulletins = require 'server.mdt.bulletins'
 ---@type table Audit viewer (server.mdt.logs).
 local logs      = require 'server.mdt.logs'
+---@type table Patients and medical files (server.mdt.medical): the medical terminal's person half.
+local medical   = require 'server.mdt.medical'
+---@type table Treatment protocols (server.mdt.protocols): the medical counterpart of the penal code.
+local protocols = require 'server.mdt.protocols'
 
----@type boolean Whether the MDT is switched on in configs/apps.lua. A disabled app costs nothing.
-local APP_ENABLED = util.appEnabled('mdt')
-
----@type table MDT config (configs/mdt.lua): the dispatch sweep interval.
+---@type table MDT config (configs/mdt.lua): the enable switch and the dispatch sweep interval.
 local MDT = config.Mdt
+
+---@type boolean Whether this server runs a terminal at all (configs/mdt.lua Enabled). Not taken
+---from configs/apps.lua: a companion device enables the MDT in its own catalog, not sd-phone's.
+local ENABLED = MDT.Enabled == true
 
 ---@type integer Seconds between expiry sweeps of the in-memory call board.
 local SWEEP_SECONDS = math.max(5, math.floor(tonumber((MDT.Dispatch or {}).SweepSeconds) or 15))
 
 -- Boot thread: creates the MDT tables and seeds the penal code.
-CreateThread(function()
-    local ok, err = pcall(store.ensureSchema)
-    if not ok then
-        boot.schemaFailed('mdt', err)
-        return
-    end
-    boot.schemaReady()
-end)
+if ENABLED then
+    CreateThread(function()
+        local ok, err = pcall(store.ensureSchema)
+        if not ok then
+            boot.schemaFailed('mdt', err)
+            return
+        end
+        boot.schemaReady()
+    end)
+end
 
 ---@type { [1]: string, [2]: table, [3]: string }[] NUI action suffix -> owning module and the
 ---handler on it. Every handler is already wrapped in access.gated / access.audited by its own
@@ -114,6 +121,14 @@ local ROUTES = {
     { 'bulletins:delete',    bulletins, 'delete' },
 
     { 'logs:list',           logs,      'list' },
+
+    { 'patients:search',     medical,   'patientsSearch' },
+    { 'patients:get',        medical,   'patientsGet' },
+    { 'patients:update',     medical,   'patientsUpdate' },
+
+    { 'protocols:list',      protocols, 'list' },
+    { 'protocols:save',      protocols, 'save' },
+    { 'protocols:delete',    protocols, 'delete' },
 }
 
 ---Registers one MDT callback under the app's 'sd-phone:server:mdt:' prefix, normalising a
@@ -127,41 +142,65 @@ local function register(action, fn)
     end)
 end
 
+---@type string Refusal every callback answers with while the terminal is switched off. The player
+---sees the locked screen; the console line below is what names the switch for the server owner.
+local DISABLED = 'There is no terminal on this network'
+
+---@type boolean Whether the switched-off hint has already been printed this session.
+local hinted = false
+
+---Answers one MDT callback while the terminal is switched off, and says so once. Registering a
+---refusal rather than nothing is the point of it: an unregistered callback never answers at all,
+---so the terminal would sit on its loading screen forever instead of reaching its locked one.
+---@return table envelope
+local function refuse()
+    if not hinted then
+        hinted = true
+        print('^3[sd-phone:mdt]^0 a device opened the MDT, but it is off (configs/mdt.lua Enabled = false)')
+    end
+    return util.fail(DISABLED)
+end
+
 for i = 1, #ROUTES do
     local action, module, name = ROUTES[i][1], ROUTES[i][2], ROUTES[i][3]
     local fn = type(module) == 'table' and module[name] or nil
-    if type(fn) == 'function' then
+    if not ENABLED then
+        register(action, refuse)
+    elseif type(fn) == 'function' then
         register(action, fn)
     else
         print(('^1[sd-phone:mdt]^0 no handler for %s (expected %s on its module)'):format(action, name))
     end
 end
 
--- Call board expiry. Entirely in memory, so a disabled app runs no timer at all.
-CreateThread(function()
-    if not APP_ENABLED then return end
+if ENABLED then
+    -- Call board expiry.
+    CreateThread(function()
+        while true do
+            Wait(SWEEP_SECONDS * 1000)
+            local ok, err = pcall(dispatch.sweep)
+            if not ok then print(('^1[sd-phone:mdt]^0 dispatch sweep failed: %s'):format(err)) end
+        end
+    end)
 
-    while true do
-        Wait(SWEEP_SECONDS * 1000)
-        local ok, err = pcall(dispatch.sweep)
-        if not ok then print(('^1[sd-phone:mdt]^0 dispatch sweep failed: %s'):format(err)) end
-    end
-end)
+    ---Closes a departing officer's shift row and drops their unit off the call board.
+    util.onCleanup(function(src, citizenid)
+        pcall(dispatch.drop, src)
+        if citizenid then pcall(store.closeSession, citizenid) end
+    end)
 
----Closes a departing officer's shift row and drops their unit off the call board.
-util.onCleanup(function(src, citizenid)
-    pcall(dispatch.drop, src)
-    if citizenid then pcall(store.closeSession, citizenid) end
-end)
+    ---Flushes every open shift on stop, so a restart cannot leave shifts that look like they ran
+    ---for days. Guarded to this resource only.
+    ---@param resource string name of the resource that stopped
+    AddEventHandler('onResourceStop', function(resource)
+        if resource ~= GetCurrentResourceName() then return end
+        pcall(store.closeOpenSessions)
+    end)
+end
 
----Flushes every open shift on stop, so a restart cannot leave shifts that look like they ran for
----days. Guarded to this resource only.
----@param resource string name of the resource that stopped
-AddEventHandler('onResourceStop', function(resource)
-    if resource ~= GetCurrentResourceName() then return end
-    if not APP_ENABLED then return end
-    pcall(store.closeOpenSessions)
-end)
+-- Both exports stay registered with the terminal off, answering inertly. A caller that reaches for
+-- a missing export errors where it stands, and a dispatch script has no business dying because
+-- this server does not run an MDT.
 
 ---Pushes a call onto the CAD from another resource (exports['sd-phone']:mdtCreateCall). Bypasses
 ---the officer gate because the caller is a resource rather than a player, while keeping every
@@ -169,6 +208,7 @@ end)
 ---@param call table { code, type, priority, location, coords, suspect?, weapon?, ttl? }
 ---@return string|nil callId
 exports('mdtCreateCall', function(call)
+    if not ENABLED then return nil end
     return dispatch.createCall(call)
 end)
 
@@ -177,5 +217,6 @@ end)
 ---@param citizenid string
 ---@return boolean wanted
 exports('mdtIsWanted', function(citizenid)
+    if not ENABLED then return false end
     return warrants.isWanted(citizenid) == true
 end)

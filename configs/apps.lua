@@ -81,6 +81,7 @@ return {
         -- phones. Keep `base = true` - a disabled entry is never downloadable, so `base = false`
         -- would leave the app permanently un-installable and unable to reach the tablet at all.
         { id = 'mdt', label = 'MDT', icon = 'mdt', route = '/mdt', accent = '#1D4ED8', base = true, enabled = false },
+        { id = 'emsmdt', label = 'EMS', icon = 'emsmdt', route = '/emsmdt', accent = '#E11D48', base = true, enabled = false },
 
         -- Add `wifi` to any entry above to keep its download to one network, e.g. Dark Chat only
         -- handed out inside the bank:

@@ -5,7 +5,7 @@ import { t } from '@/i18n';
 import { EmptyState } from '@/ui/EmptyState';
 import { Pill } from '@/ui/Pill';
 import type { GradeOption, OfficerRow } from './data';
-import { mdtRowMeta } from './mdtTheme';
+import { mdtRowHover, mdtRowMeta } from './mdtTheme';
 import { mdtRoster } from './mdtApi';
 import { MdtColumn } from './ui/MdtColumn';
 import { MdtMaster } from './ui/MdtMaster';
@@ -115,7 +115,7 @@ export function EmployeesPane() {
                     className={`relative w-full px-4 py-3 text-left transition-colors ${
                         o.citizenid === selected
                             ? 'bg-ios-blue/10'
-                            : 'active:bg-black/[0.05] dark:active:bg-white/[0.06]'
+                            : mdtRowHover
                     }`}
                 >
                     <div className="flex min-w-0 items-center gap-2">

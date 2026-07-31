@@ -4,8 +4,9 @@ import { useAsyncData } from '@/hooks/useAsyncData';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useDeckActive } from '@/shell/deckActive';
 
+import { mdtViewEnter } from './mdtTheme';
 import { SECTION_PERMISSION } from './data';
-import type { Department, MdtPermission, MdtSection, Offence, Officer } from './data';
+import type { Department, DepartmentType, MdtPermission, MdtSection, Offence, Officer } from './data';
 import { mdtBootstrap } from './mdtApi';
 
 export interface MdtSessionValue {
@@ -36,6 +37,15 @@ export function useMdtSession(): MdtSessionValue {
     return value;
 }
 
+export function useViewEnter(mode: string | null): string {
+    const shown = useRef<{ mode: string; cls: string } | null>(null);
+    if (mode === null) return '';
+    if (shown.current?.mode !== mode) {
+        shown.current = { mode, cls: shown.current ? mdtViewEnter : '' };
+    }
+    return shown.current.cls;
+}
+
 export function useDeckRefresh(fn: () => void): void {
     const active = useDeckActive();
     const wasActive = useRef(active);
@@ -48,12 +58,17 @@ export function useDeckRefresh(fn: () => void): void {
     }, [active]);
 }
 
-export function useMdtSessionState(): MdtSessionValue {
+export function useMdtSessionState(devDomain?: DepartmentType): MdtSessionValue {
     const [section, setSection] = useSessionState<MdtSection>('mdt:section', 'home');
     const [selection, setSelection] = useSessionState<Partial<Record<MdtSection, string | null>>>('mdt:selection', {});
     const [meOverride, setMeOverride] = useState<Officer | null>(null);
 
-    const { data, loading, refetch } = useAsyncData(mdtBootstrap, []);
+    const { data, loading, refetch } = useAsyncData(() => mdtBootstrap(devDomain), [devDomain]);
+    const [settled, setSettled] = useState(false);
+
+    useEffect(() => {
+        if (!loading) setSettled(true);
+    }, [loading]);
 
     useDeckRefresh(refetch);
 
@@ -85,7 +100,7 @@ export function useMdtSessionState(): MdtSessionValue {
         department: data?.department ?? null,
         offences:   data?.offences ?? [],
         loading,
-        ready:      data !== null,
+        ready:      data !== null || settled,
         can,
         canOpen,
         section,
@@ -96,5 +111,5 @@ export function useMdtSessionState(): MdtSessionValue {
         openRecord: open,
         setMe,
         refresh:    refetch,
-    }), [me, data, loading, can, canOpen, section, setSection, selection, select, open, setMe, refetch]);
+    }), [me, data, loading, settled, can, canOpen, section, setSection, selection, select, open, setMe, refetch]);
 }

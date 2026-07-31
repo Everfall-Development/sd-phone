@@ -25,6 +25,29 @@ do
         if ids[id] then ENABLED_DOCK[#ENABLED_DOCK + 1] = id end
     end
 end
+
+-- The catalog above is what this SERVER has; what this PLAYER may see also depends on the job they
+-- are holding, which only the server knows. Asked on every open rather than cached, so switching
+-- job on a multijob server puts the right terminal on the home screen with no event to miss.
+---@return table[] apps
+---@return string[] dock
+local function visibleApps()
+    local hidden = lib.callback.await('sd-phone:server:apps:hidden', false)
+    if type(hidden) ~= 'table' or #hidden == 0 then return ENABLED_APPS, ENABLED_DOCK end
+
+    local drop = {}
+    for i = 1, #hidden do drop[hidden[i]] = true end
+
+    local apps, dock = {}, {}
+    for i = 1, #ENABLED_APPS do
+        local app = ENABLED_APPS[i]
+        if not drop[app.id] then apps[#apps + 1] = app end
+    end
+    for i = 1, #ENABLED_DOCK do
+        if not drop[ENABLED_DOCK[i]] then dock[#dock + 1] = ENABLED_DOCK[i] end
+    end
+    return apps, dock
+end
 -- Number display config for the NUI. Format keys are stringified deliberately: a Lua table whose
 -- integer keys run contiguously from 1 encodes as a JSON ARRAY, which would land in the UI
 -- off-by-one, so this guarantees an object either way.
@@ -328,6 +351,8 @@ local function OpenPhone()
         return
     end
 
+    local visibleAppList, visibleDock = visibleApps()
+
     local ped = PlayerPedId()
 
     if config.Phone.BlockWhileDead and IsEntityDead(ped) then
@@ -387,8 +412,8 @@ local function OpenPhone()
             bluetoothConfigured = bluetoothClient.configured(),
             use24h    = config.Lockscreen.Use24Hour,
             showDate  = config.Lockscreen.ShowDate,
-            dock      = ENABLED_DOCK,
-            apps      = ENABLED_APPS,
+            dock      = visibleDock,
+            apps      = visibleAppList,
             mailDomain = config.Mail.Domain,
             number    = NUMBER_FORMAT,
             wallpaper = {

@@ -22,7 +22,9 @@ export function MdtHeader({ compact = false }: { compact?: boolean }) {
                         {deptName}
                     </h1>
                     <span className="min-w-0 truncate text-[12px] font-semibold uppercase tracking-[0.09em] text-ios-gray">
-                        {t('mdt.terminalName', 'Mobile Police Terminal')}
+                        {department?.type === 'ems'
+                            ? t('mdt.terminalNameEms', 'Mobile Medical Terminal')
+                            : t('mdt.terminalName', 'Mobile Police Terminal')}
                     </span>
                 </div>
 

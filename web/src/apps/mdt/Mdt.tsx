@@ -4,7 +4,7 @@ import { ShieldAlert } from 'lucide-react';
 import { t } from '@/i18n';
 import { EmptyState } from '@/ui/EmptyState';
 import { NavContext } from '@/hooks/useIosPush';
-import type { MdtSection } from './data';
+import type { DepartmentType, MdtSection } from './data';
 import { CasesPane } from './CasesPane';
 import { ChatPane } from './ChatPane';
 import { DepartmentSeal } from './DepartmentSeal';
@@ -16,7 +16,9 @@ import { LogsPane } from './LogsPane';
 import { MdtHeader } from './MdtHeader';
 import { MdtSidebar } from './MdtSidebar';
 import { OffencesPane } from './OffencesPane';
+import { PatientsPane } from './PatientsPane';
 import { ProfilesPane } from './ProfilesPane';
+import { ProtocolsPane } from './ProtocolsPane';
 import { ReportsPane } from './ReportsPane';
 import { VehiclesPane } from './VehiclesPane';
 import { WarrantsPane } from './WarrantsPane';
@@ -36,6 +38,8 @@ function pane(section: MdtSection) {
         case 'chat':      return <ChatPane />;
         case 'jail':      return <JailPane />;
         case 'logs':      return <LogsPane />;
+        case 'patients':  return <PatientsPane />;
+        case 'protocols': return <ProtocolsPane />;
         default:          return <HomePane />;
     }
 }
@@ -91,7 +95,9 @@ function MdtTerminal() {
                     <div className="flex min-h-0 flex-1">
                         <MdtSidebar compact={compact} />
                         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col pb-6">
-                            {pane(active)}
+                            <div key={active} className="flex min-h-0 flex-1 flex-col animate-mdt-pane">
+                                {pane(active)}
+                            </div>
                         </div>
                     </div>
                 </>
@@ -100,8 +106,8 @@ function MdtTerminal() {
     );
 }
 
-export function Mdt({ onClose: _onClose }: { onClose: () => void }) {
-    const session = useMdtSessionState();
+function Terminal({ devDomain }: { devDomain?: DepartmentType }) {
+    const session = useMdtSessionState(devDomain);
     return (
         <MdtSessionProvider value={session}>
             <NavContext.Provider value={{ onWillBack: () => {} }}>
@@ -109,4 +115,12 @@ export function Mdt({ onClose: _onClose }: { onClose: () => void }) {
             </NavContext.Provider>
         </MdtSessionProvider>
     );
+}
+
+export function Mdt({ onClose: _onClose }: { onClose: () => void }) {
+    return <Terminal />;
+}
+
+export function EmsMdt({ onClose: _onClose }: { onClose: () => void }) {
+    return <Terminal devDomain="ems" />;
 }

@@ -9,7 +9,7 @@ export const device: DeviceProfile = {
     payphone:     true,
     admin:        true,
     setup:        true,
-    excludedApps: ['mdt'],
+    excludedApps: ['mdt', 'emsmdt'],
     defaultAlign: 'bottom-right',
     screen: {
         w:      440,

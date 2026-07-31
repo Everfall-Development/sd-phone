@@ -10,7 +10,7 @@ import { SearchBar } from '@/ui/SearchBar';
 
 import { CHARGE_CLASSES, type ChargeClass, type ChargeInput, type Offence } from './data';
 import { useMdtSession } from './useMdtSession';
-import { mdtRowHover, mdtRowMeta, mdtRowTitle, mdtSectionHeader, STATUS_TONE } from './mdtTheme';
+import { mdtFieldXs, mdtRowHover, mdtRowMeta, mdtRowTitle, mdtSectionHeader, STATUS_TONE } from './mdtTheme';
 import { MdtCard } from './ui/MdtCard';
 
 const MAX_COUNT = 99;
@@ -142,7 +142,7 @@ export function ChargePicker({ lines, onChange, subjects = [], className = '' }:
                                             value={line.citizenid ?? ''}
                                             onChange={e => setSubject(index, e.target.value)}
                                             aria-label={t('mdt.attributeCharge', 'Attribute charge')}
-                                            className="max-w-[150px] shrink-0 rounded-[9px] border border-black/15 bg-white px-2 py-1 text-[13px] text-black outline-none focus:border-ios-blue dark:border-white/20 dark:bg-base/40 dark:text-white"
+                                            className={`max-w-[150px] shrink-0 ${mdtFieldXs}`}
                                         >
                                             {subjects.map(subject => (
                                                 <option key={subject.citizenid} value={subject.citizenid}>
@@ -220,7 +220,7 @@ export function ChargePicker({ lines, onChange, subjects = [], className = '' }:
                     <Scroller className="min-h-0 flex-1">
                         {groups.map(group => (
                             <div key={group.cls}>
-                                <div className="sticky top-0 z-10 bg-white/95 px-4 py-1.5 backdrop-blur-sm dark:bg-surface/95">
+                                <div className="sticky top-0 z-10 bg-[#e5e5e5] px-4 py-1.5 dark:bg-surface">
                                     <span className={mdtSectionHeader}>{classLabel(group.cls)}</span>
                                 </div>
                                 {group.rows.map(offence => (

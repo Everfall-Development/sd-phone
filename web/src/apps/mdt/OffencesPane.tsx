@@ -13,7 +13,7 @@ import { Scroller } from '@/ui/Scroller';
 import { classLabel, sentenceLabel } from './ChargePicker';
 import { CHARGE_CLASSES, type ChargeClass, type Offence } from './data';
 import { mdtDeleteOffence, mdtOffences, mdtSaveOffence } from './mdtApi';
-import { useMdtSession } from './useMdtSession';
+import { useMdtSession, useViewEnter } from './useMdtSession';
 import { mdtPanePad, mdtRowHover, mdtRowMeta, mdtSectionHeader, STATUS_TONE } from './mdtTheme';
 import { MdtButton } from './ui/MdtButton';
 import { MdtCard } from './ui/MdtCard';
@@ -178,6 +178,8 @@ function OffenceDetail({ offence, manage, onSaved, onDeleted, onCancel }: {
     const [saving, setSaving] = useState(false);
     const [confirm, setConfirm] = useState(false);
 
+    const enter = useViewEnter(editing ? 'edit' : offence ? 'read' : null);
+
     useEffect(() => {
         setDraft(draftOf(offence));
         setEditing(offence === null);
@@ -218,7 +220,7 @@ function OffenceDetail({ offence, manage, onSaved, onDeleted, onCancel }: {
 
     if (editing) {
         return (
-            <Scroller className={`h-full ${mdtPanePad}`}>
+            <Scroller key="edit" className={`h-full ${mdtPanePad} ${enter}`}>
                 <h1 className="text-[26px] font-bold tracking-ios-display text-black dark:text-white">
                     {offence ? t('mdt.editOffence', 'Edit offence') : t('mdt.newOffenceTitle', 'New offence')}
                 </h1>
@@ -298,7 +300,7 @@ function OffenceDetail({ offence, manage, onSaved, onDeleted, onCancel }: {
     if (!offence) return null;
 
     return (
-        <Scroller className={`h-full ${mdtPanePad}`}>
+        <Scroller key="read" className={`h-full ${mdtPanePad} ${enter}`}>
             <div className="flex flex-wrap items-center gap-3">
                 <span className="shrink-0 text-[13px] font-bold uppercase tabular-nums tracking-wide text-ios-gray">
                     {offence.code}

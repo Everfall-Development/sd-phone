@@ -68,6 +68,7 @@ export function devInjectMockData(): () => void {
             { id: 'weazelnews', label: 'Weazel News', icon: 'weazelnews', route: '/weazelnews', accent: '#C8102E' },
             { id: 'streaks',    label: 'Streaks',     icon: 'streaks',    route: '/streaks',    accent: '#FF7A1A' },
             { id: 'mdt',        label: 'MDT',         icon: 'mdt',        route: '/mdt',        accent: '#1D4ED8', base: true },
+            { id: 'emsmdt',     label: 'EMS',         icon: 'emsmdt',     route: '/emsmdt',     accent: '#E11D48', base: true },
         ],
         locale: new URLSearchParams(window.location.search).get('loc') ?? 'en',
         wifiConfigured: true,

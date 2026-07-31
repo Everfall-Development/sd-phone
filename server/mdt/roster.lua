@@ -146,15 +146,6 @@ end
 ---@return table[] members, table<string, table> profiles
 local function departmentMembers(dept)
     local members = society.listEmployees(dept.job)
-    if #members > ROSTER_LIMIT then
-        local capped = {}
-        for i = 1, ROSTER_LIMIT do capped[i] = members[i] end
-        members = capped
-    end
-
-    local cids = {}
-    for i = 1, #members do cids[i] = members[i].citizenid end
-    local profiles = store.profilesFor(cids)
     local online = player.onlineCidMap()
 
     table.sort(members, function(a, b)
@@ -164,7 +155,16 @@ local function departmentMembers(dept)
         return a.name < b.name
     end)
 
-    return members, profiles
+    if #members > ROSTER_LIMIT then
+        local capped = {}
+        for i = 1, ROSTER_LIMIT do capped[i] = members[i] end
+        members = capped
+    end
+
+    local cids = {}
+    for i = 1, #members do cids[i] = members[i].citizenid end
+
+    return members, store.profilesFor(cids)
 end
 
 ---Resolves a target citizenid inside the caller's own department, so no handler can act on

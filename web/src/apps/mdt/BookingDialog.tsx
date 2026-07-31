@@ -11,7 +11,7 @@ import { sentenceLabel } from './ChargePicker';
 import type { ArrestRow } from './data';
 import { mdtBook, mdtJailQuote, mdtReport } from './mdtApi';
 import { ReportLinker } from './ReportEditor';
-import { mdtSectionHeader } from './mdtTheme';
+import { mdtFieldClass, mdtSectionHeader } from './mdtTheme';
 
 export function BookingDialog({ onClose, onBooked }: {
     onClose:  () => void;
@@ -143,7 +143,7 @@ export function BookingDialog({ onClose, onBooked }: {
                         value={citizenid}
                         onChange={e => setCitizenid(e.target.value)}
                         aria-label={t('mdt.suspect', 'Suspect')}
-                        className="mb-3 w-full rounded-[9px] border border-black/15 bg-white px-3 py-2 text-[15px] text-black outline-none focus:border-ios-blue dark:border-white/20 dark:bg-base/40 dark:text-white"
+                        className={`mb-3 ${mdtFieldClass}`}
                     >
                         {suspects.map(suspect => (
                             <option key={suspect.citizenid} value={suspect.citizenid}>{suspect.name}</option>

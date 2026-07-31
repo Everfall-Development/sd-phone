@@ -35,6 +35,13 @@ import {
     type VehicleDetail,
     type VehicleRow,
     type VehicleStatus,
+    type Department,
+    type DepartmentType,
+    type MedicalFile,
+    type PatientDetail,
+    type PatientPaperwork,
+    type PatientRow,
+    type Protocol,
     type Warrant,
     type WarrantCharge,
 } from './data';
@@ -90,9 +97,80 @@ const DEV_BOOTSTRAP: MdtBootstrap = {
         'bulletins.view', 'bulletins.manage',
         'jail.view', 'jail.book',
         'logs.view', 'me.update',
+        'patients.view', 'patients.edit', 'protocols.view', 'protocols.manage',
     ],
     offences: DEV_OFFENCES,
+    protocols: [],
 };
+
+const DEV_EMS_DEPARTMENT: Department = {
+    job: 'ambulance',
+    label: 'San Andreas Medical Services',
+    short: 'SAMS',
+    type: 'ems',
+    seal: 'ems',
+    accent: '#E11D48',
+};
+
+let DEV_PROTOCOLS: Protocol[] = [
+    { code: 'TP 101', label: 'Primary Survey', category: 'assessment', priority: 'immediate',
+      description: 'Airway, breathing, circulation, disability, exposure, in that order.',
+      body: 'Establish scene safety before approach. Check responsiveness, then airway patency with cervical spine control where trauma is suspected. Record a baseline set of observations before any intervention that is not immediately life saving.' },
+    { code: 'TP 102', label: 'Catastrophic Haemorrhage', category: 'trauma', priority: 'immediate',
+      description: 'Control life threatening bleeding before anything else.',
+      body: 'Direct pressure first. Escalate to a pressure dressing, then to a tourniquet placed high and tight on the affected limb. Record the time the tourniquet went on and hand that time over verbally.' },
+    { code: 'TP 104', label: 'Cardiac Arrest', category: 'cardiac', priority: 'immediate',
+      description: 'Compressions, early defibrillation, minimal interruption.',
+      body: 'Begin compressions at 100 to 120 per minute to a depth of 5 to 6cm. Apply the defibrillator as soon as it is to hand. Rotate the compressor every two minutes.' },
+    { code: 'TP 106', label: 'Anaphylaxis', category: 'medical', priority: 'immediate',
+      description: 'Adrenaline first, and early.',
+      body: 'Remove the trigger where it can be removed. Give adrenaline into the outer thigh without waiting for the airway to close. Repeat after five minutes if there is no improvement.' },
+    { code: 'TP 111', label: 'Seizure', category: 'medical', priority: 'urgent',
+      description: 'Protect from harm, time it, do not restrain.',
+      body: 'Clear the space around the patient and cushion the head. Time the seizure from first movement. Never place anything in the mouth.' },
+    { code: 'TP 118', label: 'Handover', category: 'admin', priority: 'routine',
+      description: 'The structured handover the receiving team expects.',
+      body: 'Age and presenting complaint, mechanism or history, the observations recorded and the trend across them, treatment given and the response to it, and anything outstanding.' },
+];
+
+const DEV_MEDICAL: Record<string, MedicalFile> = {
+    MRN91223: {
+        bloodType: 'O-', allergies: 'Penicillin, latex', conditions: 'Asthma',
+        medications: 'Salbutamol inhaler', dnr: false,
+        notes: 'Two admissions this month for respiratory distress. Carries her own inhaler; confirm she has used it before assisting.',
+        updatedBy: 'M-102 Priya Raman', updatedAt: Math.floor(Date.now() / 1000) - 86_400,
+    },
+    KRR40118: {
+        bloodType: 'A+', allergies: '', conditions: 'Type 1 diabetes',
+        medications: 'Insulin', dnr: false,
+        notes: 'Hypoglycaemic episode on scene at Strawberry. Responded to oral glucose.',
+        updatedBy: 'M-114 Dana Whitlock', updatedAt: Math.floor(Date.now() / 1000) - 3_600 * 9,
+    },
+};
+
+const DEV_PATIENT_PAPERWORK: Record<string, PatientPaperwork[]> = {
+    MRN91223: [
+        { ref: 'R-0051', title: 'Respiratory distress, Vespucci Beach', type: 'Patient Care', role: 'patient', createdAt: Math.floor(Date.now() / 1000) - 7_200 },
+        { ref: 'R-0044', title: 'Asthma attack, Del Perro Pier', type: 'Patient Care', role: 'patient', createdAt: Math.floor(Date.now() / 1000) - 86_400 * 6 },
+    ],
+    KRR40118: [
+        { ref: 'R-0049', title: 'Hypoglycaemia, Strawberry Avenue', type: 'Patient Care', role: 'patient', createdAt: Math.floor(Date.now() / 1000) - 3_600 * 9 },
+    ],
+};
+
+const EMPTY_FILE: MedicalFile = {
+    bloodType: '', allergies: '', conditions: '', medications: '',
+    notes: '', dnr: false, updatedBy: '', updatedAt: 0,
+};
+
+function devFile(citizenid: string): MedicalFile {
+    return DEV_MEDICAL[citizenid] ?? { ...EMPTY_FILE };
+}
+
+function devPatientRow(citizenid: string, name: string, dob: string, sex: string, phone: string): PatientRow {
+    const file = devFile(citizenid);
+    return { citizenid, name, dob, sex, phone, bloodType: file.bloodType, hasAllergy: file.allergies !== '', dnr: file.dnr };
+}
 
 let DEV_PERSONS: PersonDetail[] = [
     {
@@ -318,10 +396,10 @@ const DEV_GRADES = [
 ];
 
 let DEV_UNITS: Unit[] = [
-    { citizenid: 'HRT10098', name: 'Grace Hartley', callsign: 'LS-100', rank: 'Chief', code: '10-8', department: 'police' },
-    { citizenid: 'WHT44012', name: 'Dana Whitlock', callsign: 'LS-114', rank: 'Sergeant', code: '10-8', department: 'police' },
-    { citizenid: 'OKF77120', name: 'Miles Okafor', callsign: 'LS-208', rank: 'Corporal', code: '10-6', department: 'police', callId: 'call-1' },
-    { citizenid: 'BNC30554', name: 'Rosa Bianchi', callsign: 'LS-301', rank: 'Officer', code: '10-7', department: 'police' },
+    { citizenid: 'HRT10098', name: 'Grace Hartley', callsign: 'LS-100', rank: 'Chief', code: '10-8', department: 'police', domain: 'leo', coords: { x: 425.1, y: -979.4 } },
+    { citizenid: 'WHT44012', name: 'Dana Whitlock', callsign: 'LS-114', rank: 'Sergeant', code: '10-8', department: 'police', domain: 'leo', coords: { x: -1037.7, y: -2737.6 } },
+    { citizenid: 'OKF77120', name: 'Miles Okafor', callsign: 'LS-208', rank: 'Corporal', code: '10-6', department: 'police', callId: 'call-1', domain: 'leo', coords: { x: 118.9, y: -1300.2 } },
+    { citizenid: 'BNC30554', name: 'Rosa Bianchi', callsign: 'LS-301', rank: 'Officer', code: '10-7', department: 'police', domain: 'leo', coords: { x: -710.4, y: -158.9 } },
 ];
 
 let DEV_CALLS: Call[] = [
@@ -330,11 +408,13 @@ let DEV_CALLS: Call[] = [
         location: 'Rob’s Liquor, Strawberry Avenue', direction: 'Southbound',
         suspect: 'Male, dark hooded jacket', weapon: 'Handgun',
         units: ['LS-208'], unitCount: 1, createdAt: now - 240, expiresAt: now + 660, hasCoords: true,
+        coords: { x: 130.2, y: -1287.5 },
     },
     {
         id: 'call-2', code: '10-50', type: 'Traffic collision', priority: 3,
         location: 'Power Street at Alta Street', direction: 'Eastbound',
         units: [], unitCount: 0, createdAt: now - 900, expiresAt: now + 300, hasCoords: true,
+        coords: { x: -247.8, y: -885.1 },
     },
 ];
 
@@ -433,8 +513,17 @@ function nextRef(prefix: string): string {
     return `${prefix}-${String(devSeq).padStart(4, '0')}`;
 }
 
-export async function mdtBootstrap(): Promise<MdtBootstrap | null> {
-    if (!isFiveM) return { ...DEV_BOOTSTRAP, grants: [...DEV_BOOTSTRAP.grants], offences: [...DEV_OFFENCES] };
+export async function mdtBootstrap(devDomain?: DepartmentType): Promise<MdtBootstrap | null> {
+    if (!isFiveM) {
+        const medical = devDomain === 'ems';
+        return {
+            ...DEV_BOOTSTRAP,
+            department: medical ? DEV_EMS_DEPARTMENT : DEV_BOOTSTRAP.department,
+            grants: [...DEV_BOOTSTRAP.grants],
+            offences: medical ? [] : [...DEV_OFFENCES],
+            protocols: medical ? [...DEV_PROTOCOLS] : [],
+        };
+    }
     return apiData<MdtBootstrap>('sd-phone:mdt:bootstrap');
 }
 
@@ -815,6 +904,65 @@ export async function mdtCloseWarrant(ref: string): Promise<Warrant | null> {
         return next;
     }
     return (await apiData<{ warrant: Warrant }>('sd-phone:mdt:warrants:close', { ref }))?.warrant ?? null;
+}
+
+export async function mdtPatientsSearch(query: string, page = 1): Promise<Page<PatientRow>> {
+    if (!isFiveM) {
+        const hits = DEV_PERSONS.filter(p => matches(query, p.name, p.citizenid, p.phone));
+        return paginate(hits.map(p => devPatientRow(p.citizenid, p.name, p.dob, p.sex, p.phone)), page);
+    }
+    return (await apiData<Page<PatientRow>>('sd-phone:mdt:patients:search', { query, page })) ?? emptyPage<PatientRow>();
+}
+
+export async function mdtPatient(citizenid: string): Promise<PatientDetail | null> {
+    if (!isFiveM) {
+        const p = DEV_PERSONS.find(x => x.citizenid === citizenid);
+        if (!p) return null;
+        return {
+            citizenid: p.citizenid,
+            name:      p.name,
+            dob:       p.dob,
+            sex:       p.sex,
+            phone:     p.phone,
+            file:      devFile(p.citizenid),
+            reports:   DEV_PATIENT_PAPERWORK[p.citizenid] ?? [],
+        };
+    }
+    return (await apiData<{ patient: PatientDetail }>('sd-phone:mdt:patients:get', { citizenid }))?.patient ?? null;
+}
+
+export async function mdtSaveMedical(
+    citizenid: string,
+    patch: Partial<MedicalFile>,
+): Promise<MedicalFile | null> {
+    if (!isFiveM) {
+        DEV_MEDICAL[citizenid] = { ...devFile(citizenid), ...patch, updatedBy: 'M-114 Dana Whitlock', updatedAt: Math.floor(Date.now() / 1000) };
+        return DEV_MEDICAL[citizenid];
+    }
+    return (await apiData<{ file: MedicalFile }>('sd-phone:mdt:patients:update', { citizenid, ...patch }))?.file ?? null;
+}
+
+export async function mdtProtocols(): Promise<Protocol[]> {
+    if (!isFiveM) return [...DEV_PROTOCOLS];
+    return (await apiData<{ rows: Protocol[] }>('sd-phone:mdt:protocols:list'))?.rows ?? [];
+}
+
+export async function mdtSaveProtocol(protocol: Protocol): Promise<Protocol | null> {
+    if (!isFiveM) {
+        const at = DEV_PROTOCOLS.findIndex(p => p.code === protocol.code);
+        if (at >= 0) DEV_PROTOCOLS[at] = protocol;
+        else DEV_PROTOCOLS.push(protocol);
+        return protocol;
+    }
+    return (await apiData<{ protocol: Protocol }>('sd-phone:mdt:protocols:save', protocol))?.protocol ?? null;
+}
+
+export async function mdtDeleteProtocol(code: string): Promise<boolean> {
+    if (!isFiveM) {
+        DEV_PROTOCOLS = DEV_PROTOCOLS.filter(p => p.code !== code);
+        return true;
+    }
+    return (await apiCall('sd-phone:mdt:protocols:delete', { code })).success;
 }
 
 export async function mdtOffences(): Promise<Offence[]> {

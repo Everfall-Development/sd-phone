@@ -157,6 +157,17 @@ module.exports = {
                     '70%':  { transform: 'scale(1.25)', opacity: 0.22 },
                     '100%': { transform: 'scale(1.55)', opacity: 0 },
                 },
+                // A terminal pane taking the stage: short rise and fade, no
+                // horizontal travel, since the sidebar stays put beside it.
+                'mdt-pane': {
+                    '0%':   { opacity: 0, transform: 'translateY(7px)' },
+                    '100%': { opacity: 1, transform: 'translateY(0)' },
+                },
+                // A record drilling in over its master list.
+                'mdt-detail': {
+                    '0%':   { opacity: 0, transform: 'translateX(18px)' },
+                    '100%': { opacity: 1, transform: 'translateX(0)' },
+                },
             },
             animation: {
                 'slide-up-fade':   'slide-up-fade 0.32s ease-out',
@@ -175,6 +186,8 @@ module.exports = {
                 'shimmer':         'shimmer 1.6s linear infinite',
                 'heart-pop':       'heart-pop 0.42s cubic-bezier(0.34,1.56,0.64,1)',
                 'burst-ring':      'burst-ring 0.5s ease-out forwards',
+                'mdt-pane':        'mdt-pane 0.24s cubic-bezier(0.22,0.9,0.3,1)',
+                'mdt-detail':      'mdt-detail 0.26s cubic-bezier(0.22,0.9,0.3,1)',
             },
         },
     },

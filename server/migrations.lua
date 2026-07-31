@@ -41,6 +41,13 @@ local COLUMNS = {
         declined = 'declined TINYINT(1) NOT NULL DEFAULT 0',
     },
 
+    -- Which terminal filed the report. Defaulting to 'leo' is what keeps the back-fill safe: every
+    -- row that predates the medical terminal was written by a police department, and the default
+    -- states exactly that rather than leaving a NULL for the scoping clause to interpret.
+    phone_mdt_reports = {
+        domain = "`domain` VARCHAR(8) NOT NULL DEFAULT 'leo' AFTER `department`",
+    },
+
     marketplace_listings = {
         images = '`images` TEXT NULL AFTER `image`',
     },

@@ -10,7 +10,25 @@ export type MdtSection =
     | 'employees'
     | 'chat'
     | 'jail'
-    | 'logs';
+    | 'logs'
+    | 'patients'
+    | 'protocols';
+
+export type DepartmentType = 'leo' | 'ems' | 'doj';
+
+export const LEO_SECTIONS: readonly MdtSection[] = [
+    'home', 'dispatch', 'profiles', 'vehicles', 'reports', 'cases',
+    'warrants', 'offences', 'employees', 'chat', 'jail', 'logs',
+] as const;
+
+export const EMS_SECTIONS: readonly MdtSection[] = [
+    'home', 'dispatch', 'patients', 'reports', 'cases',
+    'protocols', 'employees', 'chat', 'logs',
+] as const;
+
+export function sectionsFor(type: DepartmentType | undefined): readonly MdtSection[] {
+    return type === 'ems' ? EMS_SECTIONS : LEO_SECTIONS;
+}
 
 export type MdtPermission =
     | 'home.view'
@@ -50,7 +68,11 @@ export type MdtPermission =
     | 'jail.view'
     | 'jail.book'
     | 'logs.view'
-    | 'me.update';
+    | 'me.update'
+    | 'patients.view'
+    | 'patients.edit'
+    | 'protocols.view'
+    | 'protocols.manage';
 
 export const SECTION_PERMISSION: Record<MdtSection, MdtPermission> = {
     home:      'home.view',
@@ -65,11 +87,77 @@ export const SECTION_PERMISSION: Record<MdtSection, MdtPermission> = {
     chat:      'chat.view',
     jail:      'jail.view',
     logs:      'logs.view',
+    patients:  'patients.view',
+    protocols: 'protocols.view',
 };
 
 export type ChargeClass = 'felony' | 'misdemeanor' | 'infraction';
 export type ReportType = 'Incident' | 'Traffic' | 'Arrest' | 'Investigation' | 'Warrant';
 export type InvolvedRole = 'suspect' | 'victim' | 'witness';
+
+export type EmsReportType = 'Patient Care' | 'Trauma' | 'Cardiac' | 'Overdose' | 'Transport' | 'Death';
+export type EmsInvolvedRole = 'patient' | 'witness' | 'responder' | 'other';
+
+export type AnyReportType = ReportType | EmsReportType;
+export type AnyInvolvedRole = InvolvedRole | EmsInvolvedRole;
+export type ProtocolCategory = 'assessment' | 'airway' | 'cardiac' | 'trauma' | 'medical' | 'admin';
+export type ProtocolPriority = 'immediate' | 'urgent' | 'routine';
+
+export const EMS_REPORT_TYPES: readonly EmsReportType[] =
+    ['Patient Care', 'Trauma', 'Cardiac', 'Overdose', 'Transport', 'Death'] as const;
+export const EMS_INVOLVED_ROLES: readonly EmsInvolvedRole[] =
+    ['patient', 'witness', 'responder', 'other'] as const;
+export const BLOOD_TYPES: readonly string[] =
+    ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
+
+export interface Protocol {
+    code:        string;
+    label:       string;
+    category:    ProtocolCategory;
+    priority:    ProtocolPriority;
+    description: string;
+    body:        string;
+}
+
+export interface MedicalFile {
+    bloodType:   string;
+    allergies:   string;
+    conditions:  string;
+    medications: string;
+    notes:       string;
+    dnr:         boolean;
+    updatedBy:   string;
+    updatedAt:   number;
+}
+
+export interface PatientRow {
+    citizenid:  string;
+    name:       string;
+    dob:        string;
+    sex:        string;
+    phone:      string;
+    bloodType:  string;
+    hasAllergy: boolean;
+    dnr:        boolean;
+}
+
+export interface PatientPaperwork {
+    ref:       string;
+    title:     string;
+    type:      string;
+    role:      string;
+    createdAt: number;
+}
+
+export interface PatientDetail {
+    citizenid: string;
+    name:      string;
+    dob:       string;
+    sex:       string;
+    phone:     string;
+    file:      MedicalFile;
+    reports:   PatientPaperwork[];
+}
 export type CaseStatus = 'open' | 'in_progress' | 'closed';
 export type CasePriority = 'low' | 'medium' | 'high';
 export type CaseRole = 'primary' | 'assisting' | 'supervisor';
@@ -127,6 +215,7 @@ export interface MdtBootstrap {
     department: Department;
     grants:     MdtPermission[];
     offences:   Offence[];
+    protocols:  Protocol[];
 }
 
 export interface PersonRow {
@@ -207,14 +296,14 @@ export interface ChargeInput {
 export interface Involved {
     citizenid: string;
     name:      string;
-    role:      InvolvedRole;
+    role:      AnyInvolvedRole;
     notes?:    string;
 }
 
 export interface ReportSummary {
     ref:         string;
     title:       string;
-    type:        ReportType;
+    type:        AnyReportType;
     author:      string;
     authorCid:   string;
     callsign?:   string;
@@ -237,9 +326,9 @@ export interface ReportDetail extends ReportSummary {
 export interface ReportDraft {
     ref:      string | null;
     title:    string;
-    type:     ReportType;
+    type:     AnyReportType;
     body:     string;
-    involved: { citizenid: string; role: InvolvedRole; notes?: string }[];
+    involved: { citizenid: string; role: AnyInvolvedRole; notes?: string }[];
     charges:  ChargeInput[];
 }
 
@@ -281,7 +370,7 @@ export interface CaseDetail {
     updatedAt: number;
     officers:  CaseOfficer[];
     notes:     CaseNote[];
-    reports:   { ref: string; title: string; type: ReportType }[];
+    reports:   { ref: string; title: string; type: AnyReportType }[];
     canEdit:   boolean;
     canDelete: boolean;
 }
@@ -371,7 +460,9 @@ export interface Unit {
     rank:       string;
     code:       UnitCode;
     department: string;
+    domain:     DepartmentType;
     callId?:    string;
+    coords?:    MapPoint;
 }
 
 export interface Call {
@@ -388,6 +479,7 @@ export interface Call {
     createdAt:  number;
     expiresAt:  number;
     hasCoords:  boolean;
+    coords?:    MapPoint;
 }
 
 export interface DispatchState {
@@ -432,6 +524,11 @@ export interface MdtHome {
     recentReports: ReportSummary[];
     bulletins:     Bulletin[];
     units:         Unit[];
+}
+
+export interface MapPoint {
+    x: number;
+    y: number;
 }
 
 export interface Coords {

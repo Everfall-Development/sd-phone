@@ -9,7 +9,7 @@ import { formatListDate } from '@/lib/time';
 import { isFiveM } from '@/core/nui';
 import { useTheme } from '@/stores/themeStore';
 import type { Bulletin } from './data';
-import { mdtColumnTitle, mdtRowBody, mdtRowMeta, mdtRowTitle } from './mdtTheme';
+import { mdtColumnTitle, mdtRowBody, mdtRowHover, mdtRowMeta, mdtRowTitle } from './mdtTheme';
 import { mdtDeleteBulletin, mdtSaveBulletin } from './mdtApi';
 import { MdtButton } from './ui/MdtButton';
 import { MdtColumn } from './ui/MdtColumn';
@@ -190,7 +190,7 @@ export function BulletinsColumn({ bulletins, onChanged, className = '' }: {
                                 }
                             }
                             : undefined}
-                        className={`relative px-4 py-3 ${manage ? 'cursor-pointer active:bg-black/[0.05] dark:active:bg-white/[0.06]' : ''}`}
+                        className={`relative px-4 py-3 ${manage ? `cursor-pointer ${mdtRowHover}` : ''}`}
                     >
                         <div className="flex items-start gap-2">
                             <div className={`min-w-0 flex-1 truncate ${mdtRowTitle}`}>{b.title}</div>

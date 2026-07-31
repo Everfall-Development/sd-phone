@@ -8,8 +8,10 @@ import { Pill } from '@/ui/Pill';
 import { Scroller } from '@/ui/Scroller';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
+import { useSessionState } from '@/hooks/useSessionState';
 import { UNIT_CODES, type Call, type Unit, type UnitCode } from './data';
-import { mdtRef, mdtRowMeta, mdtRowTitle, mdtRuleX, mdtSectionHeader } from './mdtTheme';
+import { DispatchMap } from './DispatchMap';
+import { mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle, mdtRuleX, mdtSectionHeader, mdtSegmented } from './mdtTheme';
 import {
     mdtAttach, mdtDetach, mdtDispatchState, mdtLocate, mdtSetStatus, mdtSetWaypoint,
 } from './mdtApi';
@@ -52,6 +54,8 @@ export function DispatchPane() {
     const [loaded, setLoaded] = useState(false);
     const [flashId, setFlashId] = useState<string | null>(null);
     const [notice, setNotice] = useState('');
+    const [board, setBoard] = useSessionState<'map' | 'units'>('mdt:dispatch:board', 'map');
+    const [focusUnit, setFocusUnit] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
 
     const refresh = useCallback(async () => {
@@ -170,7 +174,7 @@ export function DispatchPane() {
                                 ? 'bg-ios-blue/10'
                                 : c.id === flashId
                                     ? 'bg-ios-red/10'
-                                    : 'active:bg-black/[0.05] dark:active:bg-white/[0.06]'
+                                    : mdtRowHover
                         }`}
                     >
                         <div className="flex min-w-0 items-center gap-2">
@@ -274,29 +278,54 @@ export function DispatchPane() {
             hasDetail={!!current}
             onCloseDetail={() => select(null)}
             placeholder={(
-                <MdtColumn
-                    className="min-h-0 flex-1"
-                    title={t('mdt.unitsOnAir', 'Units On Air')}
-                    count={units.length || undefined}
-                    isEmpty={loaded && units.length === 0}
-                    empty={(
-                        <EmptyState
-                            center
-                            icon={RadioTower}
-                            title={t('mdt.noUnits', 'No Units On Duty')}
-                            subtitle={t('mdt.noUnitsSub', 'Units appear here the moment an officer brings a terminal up.')}
+                <div className="flex min-h-0 flex-1 flex-col">
+                    <div className="shrink-0 px-4 pt-4">
+                        <SegmentedControl<'map' | 'units'>
+                            className={mdtSegmented}
+                            value={board}
+                            onChange={setBoard}
+                            options={[
+                                { value: 'map', label: t('mdt.boardMap', 'Map') },
+                                { value: 'units', label: t('mdt.boardUnits', 'Units On Air') },
+                            ]}
                         />
+                    </div>
+
+                    {board === 'map' ? (
+                        <DispatchMap
+                            calls={calls}
+                            units={units}
+                            selectedCall={selected}
+                            selectedUnit={focusUnit}
+                            onSelectCall={id => select(id)}
+                            onSelectUnit={cid => setFocusUnit(cid === focusUnit ? null : cid)}
+                        />
+                    ) : (
+                        <MdtColumn
+                            className="min-h-0 flex-1"
+                            title={t('mdt.unitsOnAir', 'Units On Air')}
+                            count={units.length || undefined}
+                            isEmpty={loaded && units.length === 0}
+                            empty={(
+                                <EmptyState
+                                    center
+                                    icon={RadioTower}
+                                    title={t('mdt.noUnits', 'No Units On Duty')}
+                                    subtitle={t('mdt.noUnitsSub', 'Units appear here the moment an officer brings a terminal up.')}
+                                />
+                            )}
+                        >
+                            {units.map((u, i) => (
+                                <UnitRow
+                                    key={u.citizenid}
+                                    unit={u}
+                                    divider={i < units.length - 1}
+                                    onPress={() => { void waypointToUnit(u.citizenid); }}
+                                />
+                            ))}
+                        </MdtColumn>
                     )}
-                >
-                    {units.map((u, i) => (
-                        <UnitRow
-                            key={u.citizenid}
-                            unit={u}
-                            divider={i < units.length - 1}
-                            onPress={() => { void waypointToUnit(u.citizenid); }}
-                        />
-                    ))}
-                </MdtColumn>
+                </div>
             )}
         />
     );

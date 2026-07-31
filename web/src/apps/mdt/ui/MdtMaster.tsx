@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { isValidElement, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { SlideOver } from '@/ui/SlideOver';
 import { mdtBackdrop, mdtRuleY } from '../mdtTheme';
@@ -38,6 +38,10 @@ export function MdtMaster(props: MdtMasterProps) {
     const open = hasDetail ?? ('onBack' in props ? !!onBack : detail != null);
     const close = onCloseDetail ?? onBack;
 
+    const detailKey = isValidElement(detail) && detail.key != null
+        ? `d:${detail.key}`
+        : detail != null ? 'detail' : 'placeholder';
+
     if (narrow) {
         return (
             <div ref={hostRef} className={`relative flex min-h-0 min-w-0 flex-1 ${className}`}>
@@ -58,7 +62,9 @@ export function MdtMaster(props: MdtMasterProps) {
             </div>
             <div className={mdtRuleY} />
             <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-                {detail ?? placeholder}
+                <div key={detailKey} className="flex min-h-0 flex-1 flex-col animate-mdt-detail">
+                    {detail ?? placeholder}
+                </div>
             </div>
         </div>
     );

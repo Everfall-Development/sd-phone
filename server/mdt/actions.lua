@@ -10,6 +10,8 @@ local paperwork = require 'server.mdt.paperwork'
 local bulletins = require 'server.mdt.bulletins'
 ---@type table CAD (server.mdt.dispatch): the live unit list on Home.
 local dispatch  = require 'server.mdt.dispatch'
+---@type table Treatment protocols (server.mdt.protocols): the medical terminal's reference catalog.
+local protocols = require 'server.mdt.protocols'
 
 ---@type table Actions module; the table returned at end of file. Shell-level handlers only: the
 ---bootstrap every pane reads its session from, and the Home dashboard's single read. Both are
@@ -72,8 +74,12 @@ local function bootstrap(src, _payload, me)
             seal   = dept.seal or 'shield',
             accent = dept.accent or '#1D4ED8',
         },
-        grants   = access.grants(src),
-        offences = store.offences(),
+        grants = access.grants(src),
+        -- Each terminal is handed its own reference catalog and not the other's: the penal code is
+        -- what a police charge picker resolves against, the protocol set is what a medical report
+        -- attaches. Sending both would put the penal code in a medic's bundle for nothing.
+        offences  = access.isMedical(me) and {} or store.offences(),
+        protocols = access.isMedical(me) and protocols.all() or {},
     })
 end
 

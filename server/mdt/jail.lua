@@ -294,11 +294,22 @@ jail.book = access.audited('jail.book', function(_, payload, me)
 
     local debited = false
     if wantFine then
+        local reason = 'MDT citation ' .. reportRef
         local fromAccount = math.min(held, fine)
-        if fromAccount > 0 then money.remove(target, ACCOUNT, fromAccount, 'MDT citation ' .. reportRef) end
         local rest = fine - fromAccount
-        if rest > 0 then money.remove(target, 'cash', rest, 'MDT citation ' .. reportRef) end
-        debited = true
+
+        debited = fromAccount <= 0 or money.remove(target, ACCOUNT, fromAccount, reason) == true
+        if debited and rest > 0 then
+            debited = money.remove(target, 'cash', rest, reason) == true
+            if not debited and fromAccount > 0 then
+                money.add(target, ACCOUNT, fromAccount, reason .. ' reversed')
+            end
+        end
+
+        if not debited then
+            release(reportRef, citizenid, 'fined')
+            if not sentenced then return util.fail('The citation could not be collected') end
+        end
     end
 
     local charges = {}

@@ -47,12 +47,13 @@ function money.add(source, moneyType, amount, reason)
 end
 
 ---Debit one of the player's accounts. Everfall bank mutations stay inside ef_banking; all other
----account types use the framework. Returns true only when the debit was accepted.
+---account types use the framework. False when the player cannot be resolved or the debit is
+---declined; callers must still pre-check money.get(src, type) >= amount.
 ---@param source number
 ---@param moneyType string
 ---@param amount number
 ---@param reason? string Optional reason string passed to the framework's logger.
----@return boolean
+---@return boolean removed
 function money.remove(source, moneyType, amount, reason)
     if convertType(moneyType) == 'bank' and efBanking.active() then
         return efBanking.removeMoney(source, amount, reason)

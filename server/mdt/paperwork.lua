@@ -16,15 +16,38 @@ local paperwork = {}
 ---@type table MDT config (configs/mdt.lua).
 local MDT = config.Mdt
 
----@type table<string, boolean> Report types the editor offers.
+---@type table<string, boolean> Report types the police editor offers.
 local TYPES = {}
 for _, kind in ipairs(MDT.ReportTypes or {}) do TYPES[kind] = true end
 
+---@type table<string, boolean> Report types the medical editor offers instead.
+local EMS_TYPES = {}
+for _, kind in ipairs(MDT.EmsReportTypes or {}) do EMS_TYPES[kind] = true end
+
 ---@type string Report type a save falls back to when the payload names an unknown one.
 local DEFAULT_TYPE = (MDT.ReportTypes or {})[1] or 'Incident'
+---@type string The medical terminal's own fallback.
+local EMS_DEFAULT_TYPE = (MDT.EmsReportTypes or {})[1] or 'Patient Care'
 
----@type table<string, boolean> Roles a person may hold on a report.
+---@type table<string, boolean> Roles a person may hold on a police report.
 local ROLES = { suspect = true, victim = true, witness = true }
+
+---@type table<string, boolean> Roles a person may hold on a medical report. A medical report has
+---no suspect, which is also why it can carry no charges.
+local EMS_ROLES = {}
+for _, role in ipairs(MDT.EmsInvolvedRoles or {}) do EMS_ROLES[role] = true end
+
+---The report vocabulary of the caller's own terminal. Every validation reads these rather than a
+---module-level constant, so a medic filing a report is held to the medical set and an officer to
+---the police one, whatever the client sent.
+---@param me table caller identity
+---@return table<string, boolean> types
+---@return string defaultType
+---@return table<string, boolean> roles
+local function vocabulary(me)
+    if access.isMedical(me) then return EMS_TYPES, EMS_DEFAULT_TYPE, EMS_ROLES end
+    return TYPES, DEFAULT_TYPE, ROLES
+end
 
 ---@type table<string, boolean> Case workflow states.
 local STATUSES = { open = true, in_progress = true, closed = true }
@@ -73,17 +96,24 @@ end
 ---@return any[] args the identifiers it binds
 function paperwork.visibility(me)
     local rules = access.restrictions(me)
-    local parts, args = {}, {}
+    local parts, args = {}, { access.domain(me) }
     for i = 1, #rules do
         parts[#parts + 1] = '(x.`type` = ? AND x.`identifier` = ?)'
         args[#args + 1] = rules[i].type
         args[#args + 1] = rules[i].identifier
     end
+    -- The domain test leads, and it is an AND rather than one of the restriction rules on purpose:
+    -- a restriction narrows who inside a service may read a report, while the domain decides which
+    -- service the report belongs to at all. A medical report is not a police report with a tighter
+    -- audience, so no combination of restrictions can ever expose one to the other terminal.
     return ([[(
-        NOT EXISTS (SELECT 1 FROM phone_mdt_report_restrictions x WHERE x.report_id = r.id)
-        OR EXISTS (
-            SELECT 1 FROM phone_mdt_report_restrictions x
-            WHERE x.report_id = r.id AND (%s)
+        r.`domain` = ?
+        AND (
+            NOT EXISTS (SELECT 1 FROM phone_mdt_report_restrictions x WHERE x.report_id = r.id)
+            OR EXISTS (
+                SELECT 1 FROM phone_mdt_report_restrictions x
+                WHERE x.report_id = r.id AND (%s)
+            )
         )
     )]]):format(table.concat(parts, ' OR ')), args
 end
@@ -201,12 +231,14 @@ end
 ---@param payload table client draft
 ---@return table|nil draft { title, type, body, involved, charges }
 ---@return string? message failure reason when draft is nil
-local function sanitizeReport(payload)
+local function sanitizeReport(payload, me)
+    local types, defaultType, roles = vocabulary(me)
+
     local title = util.limitedString(payload.title, tonumber(LIMITS.ReportTitle) or 160)
     if not title then return nil, 'A title is required' end
 
     local kind = type(payload.type) == 'string' and payload.type or ''
-    if not TYPES[kind] then kind = DEFAULT_TYPE end
+    if not types[kind] then kind = defaultType end
 
     local body = util.limitedString(payload.body, tonumber(LIMITS.ReportBody) or 12000) or ''
 
@@ -217,7 +249,7 @@ local function sanitizeReport(payload)
             if type(p) == 'table' and #involved < MAX_INVOLVED then
                 local cid  = util.limitedString(p.citizenid, 64)
                 local role = type(p.role) == 'string' and p.role or ''
-                if cid and ROLES[role] and not seen[cid] then
+                if cid and roles[role] and not seen[cid] then
                     seen[cid] = true
                     involved[#involved + 1] = {
                         citizenid = cid,
@@ -228,6 +260,13 @@ local function sanitizeReport(payload)
                 end
             end
         end
+    end
+
+    -- A medical report carries no charges, and that is refused here rather than left to the UI:
+    -- the medical editor never shows a charge picker, so anything arriving in this field on a
+    -- medical report was not typed by a medic.
+    if access.isMedical(me) then
+        return { title = title, type = kind, body = body, involved = involved, charges = {} }
     end
 
     local raw = {}
@@ -280,8 +319,9 @@ paperwork.reportsList = access.gated('reports.view', function(_, payload, me)
     local where, params = { clause }, {}
     for i = 1, #args do params[#params + 1] = args[i] end
 
+    local types = vocabulary(me)
     local kind = type(payload.type) == 'string' and payload.type or nil
-    if kind and TYPES[kind] then
+    if kind and types[kind] then
         where[#where + 1] = 'r.type = ?'
         params[#params + 1] = kind
     end
@@ -319,7 +359,7 @@ end)
 ---Files a new report: the report row, its involved people, its charges, and the jobtype
 ---restriction that scopes it to the author's own department.
 local function createReport(src, payload, me)
-    local draft, message = sanitizeReport(payload)
+    local draft, message = sanitizeReport(payload, me)
     if not draft then return util.fail(message) end
 
     local ref = store.nextRef('report')
@@ -328,9 +368,9 @@ local function createReport(src, payload, me)
     local now = os.time()
     local id = MySQL.insert.await([[
         INSERT INTO phone_mdt_reports
-            (ref, title, type, body, author_cid, author_name, author_callsign, department, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ]], { ref, draft.title, draft.type, draft.body, me.citizenid, me.name, me.callsign, me.job, now, now })
+            (ref, title, type, body, author_cid, author_name, author_callsign, department, domain, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ]], { ref, draft.title, draft.type, draft.body, me.citizenid, me.name, me.callsign, me.job, access.domain(me), now, now })
     if not id then return util.fail('The report could not be filed') end
 
     local queries = {
@@ -356,7 +396,7 @@ local function updateReport(src, payload, me)
     local row = ref and readable(me, ref)
     if not row then return util.fail('That report is not available') end
 
-    local draft, message = sanitizeReport(payload)
+    local draft, message = sanitizeReport(payload, me)
     if not draft then return util.fail(message) end
 
     local queries = {
