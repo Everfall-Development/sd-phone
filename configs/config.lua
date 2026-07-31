@@ -43,6 +43,7 @@ local config = {
     Radio = require 'configs.radio',         -- frequencies + job-restricted bands
     WeazelNews = require 'configs.weazelnews', -- broadcast network: staff-published articles + breaking ticker
     Streaks = require 'configs.streaks',     -- photo-a-day streaks: milestone cash + global gallery
+    Mdt = require 'configs.mdt',             -- police terminal: departments, permission grades, jail + dispatch limits
     Migrate = require 'configs.migrate',     -- one-time lb-phone -> sd-phone data import
     Sim = require 'configs.uniqueandsim',    -- unique phones + SIM cards (see its pick-your-setup header)
     CellTowers = require 'configs.celltowers', -- degradable service by distance to a mast

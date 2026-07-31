@@ -32,6 +32,14 @@ If sd-phone is useful to you, please ⭐ the repo. Issues and pull requests are 
 >
 > This only happens once. Every later restart skips the domains that are already imported, so normal startups are unaffected.
 
+> [!TIP]
+> **Want a tablet? Check out the companion tablet, [sd-tablet](https://github.com/Samuels-Development/sd-tablet).**
+> A second device for the same character, running these same apps on a bigger screen. Same messages,
+> same contacts, same accounts, same wallet, because there is one set of player data and both devices
+> read it. No pairing, no sync, no second phone to configure.
+>
+> It is a companion resource and needs sd-phone to run. [More below](#companion-sd-tablet).
+
 ## Preview
 
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/c1300d66-6530-47d4-ad02-676646b96fc7" />
@@ -90,6 +98,33 @@ Eleven widgets, each in three sizes (2x2, 4x2 and 4x4), added from the Add Widge
 | **Timers & Alarms** | A live countdown ring, or the next alarm and everything else you have set |
 
 Nine of them offer a **Dark, Light or Glass** finish; Glass frosts your wallpaper behind the tile. Weather and Now Playing take their colour from their content instead. Clock and Weather also align left, centre or right. Previews in the picker render over your own wallpaper at true size, so what you see is what gets placed.
+
+## Companion: sd-tablet
+
+<div align="center">
+
+### [sd-tablet](https://github.com/Samuels-Development/sd-tablet) is a tablet for the same character
+
+[![sd-tablet](https://img.shields.io/badge/sd--tablet-companion%20resource-94DD0C?style=for-the-badge)](https://github.com/Samuels-Development/sd-tablet)
+
+</div>
+
+A second device your players can carry, running **this** phone's apps on a bigger screen. It is a
+companion resource, not a separate phone: it ships no apps, no database tables and no server logic
+of its own, and it renders sd-phone's own `web/src` against a tablet device profile, so there is
+exactly one copy of the interface and it cannot drift.
+
+Everything is shared because nothing is copied. One set of player data on this server, two devices
+reading it: the same Messages threads, contacts, mail, notes, photos, app logins, wallet, settings
+and passcode. There is no pairing step and no sync, because there is nothing to sync.
+
+The tablet cannot **place or answer voice calls**. That refusal is enforced here, in
+`client/companion.lua`, on sd-phone's side of the seam, so it holds even for a modified tablet
+build. Home screen arrangement is the one thing the two devices keep separately, since a layout's
+page boundaries are that device's own grid.
+
+Requires sd-phone, and only works alongside it. Install it next to this resource and `ensure` it
+after: [github.com/Samuels-Development/sd-tablet](https://github.com/Samuels-Development/sd-tablet)
 
 ## Highlights
 

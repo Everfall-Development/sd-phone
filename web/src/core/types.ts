@@ -1,6 +1,7 @@
 
 import type { BirdyMessage } from '@/apps/birdy/data';
 import type { DocFile } from '@/apps/documents/data';
+import type { Bulletin, Call, ChatMsg, Unit } from '@/apps/mdt/data';
 import type { DMsg as PhotogramDM, User as PhotogramUser } from '@/apps/photogram/data';
 import type { VUser as VibezUser } from '@/apps/vibez/data';
 import type { Reaction } from '@/shared/chat/data';
@@ -374,6 +375,11 @@ export type NuiMessage =
     | { action: 'sd-phone:streaks:newPost';     data: { id: number; author: string; imageUrl: string; caption?: string; dayStreak: number; postDate: string; createdAt: number; likeCount: number; citizenid: string } }
     | { action: 'sd-phone:streaks:postChanged'; data: { postId: number; likeCount: number } }
     | { action: 'sd-phone:streaks:refresh' }
+    | { action: 'sd-phone:mdt:dispatch'; data: { units: Unit[]; calls: Call[] } }
+    | { action: 'sd-phone:mdt:call';     data: { call: Call } }
+    | { action: 'sd-phone:mdt:chat';     data: { message: ChatMsg } }
+    | { action: 'sd-phone:mdt:bulletin'; data: { bulletins: Bulletin[] } }
+    | { action: 'sd-phone:mdt:warrant';  data: { citizenid: string; wanted: boolean } }
     | { action: 'sd-phone:wipe' }
     | { action: 'sd-phone:admin:open'; data: { adminName?: string; sim?: boolean } }
     | { action: 'chess:invited';  data: { fromSrc: string; fromName: string; lobbyId: string } }

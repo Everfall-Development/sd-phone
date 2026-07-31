@@ -1,0 +1,163 @@
+import { useEffect, useState } from 'react';
+import { FileText } from 'lucide-react';
+
+import { t } from '@/i18n';
+import { formatListDate } from '@/lib/time';
+import { useAsyncData } from '@/hooks/useAsyncData';
+import { useSessionState } from '@/hooks/useSessionState';
+import { EmptyState } from '@/ui/EmptyState';
+import { Pill } from '@/ui/Pill';
+import { SegmentedControl } from '@/ui/SegmentedControl';
+
+import type { ReportSummary, ReportType } from './data';
+import { mdtReports } from './mdtApi';
+import { REPORT_TYPES, ReportEditor, reportTypeLabel, reportTypeTone } from './ReportEditor';
+import { useMdtSession } from './useMdtSession';
+import { mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle } from './mdtTheme';
+import { MdtButton } from './ui/MdtButton';
+import { MdtColumn } from './ui/MdtColumn';
+import { MdtMaster } from './ui/MdtMaster';
+import { MdtPager } from './ui/MdtPager';
+
+type TypeFilter = ReportType | 'All';
+
+const NEW_REPORT = 'new';
+
+function ReportListRow({ report, selected, onPress }: {
+    report:   ReportSummary;
+    selected: boolean;
+    onPress:  () => void;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onPress}
+            className={`flex w-full flex-col gap-1 rounded-[10px] px-3 py-2.5 text-left ${
+                selected ? 'bg-ios-blue/10' : mdtRowHover
+            }`}
+        >
+            <span className="flex w-full items-center gap-2">
+                <span className={`shrink-0 ${mdtRef}`}>{report.ref}</span>
+                <span className={`min-w-0 flex-1 truncate ${mdtRowTitle}`}>{report.title}</span>
+                <Pill tone={reportTypeTone(report.type)}>{reportTypeLabel(report.type)}</Pill>
+            </span>
+            <span className={`flex w-full items-center gap-2 ${mdtRowMeta}`}>
+                <span className="min-w-0 truncate">
+                    {report.callsign ? `${report.callsign} · ${report.author}` : report.author}
+                </span>
+                {report.chargeCount > 0 && (
+                    <span className="shrink-0 tabular-nums">
+                        {report.chargeCount === 1
+                            ? t('mdt.oneCharge', '1 charge')
+                            : t('mdt.nCharges', '{n} charges', { n: report.chargeCount })}
+                    </span>
+                )}
+                <span className="ml-auto shrink-0 tabular-nums">{formatListDate(report.createdAt * 1000)}</span>
+            </span>
+        </button>
+    );
+}
+
+export function ReportsPane() {
+    const { can, selected, select } = useMdtSession();
+
+    const [filter, setFilter] = useSessionState<TypeFilter>('mdt:reports:type', 'All');
+    const [query, setQuery] = useSessionState('mdt:reports:query', '');
+    const [page, setPage] = useSessionState('mdt:reports:page', 1);
+    const [term, setTerm] = useState(query.trim());
+
+    useEffect(() => {
+        const id = window.setTimeout(() => setTerm(query.trim()), 250);
+        return () => window.clearTimeout(id);
+    }, [query]);
+
+    useEffect(() => { setPage(1); }, [term, filter, setPage]);
+
+    const { data, loading, refetch } = useAsyncData(
+        () => mdtReports({ query: term, type: filter, page }),
+        [term, filter, page],
+    );
+
+    const rows = data?.rows ?? [];
+    const total = data?.total ?? 0;
+    const pageSize = data?.pageSize ?? 25;
+
+    const empty = (
+        <EmptyState
+            center
+            icon={FileText}
+            title={term ? t('mdt.noMatchingReports', 'No matching reports') : t('mdt.noReports', 'No reports filed')}
+            subtitle={loading
+                ? undefined
+                : term
+                    ? t('mdt.noMatchingReportsSub', 'Nothing matches that title or reference.')
+                    : t('mdt.noReportsSub', 'Paperwork your department files shows up here.')}
+        />
+    );
+
+    const master = (
+        <MdtColumn
+            className="flex-1"
+            title={t('mdt.reports', 'Reports')}
+            count={total}
+            query={query}
+            onQuery={setQuery}
+            placeholder={t('mdt.searchReports', 'Title or reference')}
+            action={can('reports.create') ? (
+                <MdtButton size="sm" onClick={() => select(NEW_REPORT)}>
+                    {t('mdt.newReport', 'Create')}
+                </MdtButton>
+            ) : undefined}
+            isEmpty={rows.length === 0}
+            empty={empty}
+            footer={<MdtPager page={data?.page ?? page} pageSize={pageSize} total={total} onPage={setPage} />}
+        >
+            <div className="px-3 pb-2">
+                <SegmentedControl<TypeFilter>
+                    value={filter}
+                    onChange={setFilter}
+                    options={[
+                        { value: 'All', label: t('common.all', 'All') },
+                        ...REPORT_TYPES.map((type: ReportType) => ({ value: type as TypeFilter, label: reportTypeLabel(type) })),
+                    ]}
+                />
+            </div>
+
+            <div className="flex flex-col gap-0.5 px-1">
+                {rows.map(row => (
+                    <ReportListRow
+                        key={row.ref}
+                        report={row}
+                        selected={row.ref === selected}
+                        onPress={() => select(row.ref)}
+                    />
+                ))}
+            </div>
+        </MdtColumn>
+    );
+
+    return (
+        <MdtMaster
+            master={master}
+            hasDetail={selected !== null}
+            detail={selected ? (
+                <ReportEditor
+                    key={selected}
+                    reportRef={selected === NEW_REPORT ? null : selected}
+                    onSaved={report => { select(report.ref); refetch(); }}
+                    onDeleted={() => { select(null); refetch(); }}
+                    onClose={() => select(null)}
+                />
+            ) : undefined}
+            placeholder={
+                <EmptyState
+                    center
+                    icon={FileText}
+                    title={t('mdt.pickReport', 'No report selected')}
+                    subtitle={t('mdt.pickReportSub', 'Open a report to read its narrative, the people on it and the charges filed.')}
+                />
+            }
+            onCloseDetail={() => select(null)}
+        />
+    );
+}

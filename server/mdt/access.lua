@@ -1,0 +1,283 @@
+---@type table sd-phone config root (configs/config.lua).
+local config  = require 'configs.config'
+---@type table Shared server helpers (server.util): the { success, message?, data? } envelope.
+local util    = require 'server.util'
+---@type table MDT persistence (server.mdt.store): profile provisioning and the audit write.
+local store   = require 'server.mdt.store'
+---@type table Job bridge (bridge.server.job): live framework job, grade, duty and boss checks.
+local job     = require 'bridge.server.job'
+---@type table Society bridge (bridge.server.society): the job's grade ladder and grade labels.
+local society = require 'bridge.server.society'
+---@type table Player bridge (bridge.server.player): citizenid, display name and source lookups.
+local player  = require 'bridge.server.player'
+
+---@type table MDT config (configs/mdt.lua): departments, permission thresholds, boss bypass.
+local MDT = config.Mdt
+
+---@type table Access module; the table returned at end of file. The whole permission concern:
+---identity resolution, the grade-threshold check, the chain-of-command guard, and the two wrappers
+---every handler is registered through. No handler anywhere checks a permission by hand.
+local access = {}
+
+---@type table[] Configured departments, in file order.
+local DEPARTMENTS = MDT.Departments or {}
+---@type table<string, number> Permission key -> minimum grade. An absent key is denied.
+local PERMISSIONS = MDT.Permissions or {}
+---@type boolean Whether a boss of their department holds every key.
+local BOSS_BYPASS = MDT.BossBypass ~= false
+---@type string Sequence format auto-generated callsigns are minted with.
+local CALLSIGN_FORMAT = (MDT.Dispatch or {}).CallsignFormat or '%s-%03d'
+
+---@type table<string, table> Department entry by framework job name.
+local byJob = {}
+for i = 1, #DEPARTMENTS do
+    local dept = DEPARTMENTS[i]
+    if dept.job then byJob[dept.job] = dept end
+end
+
+---@type string[] Every permission key, resolved once so grants() does not walk a hash each call.
+local KEYS = {}
+for key in pairs(PERMISSIONS) do KEYS[#KEYS + 1] = key end
+table.sort(KEYS)
+
+---@type table<string, string> '<job>\0<level>' -> grade label. On ESX the ladder is a MySQL read,
+---so resolving it on every callback would put a query behind every permission check.
+local gradeLabels = {}
+
+---A job grade's display label ('Sergeant'), memoised per job and level.
+---@param jobName string
+---@param level integer
+---@return string
+local function gradeLabel(jobName, level)
+    local key = jobName .. '\0' .. tostring(level)
+    local hit = gradeLabels[key]
+    if hit then return hit end
+    local label = society.gradeLabel(jobName, level)
+    gradeLabels[key] = label
+    return label
+end
+
+---The department a framework job belongs to, or nil when the job has no terminal.
+---@param jobName string|nil
+---@return table|nil department
+function access.departmentFor(jobName)
+    if type(jobName) ~= 'string' then return nil end
+    return byJob[jobName]
+end
+
+---Every configured department, in file order. Read-only.
+---@return table[]
+function access.departments()
+    return DEPARTMENTS
+end
+
+---The caller's department, resolved from their ACTIVE framework job. Nil when they hold no
+---terminal, which is what makes every callback fail closed.
+---@param src integer player server id
+---@return table|nil department
+local function deptOf(src)
+    return byJob[job.getName(src) or '']
+end
+
+---True when the caller's active job has an MDT at all. Fails closed when the player cannot be
+---resolved.
+---@param src integer player server id
+---@return boolean
+function access.canAccess(src)
+    return deptOf(src) ~= nil
+end
+
+---The caller's resolved identity: citizenid, display name, department, grade, rank label, duty
+---state and their provisioned profile fields. Nil when they hold no terminal. Every handler takes
+---identity from here and never from the payload.
+---@param src integer player server id
+---@return table|nil me
+function access.identity(src)
+    local jobName = job.getName(src)
+    if not jobName then return nil end
+
+    local dept = byJob[jobName]
+    if not dept then return nil end
+
+    local cid = player.getIdentifier(src)
+    if not cid then return nil end
+
+    local grade = job.getGrade(src)
+    local rank  = gradeLabel(jobName, grade)
+    local name  = player.getName(src)
+
+    local profile = store.ensureProfile(cid, {
+        name           = name,
+        department     = jobName,
+        grade          = grade,
+        rank           = rank,
+        callsignPrefix = dept.callsign or dept.short or 'U',
+        callsignFormat = CALLSIGN_FORMAT,
+    })
+
+    local duty = job.getDuty(src)
+
+    return {
+        source     = src,
+        citizenid  = cid,
+        name       = (profile and profile.name) or name,
+        job        = jobName,
+        department = dept,
+        grade      = grade,
+        rank       = rank,
+        callsign   = profile and profile.callsign or nil,
+        badge      = profile and profile.badge or nil,
+        radio      = profile and profile.radio or nil,
+        avatar     = profile and profile.avatar or nil,
+        duty       = duty ~= false,
+    }
+end
+
+---True when the caller holds a permission key. Boss bypass wins outright when it is enabled; an
+---unlisted key is denied rather than permitted, so a fresh install behaves predictably.
+---@param src integer player server id
+---@param key string permission key
+---@return boolean
+function access.can(src, key)
+    local dept = deptOf(src)
+    if not dept then return false end
+    if BOSS_BYPASS and job.isBoss(src, dept.job, dept.bossGrade or 0) then return true end
+
+    local minimum = PERMISSIONS[key]
+    if type(minimum) ~= 'number' then return false end
+    return job.getGrade(src) >= minimum
+end
+
+---Every permission key the caller actually holds. Shipped in the bootstrap envelope so the UI
+---never learns about capabilities it cannot use.
+---@param src integer player server id
+---@return string[] keys
+function access.grants(src)
+    local out = {}
+    if not access.canAccess(src) then return out end
+    for i = 1, #KEYS do
+        if access.can(src, KEYS[i]) then out[#out + 1] = KEYS[i] end
+    end
+    return out
+end
+
+---An officer's live grade and job: the framework's own answer while they are connected, the last
+---grade their profile recorded once they are not.
+---@param cid string citizenid
+---@return integer|nil grade
+---@return string|nil jobName
+function access.gradeOf(cid)
+    if type(cid) ~= 'string' or cid == '' then return nil, nil end
+
+    local src = player.getSourceByIdentifier(cid)
+    if src then return job.getGrade(src), job.getName(src) end
+
+    local profile = store.profile(cid)
+    if profile then return profile.gradeLevel, profile.department end
+    return nil, nil
+end
+
+---Chain of command: a personnel action may only reach an officer of the caller's own department
+---who sits STRICTLY below them. Never a peer, never a superior, never yourself, and this holds
+---under the boss bypass too, because a boss demoting another boss turns a roster into a weapon.
+---@param src integer player server id
+---@param targetCid string the officer being acted on
+---@return boolean ok
+---@return string? reason refusal reason when ok is false
+function access.belowMe(src, targetCid)
+    local me = access.identity(src)
+    if not me then return false, 'You do not have MDT access' end
+    if type(targetCid) ~= 'string' or targetCid == '' then return false, 'Unknown officer' end
+    if targetCid == me.citizenid then return false, 'You cannot do that to your own record' end
+
+    local grade, jobName = access.gradeOf(targetCid)
+    if grade == nil then return false, 'Unknown officer' end
+    if jobName and jobName ~= me.job then return false, 'That officer is not in your department' end
+    if grade >= me.grade then return false, 'That officer is not below your rank' end
+    return true
+end
+
+---The restriction identifiers that admit this caller to a record: their own citizenid, their job,
+---and their department type. Report queries fold these into an IN clause, so a department's
+---paperwork is not merely un-editable by outsiders, it is un-listable.
+---@param me table caller identity from access.identity
+---@return { type: string, identifier: string }[]
+function access.restrictions(me)
+    return {
+        { type = 'citizenid', identifier = me.citizenid },
+        { type = 'job',       identifier = me.job },
+        { type = 'jobtype',   identifier = me.department.type or 'leo' },
+    }
+end
+
+---Every connected player whose active job has a terminal. Dispatch, chat and bulletins fan their
+---pushes out over exactly this set.
+---@return integer[] sources
+function access.audience()
+    local out = {}
+    for _, id in ipairs(GetPlayers()) do
+        local src = tonumber(id)
+        if src and access.canAccess(src) then out[#out + 1] = src end
+    end
+    return out
+end
+
+---@type string Refusal shown when the caller's job carries no terminal at all.
+local NO_ACCESS = 'You do not have access to this terminal'
+---@type string Refusal shown when the caller's grade is below the key's threshold.
+local NO_RANK = 'Your rank does not allow that'
+
+---Wraps a READ handler: resolves identity, checks the key, and normalises the payload. The handler
+---receives `(src, payload, me)` and returns the response envelope.
+---@param key string permission key
+---@param fn fun(src: integer, payload: table, me: table): table
+---@return fun(src: integer, payload: any): table
+function access.gated(key, fn)
+    return function(src, payload)
+        local me = access.identity(src)
+        if not me then return util.fail(NO_ACCESS) end
+        if not access.can(src, key) then return util.fail(NO_RANK) end
+        if type(payload) ~= 'table' then payload = {} end
+        return fn(src, payload, me) or util.fail('That did not go through')
+    end
+end
+
+---Wraps a WRITE handler: the same gate, plus the audit row on success. Permission checking and
+---audit logging are one call so they cannot be forgotten independently. The handler receives
+---`(src, payload, me)` and returns `(envelope, audit?)` where audit is
+---`{ entityType?, entityId?, details? }`; the audited action is the permission key itself.
+---@param key string permission key
+---@param fn fun(src: integer, payload: table, me: table): table, table?
+---@return fun(src: integer, payload: any): table
+function access.audited(key, fn)
+    return function(src, payload)
+        local me = access.identity(src)
+        if not me then return util.fail(NO_ACCESS) end
+        if not access.can(src, key) then return util.fail(NO_RANK) end
+        if type(payload) ~= 'table' then payload = {} end
+
+        local res, audit = fn(src, payload, me)
+        if type(res) ~= 'table' then return util.fail('That did not go through') end
+
+        if res.success == true then
+            audit = type(audit) == 'table' and audit or {}
+            store.audit(me, key, audit.entityType, audit.entityId, audit.details)
+        end
+        return res
+    end
+end
+
+---Wraps a handler that needs a terminal but no particular key (the bootstrap and the home
+---dashboard, both of which withhold per column rather than refusing outright).
+---@param fn fun(src: integer, payload: table, me: table): table
+---@return fun(src: integer, payload: any): table
+function access.open(fn)
+    return function(src, payload)
+        local me = access.identity(src)
+        if not me then return util.fail(NO_ACCESS) end
+        if type(payload) ~= 'table' then payload = {} end
+        return fn(src, payload, me) or util.fail('That did not go through')
+    end
+end
+
+return access

@@ -76,6 +76,12 @@ return {
         { id = 'weazelnews', label = 'Weazel News', icon = 'weazelnews', route = '/weazelnews', accent = '#C8102E', base = false, enabled = true },
         { id = 'streaks', label = 'Streaks', icon = 'streaks', route = '/streaks', accent = '#FF7A1A', base = false, enabled = true },
 
+        -- The police terminal is a TABLET app: the row exists here because every id the tablet
+        -- shows is validated against this catalog, and `enabled = false` is what keeps it off
+        -- phones. Keep `base = true` - a disabled entry is never downloadable, so `base = false`
+        -- would leave the app permanently un-installable and unable to reach the tablet at all.
+        { id = 'mdt', label = 'MDT', icon = 'mdt', route = '/mdt', accent = '#1D4ED8', base = true, enabled = false },
+
         -- Add `wifi` to any entry above to keep its download to one network, e.g. Dark Chat only
         -- handed out inside the bank:
         -- { id = 'darkchat', label = 'Dark Chat', icon = 'darkchat', route = '/darkchat', accent = '#1c1c1e', base = false, enabled = true, wifi = 'mazebank' },
