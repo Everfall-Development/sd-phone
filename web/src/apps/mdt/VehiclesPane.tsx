@@ -16,8 +16,6 @@ import { MdtMaster } from './ui/MdtMaster';
 import { MdtPager } from './ui/MdtPager';
 import type { VehicleRow } from './data';
 
-const MIN_QUERY = 2;
-
 function VehicleListRow({ vehicle, selected, onPress }: {
     vehicle:  VehicleRow;
     selected: boolean;
@@ -67,21 +65,16 @@ export function VehiclesPane() {
     const rows     = data?.rows ?? [];
     const total    = data?.total ?? 0;
     const pageSize = data?.pageSize ?? 25;
-    const short    = term.length < MIN_QUERY;
-
-    const empty = short ? (
+    const empty = (
         <EmptyState
             center
             icon={Search}
-            title={t('mdt.runAPlate', 'Run a plate')}
-            subtitle={t('mdt.runAPlateSub', 'Type at least two characters of a plate or a model name.')}
-        />
-    ) : (
-        <EmptyState
-            center
-            icon={Search}
-            title={loading ? t('mdt.searching', 'Searching') : t('mdt.noMatches', 'No matches')}
-            subtitle={loading ? undefined : t('mdt.noVehicleMatch', 'No vehicle on the registry matches that search.')}
+            title={loading
+                ? t('mdt.loading', 'Loading')
+                : term ? t('mdt.noMatches', 'No matches') : t('mdt.noVehicles', 'No vehicles on the registry')}
+            subtitle={loading
+                ? undefined
+                : term ? t('mdt.noVehicleMatch', 'No vehicle on the registry matches that search.') : undefined}
         />
     );
 
@@ -89,11 +82,11 @@ export function VehiclesPane() {
         <MdtColumn
             className="flex-1"
             title={t('mdt.vehicles', 'Vehicles')}
-            count={short ? undefined : total}
+            count={total}
             query={query}
             onQuery={setQuery}
             placeholder={t('mdt.searchVehicles', 'Plate or model')}
-            isEmpty={short || rows.length === 0}
+            isEmpty={rows.length === 0}
             empty={empty}
             footer={<MdtPager page={data?.page ?? page} pageSize={pageSize} total={total} onPage={setPage} />}
         >
@@ -119,7 +112,7 @@ export function VehiclesPane() {
                     center
                     icon={Car}
                     title={t('mdt.pickVehicleRecord', 'No vehicle selected')}
-                    subtitle={t('mdt.pickVehicleRecordSub', 'Run a plate or a model and open a result to see its DMV record.')}
+                    subtitle={t('mdt.pickVehicleRecordSub', 'Pick a vehicle from the list, or run a plate or model, to see its DMV record.')}
                 />
             }
             onCloseDetail={() => select(null)}

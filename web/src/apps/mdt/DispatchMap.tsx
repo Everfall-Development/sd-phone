@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef } from 'react';
 import { Crosshair, Map as MapIcon } from 'lucide-react';
 
 import { t } from '@/i18n';
@@ -115,11 +115,9 @@ export function DispatchMap({ calls, units, selectedCall, selectedUnit, onSelect
         return unit?.coords;
     }, [selectedCall, selectedUnit, plottedCalls, plottedUnits]);
 
-    const [initialFrame, setInitialFrame] = useState<MapPoint[] | null>(null);
-    useEffect(() => {
-        if (initialFrame || points.length === 0) return;
-        setInitialFrame(points);
-    }, [points, initialFrame]);
+    const framed = useRef<MapPoint[] | null>(null);
+    if (!framed.current && points.length > 0) framed.current = points;
+    const initialFrame = framed.current;
 
     if (points.length === 0) {
         return (

@@ -21,6 +21,10 @@ local VEHICLES = framework.name == 'esx'
 ---@type string[] Columns a model name may live in, in preference order.
 local MODEL_COLS = { 'vehicle', 'model', 'vehicle_name', 'name' }
 
+---@type integer Characters below which a term is not a filter at all, so the caller is browsing and
+---the list comes back unfiltered rather than empty.
+local MIN_TERM <const> = 2
+
 ---@type table<string, table<string, boolean>>|nil Present columns per table, resolved on first use.
 local columnCache = {}
 
@@ -43,6 +47,20 @@ local function columnsOf(tbl)
     end
     columnCache[tbl] = out
     return out
+end
+
+---Ordering for a citizen list. Recency reads far better than an identifier for a browse list, and
+---the recency column is indexed where it exists, so the page comes off the index instead of a
+---filesort over the whole table. Sorting by name is deliberately not offered: on the qb family the
+---name lives inside the `charinfo` text blob, so it can only be reached through JSON_EXTRACT, which
+---no index can serve.
+---@param tbl string table the list is read from
+---@param recent string recency column to prefer
+---@param fallback string indexed column to fall back to
+---@return string order SQL fragment
+local function citizenOrder(tbl, recent, fallback)
+    if columnsOf(tbl)[recent] then return ('`%s` DESC'):format(recent) end
+    return ('`%s` ASC'):format(fallback)
 end
 
 ---The column a vehicle's model name lives in on this framework, or nil when none of the known
@@ -209,38 +227,49 @@ end
 ---@return integer total matching rows
 function records.searchCitizens(term, page, pageSize)
     term = str(term)
-    if #term < 2 then return {}, 0 end
 
     local limit  = math.max(1, math.floor(tonumber(pageSize) or 25))
     local offset = math.max(0, (math.max(1, math.floor(tonumber(page) or 1)) - 1) * limit)
     local like   = '%' .. term:gsub('([%%_\\])', '\\%1') .. '%'
+    local browse = #term < MIN_TERM
 
     if framework.qb then
-        local where = [[
-            WHERE citizenid LIKE ?
-               OR JSON_UNQUOTE(JSON_EXTRACT(charinfo, '$.firstname')) LIKE ?
-               OR JSON_UNQUOTE(JSON_EXTRACT(charinfo, '$.lastname'))  LIKE ?
-               OR JSON_UNQUOTE(JSON_EXTRACT(charinfo, '$.phone'))     LIKE ?
-        ]]
-        local args  = { like, like, like, like }
+        local where, args = '', {}
+        if not browse then
+            -- COLLATE, because JSON_UNQUOTE hands back utf8mb4_bin: a binary, case-SENSITIVE
+            -- collation. Without it `sam` never matches `Samuel` and only citizenid search, which
+            -- reads a real column with the table's own collation, appears to work.
+            where = [[
+                WHERE citizenid LIKE ?
+                   OR JSON_UNQUOTE(JSON_EXTRACT(charinfo, '$.firstname')) COLLATE utf8mb4_general_ci LIKE ?
+                   OR JSON_UNQUOTE(JSON_EXTRACT(charinfo, '$.lastname'))  COLLATE utf8mb4_general_ci LIKE ?
+                   OR JSON_UNQUOTE(JSON_EXTRACT(charinfo, '$.phone'))     COLLATE utf8mb4_general_ci LIKE ?
+            ]]
+            args = { like, like, like, like }
+        end
+        local order = citizenOrder('players', 'last_updated', 'citizenid')
         local total = MySQL.scalar.await(('SELECT COUNT(*) FROM players %s'):format(where), args)
         local rows  = MySQL.query.await(
-            ('SELECT %s FROM players %s ORDER BY citizenid ASC LIMIT %d OFFSET %d')
-                :format(QB_CITIZEN_COLS, where, limit, offset), args) or {}
+            ('SELECT %s FROM players %s ORDER BY %s LIMIT %d OFFSET %d')
+                :format(QB_CITIZEN_COLS, where, order, limit, offset), args) or {}
 
         local out = {}
         for i = 1, #rows do out[i] = qbCitizen(rows[i]) end
         return out, tonumber(total) or 0
     end
 
-    local where = 'WHERE identifier LIKE ? OR firstname LIKE ? OR lastname LIKE ? OR phone_number LIKE ?'
-    local args  = { like, like, like, like }
+    local where, args = '', {}
+    if not browse then
+        where = 'WHERE identifier LIKE ? OR firstname LIKE ? OR lastname LIKE ? OR phone_number LIKE ?'
+        args  = { like, like, like, like }
+    end
     local have  = columnsOf('users')
     local cols  = have.metadata and (ESX_CITIZEN_COLS .. ', metadata') or ESX_CITIZEN_COLS
+    local order = citizenOrder('users', 'last_seen', 'identifier')
     local total = MySQL.scalar.await(('SELECT COUNT(*) FROM users %s'):format(where), args)
     local rows  = MySQL.query.await(
-        ('SELECT %s FROM users %s ORDER BY identifier ASC LIMIT %d OFFSET %d')
-            :format(cols, where, limit, offset), args) or {}
+        ('SELECT %s FROM users %s ORDER BY %s LIMIT %d OFFSET %d')
+            :format(cols, where, order, limit, offset), args) or {}
 
     local out = {}
     for i = 1, #rows do out[i] = esxCitizen(rows[i]) end
@@ -299,8 +328,8 @@ function records.vehiclesByOwner(cid)
     return out
 end
 
----A page of vehicles matching a plate or model fragment. A term under two characters returns an
----empty page. Read-only.
+---A page of vehicles matching a plate or model fragment. A term under two characters is not a
+---filter, so the whole fleet is paged back in plate order. Read-only.
 ---@param term string search term
 ---@param page integer 1-based page number
 ---@param pageSize integer rows per page
@@ -308,20 +337,21 @@ end
 ---@return integer total matching rows
 function records.searchVehicles(term, page, pageSize)
     term = str(term)
-    if #term < 2 then return {}, 0 end
 
     local limit  = math.max(1, math.floor(tonumber(pageSize) or 25))
     local offset = math.max(0, (math.max(1, math.floor(tonumber(page) or 1)) - 1) * limit)
     local like   = '%' .. term:gsub('([%%_\\])', '\\%1') .. '%'
 
     local modelCol = modelColumn()
-    local where, args
-    if modelCol then
-        where = ('WHERE plate LIKE ? OR `%s` LIKE ?'):format(modelCol)
-        args  = { like, like }
-    else
-        where = 'WHERE plate LIKE ?'
-        args  = { like }
+    local where, args = '', {}
+    if #term >= MIN_TERM then
+        if modelCol then
+            where = ('WHERE plate LIKE ? OR `%s` LIKE ?'):format(modelCol)
+            args  = { like, like }
+        else
+            where = 'WHERE plate LIKE ?'
+            args  = { like }
+        end
     end
 
     local total = MySQL.scalar.await(

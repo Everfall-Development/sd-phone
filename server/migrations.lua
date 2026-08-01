@@ -30,6 +30,7 @@ local COLUMNS = {
         icon_theme        = 'icon_theme VARCHAR(16) NULL',
         icon_custom       = 'icon_custom LONGTEXT NULL',
         show_app_names    = 'show_app_names TINYINT(1) NULL',
+        island_pet        = 'island_pet VARCHAR(16) NULL',
     },
 
     phone_documents = {

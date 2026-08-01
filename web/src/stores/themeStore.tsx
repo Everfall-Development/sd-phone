@@ -8,6 +8,7 @@ import type { DeviceAlign } from '@/device/types';
 import lockscreenAsset from '@/assets/wallpapers/lockscreen.webp';
 import devDefaultAsset from '@/assets/photos/background5.webp';
 import { fetchNui, isFiveM } from '@/core/nui';
+import type { IslandPetId } from '@/shell/islandPets';
 import { isDemo } from '@/core/demo';
 import { wallpaperKey } from '@/shell/wallpapers';
 import { useIconThemeStore } from '@/stores/iconThemeStore';
@@ -87,6 +88,14 @@ function saveWallpaperHomeLocal(v: string) {
 
 const BLUR_LOCK_KEY = 'sd-phone:blurLock';
 const BLUR_HOME_KEY = 'sd-phone:blurHome';
+const ISLAND_PET_KEY = 'sd-phone:islandPet';
+function loadIslandPetLocal(): IslandPetId {
+    try { return (window.localStorage.getItem(ISLAND_PET_KEY) as IslandPetId | null) ?? 'none'; }
+    catch { return 'none'; }
+}
+function saveIslandPetLocal(v: IslandPetId) {
+    try { window.localStorage.setItem(ISLAND_PET_KEY, v); } catch { /* ignore */ }
+}
 function loadBlurLocal(key: string): boolean {
     try { return window.localStorage.getItem(key) === '1'; } catch { return false; }
 }
@@ -166,6 +175,8 @@ interface ThemeState {
     setBlurLock:       (v: boolean) => void;
     blurHome:          boolean;
     setBlurHome:       (v: boolean) => void;
+    islandPet:         IslandPetId;
+    setIslandPet:      (v: IslandPetId) => void;
     brightness:        number;
     setBrightness:     (v: number) => void;
     phoneScale:        number;
@@ -261,6 +272,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     customWallpapers: isFiveM ? [] : loadCustomWallpapersLocal(),
     blurLock: isFiveM ? false : loadBlurLocal(BLUR_LOCK_KEY),
     blurHome: isFiveM ? false : loadBlurLocal(BLUR_HOME_KEY),
+    islandPet: isFiveM ? 'none' : loadIslandPetLocal(),
     brightness: 100,
     phoneScale: isFiveM ? 50 : loadPhoneScaleLocal(),
     chatTextScale: isFiveM ? 1 : loadChatScaleLocal(),
@@ -359,6 +371,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         set({ blurHome: v });
         if (isFiveM) void fetchNui('sd-phone:settings:setBlur', { lock: get().blurLock, home: v }).catch(() => {});
         else saveBlurLocal(BLUR_HOME_KEY, v);
+    },
+    setIslandPet: (v) => {
+        set({ islandPet: v });
+        if (isFiveM) void fetchNui('sd-phone:settings:setIslandPet', { pet: v }).catch(() => {});
+        else saveIslandPetLocal(v);
     },
 
     // Where the device sits is the one setting that is NOT shared with the phone: the two have
@@ -479,6 +496,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
             wallpaperHome: stock,
             blurLock: false,
             blurHome: false,
+            islandPet: 'none',
             lockClock: DEFAULT_LOCK_CLOCK,
             setupDone: null,
         });
@@ -508,7 +526,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
             }
         };
         const keyAtRequest = wallpaperProfileKey;
-        void fetchNui<{ data?: { ringtone?: string; notificationTone?: string; customRingtones?: CustomTone[]; customNotificationTones?: CustomTone[]; airplaneMode?: boolean; hour24?: boolean; reopenApp?: boolean; setupDone?: boolean; lockClock?: Partial<LockClock>; passcode?: string | null; faceId?: boolean; wallpaper?: string; wallpaperHome?: string; blurLock?: boolean; blurHome?: boolean; customWallpapers?: string[]; chatTextScale?: number; phoneScale?: number; brightness?: number; phoneAlign?: string; ringtoneVol?: number; callVol?: number; theme?: string; darkTheme?: string; iconTheme?: string; showAppNames?: boolean; customIconThemes?: unknown } }>('sd-phone:settings:get')
+        void fetchNui<{ data?: { ringtone?: string; notificationTone?: string; customRingtones?: CustomTone[]; customNotificationTones?: CustomTone[]; airplaneMode?: boolean; hour24?: boolean; reopenApp?: boolean; setupDone?: boolean; lockClock?: Partial<LockClock>; passcode?: string | null; faceId?: boolean; wallpaper?: string; wallpaperHome?: string; blurLock?: boolean; blurHome?: boolean; islandPet?: string; customWallpapers?: string[]; chatTextScale?: number; phoneScale?: number; brightness?: number; phoneAlign?: string; ringtoneVol?: number; callVol?: number; theme?: string; darkTheme?: string; iconTheme?: string; showAppNames?: boolean; customIconThemes?: unknown } }>('sd-phone:settings:get')
             .then(res => {
                 if (!res?.data) { retry(); return; }
                 const d = res.data;
@@ -523,6 +541,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
                 patch.wallpaperHome = homeWall;
                 patch.blurLock = d.blurLock === true;
                 patch.blurHome = d.blurHome === true;
+                if (typeof d.islandPet === 'string') patch.islandPet = d.islandPet as IslandPetId;
                 if (Array.isArray(d.customWallpapers)) {
                     patch.customWallpapers = d.customWallpapers.filter((u): u is string => typeof u === 'string');
                 }

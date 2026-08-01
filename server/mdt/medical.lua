@@ -28,8 +28,6 @@ local PAGING = (MDT.Paging or {})
 local PAGE_SIZE = math.max(1, math.floor(tonumber(PAGING.PageSize) or 25))
 ---@type integer Highest page a search will serve.
 local MAX_PAGE = math.max(1, math.floor(tonumber(PAGING.MaxPage) or 400))
----@type integer Shortest query that runs; below this the directory is not searched at all.
-local MIN_QUERY = 2
 ---@type integer Longest query accepted.
 local MAX_QUERY = 60
 
@@ -143,9 +141,6 @@ end
 medical.patientsSearch = access.gated('patients.view', function(_, payload)
     local page  = pageOf(payload.page)
     local query = util.limitedString(payload.query, MAX_QUERY)
-    if not query or #query < MIN_QUERY then
-        return util.ok({ rows = {}, total = 0, page = 1, pageSize = PAGE_SIZE })
-    end
 
     local found, total = frameworkRecords.searchCitizens(query, page, PAGE_SIZE)
     found = found or {}

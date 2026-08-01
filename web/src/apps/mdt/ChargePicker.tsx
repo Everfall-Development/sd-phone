@@ -1,17 +1,20 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Minus, Plus, Scale, X } from 'lucide-react';
 
 import { t } from '@/i18n';
 import { formatMoney } from '@/lib/money';
 import { EmptyState } from '@/ui/EmptyState';
 import { Pill } from '@/ui/Pill';
-import { Scroller } from '@/ui/Scroller';
 import { SearchBar } from '@/ui/SearchBar';
 
 import { CHARGE_CLASSES, type ChargeClass, type ChargeInput, type Offence } from './data';
 import { useMdtSession } from './useMdtSession';
-import { mdtFieldXs, mdtRowHover, mdtRowMeta, mdtRowTitle, mdtSectionHeader, STATUS_TONE } from './mdtTheme';
+import { mdtRowHover, mdtRowMeta, mdtRowTitle, mdtSectionHeader, STATUS_TONE } from './mdtTheme';
 import { MdtCard } from './ui/MdtCard';
+import { MdtPager } from './ui/MdtPager';
+import { MdtSelect } from './ui/MdtSelect';
+
+const OFFENCE_PAGE = 8;
 
 const MAX_COUNT = 99;
 
@@ -63,11 +66,14 @@ export function ChargePicker({ lines, onChange, subjects = [], className = '' }:
 }) {
     const { offences } = useMdtSession();
     const [query, setQuery] = useState('');
+    const [page, setPage] = useState(1);
+
+    useEffect(() => { setPage(1); }, [query]);
 
     const byCode = useMemo(() => catalogIndex(offences), [offences]);
     const totals = useMemo(() => inputTotals(lines, byCode), [lines, byCode]);
 
-    const groups = useMemo(() => {
+    const catalogue = useMemo(() => {
         const needle = query.trim().toLowerCase();
         const hits = needle.length === 0
             ? offences
@@ -75,10 +81,16 @@ export function ChargePicker({ lines, onChange, subjects = [], className = '' }:
                 o.code.toLowerCase().includes(needle)
                 || o.label.toLowerCase().includes(needle)
                 || o.description.toLowerCase().includes(needle));
-        return CHARGE_CLASSES
-            .map(cls => ({ cls, rows: hits.filter(o => o.class === cls) }))
-            .filter(group => group.rows.length > 0);
+        const out: Offence[] = [];
+        for (const cls of CHARGE_CLASSES) {
+            for (const offence of hits) if (offence.class === cls) out.push(offence);
+        }
+        return out;
     }, [offences, query]);
+
+    const lastPage = Math.max(1, Math.ceil(catalogue.length / OFFENCE_PAGE));
+    const current = Math.min(page, lastPage);
+    const shown = catalogue.slice((current - 1) * OFFENCE_PAGE, current * OFFENCE_PAGE);
 
     function add(offence: Offence) {
         const citizenid = subjects.length > 0 ? subjects[0].citizenid : undefined;
@@ -138,18 +150,14 @@ export function ChargePicker({ lines, onChange, subjects = [], className = '' }:
                                     </span>
 
                                     {subjects.length > 1 && (
-                                        <select
+                                        <MdtSelect
                                             value={line.citizenid ?? ''}
-                                            onChange={e => setSubject(index, e.target.value)}
-                                            aria-label={t('mdt.attributeCharge', 'Attribute charge')}
-                                            className={`max-w-[150px] shrink-0 ${mdtFieldXs}`}
-                                        >
-                                            {subjects.map(subject => (
-                                                <option key={subject.citizenid} value={subject.citizenid}>
-                                                    {subject.name}
-                                                </option>
-                                            ))}
-                                        </select>
+                                            onChange={next => setSubject(index, next)}
+                                            options={subjects.map(subject => ({ value: subject.citizenid, label: subject.name }))}
+                                            size="xs"
+                                            ariaLabel={t('mdt.attributeCharge', 'Attribute charge')}
+                                            className="max-w-[150px] shrink-0"
+                                        />
                                     )}
 
                                     <span className="flex shrink-0 items-center gap-1 rounded-full bg-black/[0.06] px-1 py-0.5 dark:bg-white/[0.12]">
@@ -206,9 +214,9 @@ export function ChargePicker({ lines, onChange, subjects = [], className = '' }:
                 textClassName="text-[14px] font-medium text-black placeholder-black/40 dark:text-white dark:placeholder-white/40"
             />
 
-            <MdtCard className="flex min-h-[180px] flex-1 flex-col overflow-hidden">
-                {groups.length === 0 ? (
-                    <div className="flex flex-1 items-center justify-center px-4 py-6">
+            <MdtCard className="flex flex-col overflow-hidden">
+                {shown.length === 0 ? (
+                    <div className="flex items-center justify-center px-4 py-6">
                         <EmptyState
                             center
                             icon={Scale}
@@ -217,37 +225,37 @@ export function ChargePicker({ lines, onChange, subjects = [], className = '' }:
                         />
                     </div>
                 ) : (
-                    <Scroller className="min-h-0 flex-1">
-                        {groups.map(group => (
-                            <div key={group.cls}>
-                                <div className="sticky top-0 z-10 bg-[#e5e5e5] px-4 py-1.5 dark:bg-surface">
-                                    <span className={mdtSectionHeader}>{classLabel(group.cls)}</span>
-                                </div>
-                                {group.rows.map(offence => (
-                                    <button
-                                        key={offence.code}
-                                        type="button"
-                                        onClick={() => add(offence)}
-                                        className={`flex w-full items-center gap-3 px-4 py-2 text-left ${mdtRowHover}`}
-                                    >
-                                        <span className="w-[64px] shrink-0 text-[12.5px] font-bold uppercase tabular-nums tracking-wide text-ios-gray">
-                                            {offence.code}
-                                        </span>
-                                        <span className="min-w-0 flex-1 truncate text-[14.5px] text-black dark:text-white">
-                                            {offence.label}
-                                        </span>
-                                        <span className={`shrink-0 tabular-nums ${mdtRowMeta}`}>
-                                            {offence.months > 0 ? `${offence.months}m` : '-'}
-                                            {' · '}
-                                            {formatMoney(offence.fine, { whole: true })}
-                                        </span>
-                                        <Plus className="h-[15px] w-[15px] shrink-0 text-ios-blue" strokeWidth={2.75} />
-                                    </button>
-                                ))}
+                    <div>
+                        {shown.map((offence, index) => (
+                            <div key={offence.code}>
+                                {(index === 0 || shown[index - 1].class !== offence.class) && (
+                                    <div className="bg-[#e5e5e5] px-4 py-1.5 dark:bg-surface">
+                                        <span className={mdtSectionHeader}>{classLabel(offence.class)}</span>
+                                    </div>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => add(offence)}
+                                    className={`flex w-full items-center gap-3 px-4 py-2 text-left ${mdtRowHover}`}
+                                >
+                                    <span className="w-[64px] shrink-0 text-[12.5px] font-bold uppercase tabular-nums tracking-wide text-ios-gray">
+                                        {offence.code}
+                                    </span>
+                                    <span className="min-w-0 flex-1 truncate text-[14.5px] text-black dark:text-white">
+                                        {offence.label}
+                                    </span>
+                                    <span className={`shrink-0 tabular-nums ${mdtRowMeta}`}>
+                                        {offence.months > 0 ? `${offence.months}m` : '-'}
+                                        {' · '}
+                                        {formatMoney(offence.fine, { whole: true })}
+                                    </span>
+                                    <Plus className="h-[15px] w-[15px] shrink-0 text-ios-blue" strokeWidth={2.75} />
+                                </button>
                             </div>
                         ))}
-                    </Scroller>
+                    </div>
                 )}
+                <MdtPager page={current} pageSize={OFFENCE_PAGE} total={catalogue.length} onPage={setPage} />
             </MdtCard>
         </div>
     );

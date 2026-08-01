@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FileText, FolderOpen, Trash2, UserPlus, X } from 'lucide-react';
 import type { PillTone } from '@/ui/Pill';
 
@@ -18,15 +19,17 @@ import { SearchBar } from '@/ui/SearchBar';
 import { catalogIndex, ChargePicker, inputTotals, sentenceLabel } from './ChargePicker';
 import { EMS_INVOLVED_ROLES, EMS_REPORT_TYPES } from './data';
 import type {
-    AnyReportType, Charge, ChargeInput, Involved, InvolvedRole, ReportDetail, ReportSummary, ReportType,
+    AnyInvolvedRole, AnyReportType, Charge, ChargeInput, Involved, InvolvedRole, ReportDetail, ReportSummary, ReportType,
 } from './data';
 import { mdtDeleteReport, mdtReport, mdtReports, mdtSaveReport } from './mdtApi';
 import { PersonPicker } from './PersonPicker';
 import { useMdtSession, useViewEnter } from './useMdtSession';
-import { mdtFieldXs, mdtPanePad, mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle, mdtSectionHeader, STATUS_TONE } from './mdtTheme';
+import { useMdtRoot } from './mdtRoot';
+import { mdtPanePad, mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle, mdtSectionHeader, STATUS_TONE } from './mdtTheme';
 import { MdtButton } from './ui/MdtButton';
 import { MdtCard } from './ui/MdtCard';
 import { MdtField } from './ui/MdtField';
+import { MdtSelect } from './ui/MdtSelect';
 
 export const REPORT_TYPES: readonly ReportType[] = ['Incident', 'Traffic', 'Arrest', 'Investigation', 'Warrant'] as const;
 export const INVOLVED_ROLES: readonly InvolvedRole[] = ['suspect', 'victim', 'witness'] as const;
@@ -492,16 +495,17 @@ function DraftView({ draft, saving, error, enter, onChange, onAddPerson, onSave,
                                     className="w-full bg-transparent text-[12.5px] font-medium text-ios-gray outline-none placeholder:text-ios-gray/70"
                                 />
                             </div>
-                            <select
+                            <MdtSelect<AnyInvolvedRole>
                                 value={person.role}
-                                onChange={e => setPerson(index, { role: e.target.value as InvolvedRole })}
-                                aria-label={t('mdt.role', 'Role')}
-                                className={`shrink-0 ${mdtFieldXs}`}
-                            >
-                                {(medical ? EMS_INVOLVED_ROLES : INVOLVED_ROLES).map((role: string) => (
-                                    <option key={role} value={role}>{roleLabel(role)}</option>
-                                ))}
-                            </select>
+                                onChange={role => setPerson(index, { role })}
+                                options={(medical ? EMS_INVOLVED_ROLES : INVOLVED_ROLES).map(role => ({
+                                    value: role,
+                                    label: roleLabel(role),
+                                }))}
+                                size="xs"
+                                ariaLabel={t('mdt.role', 'Role')}
+                                className="shrink-0"
+                            />
                             <button
                                 type="button"
                                 onClick={() => removePerson(index)}
@@ -574,10 +578,11 @@ export function ReportLinker({ linked = [], title, onPick, onClose }: {
 
     const { data, loading } = useAsyncData(() => mdtReports({ query: term, page: 1 }), [term]);
     const rows: ReportSummary[] = (data?.rows ?? []).filter(row => !linked.includes(row.ref));
+    const root = useMdtRoot();
 
-    return (
+    const overlay = (
         <div
-            className="absolute inset-0 z-20 flex items-center justify-center px-6"
+            className="absolute inset-0 z-30 flex items-center justify-center px-6"
             style={{ background: 'rgba(0,0,0,0.32)', animation: 'ios-sheet-backdrop-in 0.2s ease-out' }}
             onClick={onClose}
         >
@@ -633,4 +638,6 @@ export function ReportLinker({ linked = [], title, onPick, onClose }: {
             </div>
         </div>
     );
+
+    return root ? createPortal(overlay, root) : overlay;
 }

@@ -18,8 +18,6 @@ import { MdtMaster } from './ui/MdtMaster';
 import { MdtPager } from './ui/MdtPager';
 import type { PersonRow } from './data';
 
-const MIN_QUERY = 2;
-
 export function CitizenRow({ person, selected, onPress }: {
     person:   PersonRow;
     selected: boolean;
@@ -63,21 +61,17 @@ export function ProfilesPane() {
     const rows     = data?.rows ?? [];
     const total    = data?.total ?? 0;
     const pageSize = data?.pageSize ?? 25;
-    const short    = term.length < MIN_QUERY;
 
-    const empty = short ? (
+    const empty = (
         <EmptyState
             center
             icon={Search}
-            title={t('mdt.searchACitizen', 'Search for a citizen')}
-            subtitle={t('mdt.searchACitizenSub', 'Type at least two characters of a name, citizen ID or phone number.')}
-        />
-    ) : (
-        <EmptyState
-            center
-            icon={Search}
-            title={loading ? t('mdt.searching', 'Searching') : t('mdt.noMatches', 'No matches')}
-            subtitle={loading ? undefined : t('mdt.noCitizenMatch', 'Nobody on record matches that search.')}
+            title={loading
+                ? t('mdt.loading', 'Loading')
+                : term ? t('mdt.noMatches', 'No matches') : t('mdt.noCitizens', 'No citizens on record')}
+            subtitle={loading
+                ? undefined
+                : term ? t('mdt.noCitizenMatch', 'Nobody on record matches that search.') : undefined}
         />
     );
 
@@ -85,11 +79,11 @@ export function ProfilesPane() {
         <MdtColumn
             className="flex-1"
             title={t('mdt.citizens', 'Citizens')}
-            count={short ? undefined : total}
+            count={total}
             query={query}
             onQuery={setQuery}
             placeholder={t('mdt.searchCitizens', 'Name, citizen ID or phone')}
-            isEmpty={short || rows.length === 0}
+            isEmpty={rows.length === 0}
             empty={empty}
             footer={<MdtPager page={data?.page ?? page} pageSize={pageSize} total={total} onPage={setPage} />}
         >
@@ -115,7 +109,7 @@ export function ProfilesPane() {
                     center
                     icon={IdCard}
                     title={t('mdt.pickCitizenRecord', 'No record selected')}
-                    subtitle={t('mdt.pickCitizenRecordSub', 'Search for a citizen and open them to see identity, flags, vehicles and priors.')}
+                    subtitle={t('mdt.pickCitizenRecordSub', 'Pick a citizen from the list, or search by name, citizen ID or phone, to see identity, flags, vehicles and priors.')}
                 />
             }
             onCloseDetail={() => select(null)}

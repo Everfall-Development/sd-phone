@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Search } from 'lucide-react';
 
 import { t } from '@/i18n';
@@ -8,12 +9,11 @@ import { SearchBar } from '@/ui/SearchBar';
 import { useAsyncData } from '@/hooks/useAsyncData';
 
 import { CitizenRow } from './ProfilesPane';
+import { useMdtRoot } from './mdtRoot';
 import { mdtPersonsSearch } from './mdtApi';
 import { MdtButton } from './ui/MdtButton';
 import { MdtCard } from './ui/MdtCard';
 import { MdtPager } from './ui/MdtPager';
-
-const MIN_QUERY = 2;
 
 export interface PickedPerson {
     citizenid: string;
@@ -46,11 +46,11 @@ export function PersonPicker({ title, onPick, onClose }: {
     const rows     = data?.rows ?? [];
     const total    = data?.total ?? 0;
     const pageSize = data?.pageSize ?? 25;
-    const short    = term.length < MIN_QUERY;
+    const root = useMdtRoot();
 
-    return (
+    const overlay = (
         <div
-            className="absolute inset-0 z-20 flex items-center justify-center px-6"
+            className="absolute inset-0 z-30 flex items-center justify-center px-6"
             style={{ background: 'rgba(0,0,0,0.32)', animation: 'ios-sheet-backdrop-in 0.2s ease-out' }}
             onClick={onClose}
         >
@@ -73,19 +73,16 @@ export function PersonPicker({ title, onPick, onClose }: {
                     </div>
 
                     <Scroller className="h-[320px] px-2 pb-2">
-                        {short ? (
+                        {rows.length === 0 ? (
                             <EmptyState
                                 center
                                 icon={Search}
-                                title={t('mdt.searchACitizen', 'Search for a citizen')}
-                                subtitle={t('mdt.searchACitizenSub', 'Type at least two characters of a name, citizen ID or phone number.')}
-                            />
-                        ) : rows.length === 0 ? (
-                            <EmptyState
-                                center
-                                icon={Search}
-                                title={loading ? t('mdt.searching', 'Searching') : t('mdt.noMatches', 'No matches')}
-                                subtitle={loading ? undefined : t('mdt.noCitizenMatch', 'Nobody on record matches that search.')}
+                                title={loading
+                                    ? t('mdt.loading', 'Loading')
+                                    : term ? t('mdt.noMatches', 'No matches') : t('mdt.noCitizens', 'No citizens on record')}
+                                subtitle={loading
+                                    ? undefined
+                                    : term ? t('mdt.noCitizenMatch', 'Nobody on record matches that search.') : undefined}
                             />
                         ) : (
                             <div className="flex flex-col gap-0.5">
@@ -106,4 +103,6 @@ export function PersonPicker({ title, onPick, onClose }: {
             </div>
         </div>
     );
+
+    return root ? createPortal(overlay, root) : overlay;
 }

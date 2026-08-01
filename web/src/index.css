@@ -545,3 +545,35 @@ input[type='number'] {
     15%  { opacity: 1; }
     100% { opacity: 0; transform: translateY(-180px) translateX(var(--drift,0)) scale(1.15); }
 }
+
+.sd-pet { display: block; image-rendering: pixelated; }
+
+@keyframes sd-pet-sheet { from { transform: translateX(0) } to { transform: translateX(-32px) } }
+.sd-pet-sheet { animation: sd-pet-sheet 0.9s steps(2, end) infinite; }
+.sd-pet-dancing .sd-pet-sheet  { animation-duration: 0.42s; }
+.sd-pet-startled .sd-pet-sheet { animation-duration: 0.3s; }
+
+@keyframes sd-pet-walk {
+    0%              { transform: translateX(0) scaleX(-1) }
+    47%             { transform: translateX(var(--pet-run)) scaleX(-1) }
+    47.01%          { transform: translateX(var(--pet-run)) scaleX(1) }
+    97%             { transform: translateX(0) scaleX(1) }
+    97.01%          { transform: translateX(0) scaleX(-1) }
+    100%            { transform: translateX(0) scaleX(-1) }
+}
+@keyframes sd-pet-hop   { 0%, 69% { transform: translateY(0) } 70%, 84% { transform: translateY(-4px) } 85%, 94% { transform: translateY(-1px) } 95%, 100% { transform: translateY(0) } }
+@keyframes sd-pet-groove{ 0%, 49% { transform: translateY(0) } 50%, 100% { transform: translateY(-2px) } }
+@keyframes sd-pet-jolt  { 0%, 32% { transform: translateX(0) } 33%, 65% { transform: translateX(-2px) } 66%, 100% { transform: translateX(2px) } }
+@keyframes sd-pet-doze  { 0%, 49% { transform: translateY(0) } 50%, 100% { transform: translateY(1px) } }
+
+.sd-pet-walker  { animation: sd-pet-walk 7s linear infinite; }
+.sd-pet-idle     { }
+.sd-pet-sleepy   { animation: sd-pet-doze 3.6s steps(1, end) infinite; }
+.sd-pet-happy    { animation: sd-pet-hop 1.5s steps(1, end) infinite; }
+.sd-pet-dancing  { animation: sd-pet-groove 0.52s steps(1, end) infinite; }
+.sd-pet-startled { animation: sd-pet-jolt 0.4s steps(1, end) infinite; }
+
+@keyframes sd-pet-enter { from { opacity: 0 } to { opacity: 1 } }
+@keyframes sd-pet-leave { from { opacity: 1 } to { opacity: 0 } }
+.sd-pet-in  { animation: sd-pet-enter 0.26s ease-out backwards; }
+.sd-pet-out { animation: sd-pet-leave 0.2s ease-in forwards; }

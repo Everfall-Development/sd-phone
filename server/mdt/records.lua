@@ -15,8 +15,6 @@ local records = {}
 local PAGE_SIZE = 25
 ---@type integer Highest page number a client may ask for.
 local MAX_PAGE = 400
----@type integer Shortest search term that reaches the database.
-local MIN_QUERY = 2
 ---@type integer Byte cap on a search term.
 local MAX_QUERY = 64
 ---@type integer Byte cap on an officer's free-text notes.
@@ -384,9 +382,6 @@ end
 records.personsSearch = access.gated('persons.view', function(_, payload)
     local page  = pageOf(payload.page)
     local query = util.limitedString(payload.query, MAX_QUERY)
-    if not query or #query < MIN_QUERY then
-        return util.ok({ rows = {}, total = 0, page = 1, pageSize = PAGE_SIZE })
-    end
 
     local found, total = frameworkRecords.searchCitizens(query, page, PAGE_SIZE)
     found = found or {}
@@ -483,9 +478,6 @@ end)
 records.vehiclesSearch = access.gated('vehicles.view', function(_, payload)
     local page  = pageOf(payload.page)
     local query = util.limitedString(payload.query, MAX_QUERY)
-    if not query or #query < MIN_QUERY then
-        return util.ok({ rows = {}, total = 0, page = 1, pageSize = PAGE_SIZE })
-    end
 
     local found, total = frameworkRecords.searchVehicles(query, page, PAGE_SIZE)
     found = found or {}

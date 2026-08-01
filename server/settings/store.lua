@@ -68,6 +68,7 @@ function store.ensureSchema()
             wallpaper_home     VARCHAR(512) NULL,
             blur_lock          TINYINT(1)   NULL,
             blur_home          TINYINT(1)   NULL,
+            island_pet         VARCHAR(16)  NULL,
             custom_wallpapers  TEXT         NULL,
             passcode           VARCHAR(8)   NULL,
             face_id            TINYINT(1)   NOT NULL DEFAULT 0,
@@ -540,6 +541,26 @@ function store.setBlur(citizenid, lockOn, homeOn)
             blur_lock = COALESCE(VALUES(blur_lock), blur_lock),
             blur_home = COALESCE(VALUES(blur_home), blur_home)
     ]], { citizenid, l, h })
+end
+
+---@type table<string, boolean> Pets the island offers. An id from an older or hand-edited client
+---is stored as 'none' rather than refused, so a stale UI cannot write a pet the shell cannot draw.
+local ISLAND_PETS = {
+    none = true, cat = true, dog = true, fox = true, bunny = true, hamster = true,
+    hedgehog = true, raccoon = true, panda = true, duck = true, penguin = true,
+    owl = true, frog = true, turtle = true, axolotl = true, dragon = true,
+}
+
+---Saves the character's Dynamic Island pet.
+---@param citizenid string
+---@param pet any
+function store.setIslandPet(citizenid, pet)
+    if not citizenid or citizenid == '' then return end
+    local id = type(pet) == 'string' and ISLAND_PETS[pet] and pet or 'none'
+    MySQL.update.await([[
+        INSERT INTO phone_settings (citizenid, island_pet) VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE island_pet = VALUES(island_pet)
+    ]], { citizenid, id })
 end
 
 ---@type integer Cap on saved custom wallpapers per character.
@@ -1567,6 +1588,7 @@ function store.snapshot(citizenid)
         wallpaperHome    = (row and row.wallpaper_home ~= '') and row.wallpaper_home or nil,
         blurLock         = row ~= nil and isTruthy(row.blur_lock),
         blurHome         = row ~= nil and isTruthy(row.blur_home),
+        islandPet        = (row and row.island_pet ~= '') and row.island_pet or nil,
         customWallpapers = row and decodeColumn(row.custom_wallpapers, {}) or {},
         chatTextScale    = (row and row.chat_text_scale ~= nil) and tonumber(row.chat_text_scale) or nil,
         phoneScale       = (row and row.phone_scale ~= nil) and tonumber(row.phone_scale) or nil,

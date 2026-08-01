@@ -172,6 +172,16 @@ lib.callback.register('sd-phone:server:settings:setBlur', function(source, paylo
     return { success = true }
 end)
 
+---Persists the caller's Dynamic Island pet. The store validates the id, so a stale client cannot
+---save a pet this shell has no artwork for.
+lib.callback.register('sd-phone:server:settings:setIslandPet', function(source, payload)
+    local cid = player.getIdentifier(source)
+    if not cid then return { success = false, message = 'Player not found' } end
+    payload = type(payload) == 'table' and payload or {}
+    coalesce(cid, 'islandPet', function() store.setIslandPet(cid, payload.pet) end)
+    return { success = true }
+end)
+
 ---Saves a custom wallpaper URL for the caller; the photo URL-import gate and host policy apply
 ---(config.Photos.AllowImport + block/allow lists).
 lib.callback.register('sd-phone:server:settings:wallpapers:add', function(source, payload)

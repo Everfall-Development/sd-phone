@@ -33,6 +33,7 @@ writeCallback('sd-phone:settings:setLockClock', 'sd-phone:server:settings:setLoc
 writeCallback('sd-phone:settings:setSecurity',  'sd-phone:server:settings:setSecurity')
 writeCallback('sd-phone:settings:setWallpaper', 'sd-phone:server:settings:setWallpaper')
 writeCallback('sd-phone:settings:setBlur',      'sd-phone:server:settings:setBlur')
+writeCallback('sd-phone:settings:setIslandPet', 'sd-phone:server:settings:setIslandPet')
 writeCallback('sd-phone:settings:wallpapers:add',    'sd-phone:server:settings:wallpapers:add')
 writeCallback('sd-phone:settings:wallpapers:remove', 'sd-phone:server:settings:wallpapers:remove')
 writeCallback('sd-phone:settings:setChatTextScale', 'sd-phone:server:settings:setChatTextScale')

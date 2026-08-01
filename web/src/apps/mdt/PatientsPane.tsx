@@ -18,8 +18,6 @@ import { MdtMaster } from './ui/MdtMaster';
 import { MdtPager } from './ui/MdtPager';
 import type { PatientRow } from './data';
 
-const MIN_QUERY = 2;
-
 function PatientListRow({ patient, selected, onPress }: {
     patient:  PatientRow;
     selected: boolean;
@@ -65,21 +63,16 @@ export function PatientsPane() {
     const rows     = data?.rows ?? [];
     const total    = data?.total ?? 0;
     const pageSize = data?.pageSize ?? 25;
-    const short    = term.length < MIN_QUERY;
-
-    const empty = short ? (
+    const empty = (
         <EmptyState
             center
             icon={Search}
-            title={t('mdt.searchAPatient', 'Search for a patient')}
-            subtitle={t('mdt.searchAPatientSub', 'Type at least two characters of a name, citizen ID or phone number.')}
-        />
-    ) : (
-        <EmptyState
-            center
-            icon={Search}
-            title={loading ? t('mdt.searching', 'Searching') : t('mdt.noMatches', 'No matches')}
-            subtitle={loading ? undefined : t('mdt.noPatientMatch', 'Nobody on record matches that search.')}
+            title={loading
+                ? t('mdt.loading', 'Loading')
+                : term ? t('mdt.noMatches', 'No matches') : t('mdt.noPatients', 'No patients on record')}
+            subtitle={loading
+                ? undefined
+                : term ? t('mdt.noPatientMatch', 'Nobody on record matches that search.') : undefined}
         />
     );
 
@@ -87,11 +80,11 @@ export function PatientsPane() {
         <MdtColumn
             className="flex-1"
             title={t('mdt.patients', 'Patients')}
-            count={short ? undefined : total}
+            count={total}
             query={query}
             onQuery={setQuery}
             placeholder={t('mdt.searchPatients', 'Name, citizen ID or phone')}
-            isEmpty={short || rows.length === 0}
+            isEmpty={rows.length === 0}
             empty={empty}
             footer={<MdtPager page={data?.page ?? page} pageSize={pageSize} total={total} onPage={setPage} />}
         >
@@ -117,7 +110,7 @@ export function PatientsPane() {
                     center
                     icon={HeartPulse}
                     title={t('mdt.pickPatientRecord', 'No patient selected')}
-                    subtitle={t('mdt.pickPatientRecordSub', 'Search for a patient and open them to see their medical file and the incidents they appear on.')}
+                    subtitle={t('mdt.pickPatientRecordSub', 'Pick a patient from the list, or search by name, citizen ID or phone, to see their medical file and the incidents they appear on.')}
                 />
             }
             onCloseDetail={() => select(null)}

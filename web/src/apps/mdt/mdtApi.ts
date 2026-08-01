@@ -593,7 +593,7 @@ export async function mdtSetWaypoint(coords: Coords): Promise<boolean> {
 
 export async function mdtPersonsSearch(query: string, page = 1): Promise<Page<PersonRow>> {
     if (!isFiveM) {
-        const hits = DEV_PERSONS.filter(p => matches(query, p.name, p.citizenid, p.phone));
+        const hits = DEV_PERSONS.filter(p => !query || query.trim().length < 2 || matches(query, p.name, p.citizenid, p.phone));
         return paginate(hits.map(p => personRow(hydratePerson(p))), page);
     }
     return (await apiData<Page<PersonRow>>('sd-phone:mdt:persons:search', { query, page })) ?? emptyPage<PersonRow>();
@@ -632,7 +632,7 @@ function devPatchPerson(citizenid: string, patch: (p: PersonDetail) => PersonDet
 
 export async function mdtVehiclesSearch(query: string, page = 1): Promise<Page<VehicleRow>> {
     if (!isFiveM) {
-        const hits = DEV_VEHICLES.filter(v => matches(query, v.plate, v.model, v.ownerName));
+        const hits = DEV_VEHICLES.filter(v => !query || query.trim().length < 2 || matches(query, v.plate, v.model, v.ownerName));
         return paginate(hits.map(vehicleRow), page);
     }
     return (await apiData<Page<VehicleRow>>('sd-phone:mdt:vehicles:search', { query, page })) ?? emptyPage<VehicleRow>();
@@ -908,7 +908,7 @@ export async function mdtCloseWarrant(ref: string): Promise<Warrant | null> {
 
 export async function mdtPatientsSearch(query: string, page = 1): Promise<Page<PatientRow>> {
     if (!isFiveM) {
-        const hits = DEV_PERSONS.filter(p => matches(query, p.name, p.citizenid, p.phone));
+        const hits = DEV_PERSONS.filter(p => !query || query.trim().length < 2 || matches(query, p.name, p.citizenid, p.phone));
         return paginate(hits.map(p => devPatientRow(p.citizenid, p.name, p.dob, p.sex, p.phone)), page);
     }
     return (await apiData<Page<PatientRow>>('sd-phone:mdt:patients:search', { query, page })) ?? emptyPage<PatientRow>();
@@ -1102,20 +1102,6 @@ export async function mdtPageUnit(citizenid: string): Promise<{ source: number |
     return apiData<{ source: number | null; name: string }>('sd-phone:mdt:roster:page', { citizenid });
 }
 
-export interface SelfPatch {
-    callsign?: string;
-    avatar?:   string;
-    notes?:    string;
-}
-
-export async function mdtUpdateMe(patch: SelfPatch): Promise<MdtBootstrap['me'] | null> {
-    if (!isFiveM) {
-        DEV_BOOTSTRAP.me = { ...DEV_BOOTSTRAP.me, ...patch };
-        return { ...DEV_BOOTSTRAP.me };
-    }
-    return (await apiData<{ me: MdtBootstrap['me'] }>('sd-phone:mdt:me:update', patch))?.me ?? null;
-}
-
 export async function mdtChatHistory(): Promise<ChatMsg[]> {
     if (!isFiveM) return [...DEV_CHAT];
     return (await apiData<{ messages: ChatMsg[] }>('sd-phone:mdt:chat:history'))?.messages ?? [];
@@ -1135,11 +1121,6 @@ export async function mdtSendChat(body: string): Promise<ChatMsg | null> {
         return msg;
     }
     return (await apiData<{ message: ChatMsg }>('sd-phone:mdt:chat:send', { body }))?.message ?? null;
-}
-
-export async function mdtBulletins(): Promise<Bulletin[]> {
-    if (!isFiveM) return [...DEV_BULLETINS];
-    return (await apiData<{ rows: Bulletin[] }>('sd-phone:mdt:bulletins:list'))?.rows ?? [];
 }
 
 export async function mdtSaveBulletin(draft: { id: number | null; title: string; body: string }): Promise<Bulletin | null> {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ShieldAlert } from 'lucide-react';
 
 import { t } from '@/i18n';
@@ -14,6 +14,7 @@ import { HomePane } from './HomePane';
 import { JailPane } from './JailPane';
 import { LogsPane } from './LogsPane';
 import { MdtHeader } from './MdtHeader';
+import { MdtTabs } from './MdtTabs';
 import { MdtSidebar } from './MdtSidebar';
 import { OffencesPane } from './OffencesPane';
 import { PatientsPane } from './PatientsPane';
@@ -22,6 +23,7 @@ import { ProtocolsPane } from './ProtocolsPane';
 import { ReportsPane } from './ReportsPane';
 import { VehiclesPane } from './VehiclesPane';
 import { WarrantsPane } from './WarrantsPane';
+import { MdtRootProvider } from './mdtRoot';
 import { MDT_ACCENT, MDT_STATUS_RESERVE, mdtBackdrop } from './mdtTheme';
 import { MdtSessionProvider, useMdtSession, useMdtSessionState } from './useMdtSession';
 
@@ -47,15 +49,21 @@ function pane(section: MdtSection) {
 const COMPACT_WIDTH = 900;
 
 function MdtTerminal() {
-    const { ready, me, department, section, canOpen } = useMdtSession();
+    const { ready, me, department, section, canOpen, activeTab } = useMdtSession();
 
     const accent = department?.accent ?? MDT_ACCENT;
     const signedIn = ready && !!me && !!department;
 
     const active: MdtSection = section !== 'home' && !canOpen(section) ? 'home' : section;
 
-    const rootRef = useRef<HTMLDivElement>(null);
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const [root, setRoot] = useState<HTMLDivElement | null>(null);
     const [compact, setCompact] = useState(false);
+
+    const attachRoot = useCallback((node: HTMLDivElement | null) => {
+        rootRef.current = node;
+        setRoot(node);
+    }, []);
 
     useEffect(() => {
         const el = rootRef.current;
@@ -69,8 +77,10 @@ function MdtTerminal() {
     }, []);
 
     return (
+        <MdtRootProvider value={root}>
         <div
-            ref={rootRef}
+            ref={attachRoot}
+            data-mdt-root=""
             className={`absolute inset-0 z-10 flex select-none flex-col font-sf text-black dark:text-white ${mdtBackdrop}`}
             style={{ '--mdt-accent': accent } as CSSProperties}
         >
@@ -92,10 +102,11 @@ function MdtTerminal() {
             ) : (
                 <>
                     <MdtHeader compact={compact} />
+                    <MdtTabs />
                     <div className="flex min-h-0 flex-1">
                         <MdtSidebar compact={compact} />
                         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col pb-6">
-                            <div key={active} className="flex min-h-0 flex-1 flex-col animate-mdt-pane">
+                            <div key={`${activeTab}:${active}`} className="flex min-h-0 flex-1 flex-col animate-mdt-pane">
                                 {pane(active)}
                             </div>
                         </div>
@@ -103,6 +114,7 @@ function MdtTerminal() {
                 </>
             )}
         </div>
+        </MdtRootProvider>
     );
 }
 

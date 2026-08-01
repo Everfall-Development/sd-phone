@@ -6,6 +6,8 @@ import { device } from '@device';
 import { useTheme } from '@/stores/themeStore';
 import type { PhoneAlign } from '@/stores/themeStore';
 import { useCallStore } from '@/stores/callStore';
+import { useBatteryStore } from '@/stores/batteryStore';
+import { IslandPet } from './IslandPet';
 import { fetchNui } from '@/core/nui';
 import { useMusic } from '@/apps/music/MusicContext';
 import { coverGradient, youtubeId } from '@/apps/music/data';
@@ -38,6 +40,16 @@ const DI_H = 37;
 const DI_X = (W - DI_W) / 2;
 const DI_Y = SY + 11;
 const DI_R = DI_H / 2;
+const PET_H = 26;
+const PET_W = PET_H * (16 / 13);
+const PET_FLOOR = 4;
+const PET_TOP = DI_Y + DI_H - PET_FLOOR - PET_H;
+const LENS_X = DI_X + DI_W - DI_R * 1.12 - 7;
+const PET_RIGHT = LENS_X - 4;
+const petStage = (left: number) => ({
+    left: Math.round(left),
+    run:  Math.max(0, Math.floor(PET_RIGHT - Math.round(left) - PET_W)),
+});
 
 const CALL_W = 188;
 const CALL_X = (W - CALL_W) / 2;
@@ -299,7 +311,8 @@ function MusicIsland({ track, playing, expanded, closing, onToggle, onPlayPause,
 
 export function PhoneShell({ children, cameraActive = false, entering = false, leaving = false, landscape = false, peek, onClose, radioIsland, alarmIsland, frameColor = DEFAULT_FRAME_COLOR }: PhoneShellProps) {
     const rail = frameStops(frameColor, FINISH);
-    const { brightness, phoneScale, phoneAlign, ringtoneVol, setRingtoneVol } = useTheme('brightness', 'phoneScale', 'phoneAlign', 'ringtoneVol', 'setRingtoneVol');
+    const { brightness, phoneScale, phoneAlign, ringtoneVol, setRingtoneVol, islandPet } = useTheme('brightness', 'phoneScale', 'phoneAlign', 'ringtoneVol', 'setRingtoneVol', 'islandPet');
+    const batteryLevel = useBatteryStore(s => s.level);
     const { current: nowPlaying, playing: musicPlaying, volume: musicVolume, setVolume: setMusicVolume, requestOpen: openMusic, toggle: toggleMusic, next: nextMusic, prev: prevMusic } = useMusic();
 
     const [musicExpanded, setMusicExpanded] = useState(false);
@@ -359,6 +372,11 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [nowPlaying]);
     const islandTrack = rendered;
+
+    const petStageNow =
+        callActive || radioOn || radioStandby || alarmRinging ? petStage(CALL_X + 76)
+        : islandTrack ? (musicExpanded || islandClosing ? null : petStage(MIP_X + 41))
+        : petStage(DI_X + 9);
 
     const bumpVolume = (dir: 1 | -1) => {
         if (nowPlaying) {
@@ -580,6 +598,18 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
                         onDoubleClick={() => void takeScreenshot()}
                         className="absolute z-[300] cursor-pointer bg-transparent"
                         style={{ left: SCREENSHOT_BTN.x - 6, top: SCREENSHOT_BTN.y, width: 16, height: SCREENSHOT_BTN.h }}
+                    />
+                )}
+
+                {device.screen.island && islandPet !== 'none' && (
+                    <IslandPet
+                        id={islandPet}
+                        stage={petStageNow}
+                        top={PET_TOP}
+                        height={PET_H}
+                        battery={batteryLevel}
+                        playing={musicPlaying && !musicExpanded}
+                        ringing={callActive || alarmRinging}
                     />
                 )}
 

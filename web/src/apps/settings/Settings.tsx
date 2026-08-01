@@ -4,6 +4,7 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { AppIconsPage } from './appearance/AppIconsPage';
 import { DisplayBrightnessPage } from './appearance/DisplayBrightnessPage';
 import { FaceUnlockPage } from './security/FaceUnlockPage';
+import { IslandPetPage } from './appearance/IslandPetPage';
 import { BatteryPage } from './general/BatteryPage';
 import { GeneralPage } from './general/GeneralPage';
 import { NotificationsPage } from './notifications/NotificationsPage';
@@ -24,7 +25,7 @@ import { WifiPage } from './wifi/WifiPage';
 import { useWifiConfigured, useWifiConnected } from '@/stores/wifiStore';
 import { useBluetoothConfigured } from '@/stores/bluetoothStore';
 
-type SubPage = 'general' | 'display' | 'wallpaper' | 'app-icons' | 'notifications' | 'sound-haptics' | 'face-unlock' | 'phone' | 'battery' | 'privacy' | 'sim' | 'wifi' | 'bluetooth' | null;
+type SubPage = 'general' | 'display' | 'island-pet' | 'wallpaper' | 'app-icons' | 'notifications' | 'sound-haptics' | 'face-unlock' | 'phone' | 'battery' | 'privacy' | 'sim' | 'wifi' | 'bluetooth' | null;
 
 export function Settings({ onClose }: { onClose: () => void }) {
     const [subPage, setSubPage] = useSessionState<SubPage>('settings:subPage', null);
@@ -38,6 +39,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
     const settingsGroups = getSettingsGroups()
         .map(g => simEnabled ? g : { ...g, rows: g.rows.filter(r => r.id !== 'sim') })
         .map(g => device.calls ? g : { ...g, rows: g.rows.filter(r => r.id !== 'phone') })
+        .map(g => device.screen.island ? g : { ...g, rows: g.rows.filter(r => r.id !== 'island-pet') })
         .map(g => wifiConfigured ? g : { ...g, rows: g.rows.filter(r => r.id !== 'wifi') })
         .map(g => bluetoothConfigured ? g : { ...g, rows: g.rows.filter(r => r.id !== 'bluetooth') })
         .map(g => ({
@@ -61,6 +63,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         setQuery('');
         if (id === 'general')       setSubPage('general');
         if (id === 'display')       setSubPage('display');
+        if (id === 'island-pet')    setSubPage('island-pet');
         if (id === 'wallpaper')     setSubPage('wallpaper');
         if (id === 'app-icons')     setSubPage('app-icons');
         if (id === 'notifications') setSubPage('notifications');
@@ -77,6 +80,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
     const sub =
         subPage === 'general'         ? <GeneralPage           onBack={handleBack} />
         : subPage === 'display'       ? <DisplayBrightnessPage onBack={handleBack} />
+        : subPage === 'island-pet'    ? <IslandPetPage         onBack={handleBack} />
         : subPage === 'wallpaper'     ? <WallpaperPage         onBack={handleBack} />
         : subPage === 'app-icons'     ? <AppIconsPage          onBack={handleBack} />
         : subPage === 'notifications' ? <NotificationsPage     onBack={handleBack} />

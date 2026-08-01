@@ -5,6 +5,13 @@ name: Release
 on:
   release:
     types: [published]
+  # Re-package an already published release without unpublishing it, for when the
+  # packaging itself was wrong rather than the code.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to package (e.g. v0.9.6)'
+        required: true
 
 permissions:
   contents: write
@@ -14,9 +21,11 @@ jobs:
     name: build + package
     runs-on: ubuntu-latest
     env:
-      TAG: ${{ github.event.release.tag_name }}
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
 
       - uses: actions/setup-node@v7
         with:
@@ -37,8 +46,29 @@ jobs:
         run: |
           mkdir -p dist/sd-phone/web
           cp fxmanifest.lua README.md dist/sd-phone/
-          cp -r bridge client server configs locales images dist/sd-phone/
+          cp -r bridge client server shared configs locales images dist/sd-phone/
           cp -r web/build dist/sd-phone/web/build
+
+      # The staging list above is an allowlist, so a new top-level directory is
+      # dropped from the zip in silence: v0.9.6 shipped without shared/ and every
+      # `require 'shared.*'` failed on start. Fail the build instead.
+      - name: Verify staged resource
+        run: |
+          missing=0
+          paths=$(grep -oE "'[^']+\.(lua|json|html|js|css|png|jpg|webp|svg|woff2?|mp3)'" fxmanifest.lua \
+            | tr -d "'" | grep -v '^@' | sed 's|/\*\*.*||; s|/\*.*||' | sort -u)
+          for p in $paths; do
+            if [ ! -e "dist/sd-phone/$p" ]; then
+              echo "::error::fxmanifest.lua declares '$p' but it is not in the staged resource"
+              missing=1
+            fi
+          done
+          if [ "$missing" != 0 ]; then
+            echo "Staged resource is incomplete - add the missing path to the Stage resource step."
+            exit 1
+          fi
+          echo "All fxmanifest paths present:"
+          echo "$paths"
 
       - name: Zip
         run: |

@@ -212,16 +212,16 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     useImperativeHandle(ref, () => ({ centerOnWorld, fitWorld, reset: resetView }), [centerOnWorld, fitWorld]);
 
     const didFit = useRef(false);
-    useEffect(() => { didFit.current = false; }, [fitTo]);
-    useEffect(() => {
+    useLayoutEffect(() => { didFit.current = false; }, [fitTo]);
+    useLayoutEffect(() => {
         if (didFit.current || !fitTo || !fitTo.length || !side || !vw || !vh) return;
         didFit.current = true;
         fitWorld(fitTo);
     }, [fitTo, side, vw, vh, fitWorld]);
 
     const didCenter = useRef(false);
-    useEffect(() => { didCenter.current = false; }, [centerTo]);
-    useEffect(() => {
+    useLayoutEffect(() => { didCenter.current = false; }, [centerTo]);
+    useLayoutEffect(() => {
         if (didCenter.current || !centerTo || !side || !vw || !vh) return;
         didCenter.current = true;
         centerOnWorld(centerTo.x, centerTo.y);
