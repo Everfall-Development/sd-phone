@@ -37,7 +37,7 @@
 return {
     -- Master switch. Off = sd-phone behaves exactly as before (numbers auto-assigned per
     -- character, phone always has service).
-    Enabled = true,
+    Enabled = false,
 
     -- Where the phone DATA lives: 'device' | 'sim' | 'character' (see the header above).
     -- Flipping an existing 'sim' server to 'device' is safe: on first use each phone ADOPTS the
