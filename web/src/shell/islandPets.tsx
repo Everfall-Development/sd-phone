@@ -1,4 +1,5 @@
 import { t } from '@/i18n';
+import type { ReactElement } from 'react';
 
 export type IslandPetId =
     | 'none' | 'cat' | 'dog' | 'fox' | 'bunny' | 'hamster' | 'hedgehog' | 'raccoon'
@@ -776,7 +777,7 @@ export function islandPetLabel(id: IslandPetId): string {
 }
 
 function Frame({ rows, palette, dx = 0 }: { rows: string[]; palette: Palette; dx?: number }) {
-    const px: JSX.Element[] = [];
+    const px: ReactElement[] = [];
     for (let y = 0; y < rows.length; y++) {
         const row = rows[y];
         for (let x = 0; x < row.length; x++) {
