@@ -24,13 +24,17 @@ local MDT_ENABLED = MDT.Enabled == true
 ---Mdt.Departments and its members get the right icon on their next open.
 local TERMINAL_JOBS = {}
 for _, dept in ipairs(MDT.Departments or {}) do
-    if dept.job then TERMINAL_JOBS[dept.job] = dept.type == 'ems' and 'ems' or 'leo' end
+    if dept.job then
+        local kind = dept.type
+        TERMINAL_JOBS[dept.job] = (kind == 'ems' or kind == 'doj') and kind or 'leo'
+    end
 end
 
 ---@type table<string, string> App id -> the domain that may see it.
 local TERMINAL_APPS = {
     mdt    = 'leo',
     emsmdt = 'ems',
+    dojmdt = 'doj',
 }
 
 ---Every app id this player must not be shown.

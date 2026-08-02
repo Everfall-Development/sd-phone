@@ -11,7 +11,7 @@ return {
     -- itself (set `mdt` to `enabled = true` in configs/apps.lua as well for that).
     -- The app catalog cannot decide this on its own: a companion device carries its
     -- own catalog and this server never reads it.
-    Enabled = false,
+    Enabled = true,
 
     -- Departments whose members reach the MDT. A player's ACTIVE framework job
     -- must appear here or every callback refuses, including the reads.
@@ -73,6 +73,38 @@ return {
             callsign  = 'M',
             bossGrade = 4,
         },
+
+        -- A `doj` department gets the COURT terminal: a docket, expungement
+        -- petitions and a read-only view of the police paperwork a case is
+        -- built on. It has no dispatch board, no jail and no seized handsets,
+        -- because a court does not police - it rules on what policing produced.
+        --
+        -- `bench = true` marks the department that WEARS THE ROBE. Only a bench
+        -- department reaches the ruling keys (court.rule, expunge.rule,
+        -- warrants.void); an attorney department files and argues. Both read the
+        -- same docket, which is what makes a hearing a conversation rather than
+        -- two disconnected screens.
+        {
+            job       = 'judge',
+            type      = 'doj',
+            bench     = true,
+            label     = 'San Andreas Superior Court',
+            short     = 'SASC',
+            seal      = 'doj',
+            accent    = '#6D28D9',
+            callsign  = 'HON',
+            bossGrade = 3,
+        },
+        {
+            job       = 'lawyer',
+            type      = 'doj',
+            label     = 'San Andreas Bar Association',
+            short     = 'SABA',
+            seal      = 'doj',
+            accent    = '#7C3AED',
+            callsign  = 'ATT',
+            bossGrade = 3,
+        },
     },
 
     -- When true a boss of their department (QBCore/QBox `isboss` flag, ESX
@@ -104,6 +136,10 @@ return {
         ['chat.view']        = 0,
         ['chat.send']        = 0,
         ['bulletins.view']   = 0,
+
+        -- Standing orders. Every sworn member reads their own department's SOPs;
+        -- there is no manage key because configs/sops.lua is the only author.
+        ['sops.view']        = 0,
         ['me.update']        = 0,
 
         -- Medical terminal. `patients.view` is the EMS counterpart of
@@ -112,6 +148,28 @@ return {
         -- police server nothing.
         ['patients.view']    = 0,
         ['protocols.view']   = 0,
+
+        -- Court terminal. A `doj` department never sees a police-only key and a
+        -- police department never sees one of these, so listing them costs a
+        -- server that runs no court nothing. The ruling keys are additionally
+        -- reserved for a department marked `bench`, whatever the grade.
+        ['court.view']       = 0,
+        ['court.file']       = 0,
+        ['expunge.view']     = 0,
+        ['expunge.file']     = 0,
+        ['court.manage']     = 1,
+        ['court.rule']       = 1,
+        ['expunge.rule']     = 1,
+        ['warrants.void']    = 2,
+
+        -- Internal Affairs. Filing a complaint is deliberately open to every
+        -- sworn grade: a probationer who witnesses misconduct must be able to
+        -- report it. Reading and investigating the file is not.
+        ['affairs.file']     = 0,
+
+        -- Reading a seized handset. Set above 0 to keep it off patrol grades, and every
+        -- lookup writes an audit row naming the officer and whose phone they opened.
+        ['phone.view']       = 1,
 
         ['persons.edit']     = 1,
         ['vehicles.edit']    = 1,
@@ -129,14 +187,16 @@ return {
         ['roster.callsign']  = 3,
         ['roster.radio']     = 3,
 
+        ['affairs.view']       = 3,
+        ['affairs.investigate'] = 3,
+
         ['reports.delete']   = 4,
         ['cases.delete']     = 4,
-        ['offences.delete']  = 4,
-        ['offences.manage']  = 4,
         ['protocols.manage'] = 4,
         ['roster.grade']     = 4,
         ['roster.dismiss']   = 4,
         ['logs.view']        = 4,
+        ['affairs.close']    = 4,
     },
 
     -- Booking and sentencing. Months and fine are always derived server-side

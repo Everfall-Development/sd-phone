@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Car, FileText, Fingerprint, Gavel, Scale, ShieldAlert, User } from 'lucide-react';
+import { Car, FileText, Fingerprint, Gavel, Landmark, Scale, ShieldAlert, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 import { getLocaleTag, t } from '@/i18n';
@@ -12,8 +12,9 @@ import { PromptDialog } from '@/ui/PromptDialog';
 import { Scroller } from '@/ui/Scroller';
 import { useAsyncData } from '@/hooks/useAsyncData';
 
+import { courtStatusLabel, courtStatusTone, courtVerdictLabel } from './CourtCase';
 import { vehicleStatusLabel } from './VehicleRecord';
-import { mdtPerson, mdtSetPersonFlags, mdtSetPersonMugshot, mdtSetPersonNotes } from './mdtApi';
+import { mdtCourtForCitizen, mdtPerson, mdtSetPersonFlags, mdtSetPersonMugshot, mdtSetPersonNotes } from './mdtApi';
 import { useMdtSession } from './useMdtSession';
 import { mdtPanePad, mdtRowHover, mdtSectionHeader } from './mdtTheme';
 import { MdtButton } from './ui/MdtButton';
@@ -149,6 +150,13 @@ export function PersonRecord({ citizenid }: { citizenid: string }) {
     const [clearPhoto, setClear] = useState(false);
 
     const { loading } = useAsyncData(() => mdtPerson(citizenid), [citizenid], { onData: setPerson });
+
+    const { data: courtData } = useAsyncData(
+        () => mdtCourtForCitizen(citizenid),
+        [citizenid],
+        { enabled: can('court.view') },
+    );
+    const courtCases = courtData ?? [];
 
     const editable = can('persons.edit');
 
@@ -397,6 +405,29 @@ export function PersonRecord({ citizenid }: { citizenid: string }) {
                         </div>
                     )}
                 </Section>
+
+                {can('court.view') && (
+                    <Section title={t('mdt.courtHistory', 'Court history')} icon={Landmark}>
+                        {courtCases.length === 0 ? (
+                            <Blank label={t('mdt.noCourtHistory', 'This citizen has never been before the court.')} />
+                        ) : (
+                            <div className="flex flex-col">
+                                {courtCases.map(c => (
+                                    <LinkRow
+                                        key={c.ref}
+                                        title={c.title}
+                                        sub={[c.ref, courtStatusLabel(c.status), c.hearingAt ? dateOf(c.hearingAt) : '']
+                                            .filter(Boolean).join('  ·  ')}
+                                        right={c.verdict
+                                            ? <Pill tone={c.verdict === 'guilty' ? 'red' : 'green'}>{courtVerdictLabel(c.verdict)}</Pill>
+                                            : <Pill tone={courtStatusTone(c.status)}>{courtStatusLabel(c.status)}</Pill>}
+                                        onPress={() => open('court', c.ref)}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </Section>
+                )}
             </div>
 
             {zoom && person.mugshot && (

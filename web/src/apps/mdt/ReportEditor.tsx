@@ -19,7 +19,7 @@ import { SearchBar } from '@/ui/SearchBar';
 import { catalogIndex, ChargePicker, inputTotals, sentenceLabel } from './ChargePicker';
 import { EMS_INVOLVED_ROLES, EMS_REPORT_TYPES } from './data';
 import type {
-    AnyInvolvedRole, AnyReportType, Charge, ChargeInput, Involved, InvolvedRole, ReportDetail, ReportSummary, ReportType,
+    AnyInvolvedRole, AnyReportType, Charge, ChargeInput, EvidenceItem, Involved, InvolvedRole, ReportDetail, ReportSummary, ReportType,
 } from './data';
 import { mdtDeleteReport, mdtReport, mdtReports, mdtSaveReport } from './mdtApi';
 import { PersonPicker } from './PersonPicker';
@@ -29,6 +29,9 @@ import { mdtPanePad, mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle, mdtSectionHea
 import { MdtButton } from './ui/MdtButton';
 import { MdtCard } from './ui/MdtCard';
 import { MdtField } from './ui/MdtField';
+import { MdtEvidence } from './ui/MdtEvidence';
+import { MdtRichField } from './ui/MdtRichField';
+import { MdtRichText } from './ui/MdtRichText';
 import { MdtSelect } from './ui/MdtSelect';
 
 export const REPORT_TYPES: readonly ReportType[] = ['Incident', 'Traffic', 'Arrest', 'Investigation', 'Warrant'] as const;
@@ -49,6 +52,7 @@ interface EditDraft {
     title:    string;
     type:     AnyReportType;
     body:     string;
+    evidence: EvidenceItem[];
     involved: Involved[];
     charges:  ChargeInput[];
 }
@@ -87,7 +91,7 @@ export function roleLabel(role: string): string {
 
 function blankDraft(medical: boolean): EditDraft {
     const type = medical ? EMS_REPORT_TYPES[0] : REPORT_TYPES[0];
-    return { ref: null, title: '', type, body: '', involved: [], charges: [] };
+    return { ref: null, title: '', type, body: '', evidence: [], involved: [], charges: [] };
 }
 
 function draftFrom(report: ReportDetail): EditDraft {
@@ -96,6 +100,7 @@ function draftFrom(report: ReportDetail): EditDraft {
         title:    report.title,
         type:     report.type,
         body:     report.body,
+        evidence: report.evidence ?? [],
         involved: report.involved.map(person => ({ ...person })),
         charges:  report.charges.map(c => ({ code: c.code, citizenid: c.citizenid, count: c.count })),
     };
@@ -150,6 +155,7 @@ export function ReportEditor({ reportRef, onSaved, onDeleted, onClose }: {
             title:    draft.title.trim(),
             type:     draft.type,
             body:     draft.body,
+            evidence: draft.evidence,
             involved: draft.involved.map(person => ({
                 citizenid: person.citizenid,
                 role:      person.role,
@@ -288,15 +294,22 @@ export function ReportEditor({ reportRef, onSaved, onDeleted, onClose }: {
                     <div className={`mb-2 px-1 ${mdtSectionHeader}`}>{t('mdt.narrative', 'Narrative')}</div>
                     <MdtCard className="p-4">
                         {report.body ? (
-                            <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-black dark:text-white">
-                                {report.body}
-                            </p>
+                            <MdtRichText
+                                text={report.body}
+                                className="text-[15px] leading-relaxed text-black dark:text-white"
+                            />
                         ) : (
                             <div className="text-[14px] text-ios-gray">
                                 {t('mdt.noNarrative', 'No narrative was written for this report.')}
                             </div>
                         )}
                     </MdtCard>
+
+                    {report.evidence?.length > 0 && (
+                        <MdtCard className="mt-4 p-4">
+                            <MdtEvidence items={report.evidence} />
+                        </MdtCard>
+                    )}
                 </div>
 
                 <div className="min-w-0">
@@ -453,8 +466,7 @@ function DraftView({ draft, saving, error, enter, onChange, onAddPerson, onSave,
             </div>
 
             <div className="mt-4">
-                <MdtField
-                    multiline
+                <MdtRichField
                     rows={8}
                     label={t('mdt.narrative', 'Narrative')}
                     value={draft.body}
@@ -536,6 +548,13 @@ function DraftView({ draft, saving, error, enter, onChange, onAddPerson, onSave,
                     )}
                 </div>
             )}
+
+            <div className="mt-5">
+                <MdtEvidence
+                    items={draft.evidence}
+                    onChange={evidence => onChange({ ...draft, evidence })}
+                />
+            </div>
 
             {error && <div className="mt-4 text-[14px] text-ios-red">{error}</div>}
 

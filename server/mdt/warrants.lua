@@ -298,4 +298,27 @@ warrants.close = access.audited('warrants.close', function(_, payload, me)
     }
 end)
 
+---Voids a warrant from the bench. Distinct from closing one: a court quashing a warrant is not the
+---issuing department deciding it is served, so it deliberately ignores the department guard that
+---close() enforces. Only a bench department reaches the key.
+warrants.void = access.audited('warrants.void', function(_, payload, me)
+    local ref = util.limitedString(payload.ref, 16)
+    local row = ref and MySQL.single.await('SELECT * FROM phone_mdt_warrants WHERE ref = ? LIMIT 1', { ref })
+    if not row then return util.fail('That warrant no longer exists') end
+
+    local now = os.time()
+    if (tonumber(row.expiry) or 0) <= now then return util.fail('That warrant is already closed') end
+
+    MySQL.update.await('UPDATE phone_mdt_warrants SET expiry = ? WHERE id = ?', { now, row.id })
+    row.expiry = now
+
+    announce(row.citizenid, warrants.isWanted(row.citizenid))
+
+    return util.ok({ warrant = shapeOf(row, now) }), {
+        entityType = 'warrant',
+        entityId   = ref,
+        details    = { subject = row.subject_name, citizenid = row.citizenid, voidedBy = me.name },
+    }
+end)
+
 return warrants

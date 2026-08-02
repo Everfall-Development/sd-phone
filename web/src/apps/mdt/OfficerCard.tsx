@@ -8,9 +8,11 @@ import { FadeImage } from '@/ui/FadeImage';
 import { Pill } from '@/ui/Pill';
 import { Scroller } from '@/ui/Scroller';
 import { InitialsAvatar } from '@/shared/ContactAvatar';
+import { useAsyncData } from '@/hooks/useAsyncData';
+import { iaStatusLabel } from './AffairsFile';
 import type { GradeOption, OfficerRow } from './data';
-import { mdtRowMeta, mdtRuleX, mdtSectionHeader } from './mdtTheme';
-import { mdtDismiss, mdtPageUnit, mdtSetCallsign, mdtSetGrade, mdtSetRadio } from './mdtApi';
+import { mdtRowHover, mdtRowMeta, mdtRuleX, mdtSectionHeader } from './mdtTheme';
+import { mdtAffairsForOfficer, mdtDismiss, mdtPageUnit, mdtSetCallsign, mdtSetGrade, mdtSetRadio } from './mdtApi';
 import { MdtButton } from './ui/MdtButton';
 import { MdtField } from './ui/MdtField';
 import { useMdtSession } from './useMdtSession';
@@ -32,7 +34,7 @@ export function OfficerCard({ officer, grades = [], onChanged, onDismissed }: {
     onChanged?:   (officer: OfficerRow) => void;
     onDismissed?: () => void;
 }) {
-    const { me, can } = useMdtSession();
+    const { me, can, open } = useMdtSession();
 
     const [callsign, setCallsign] = useState(officer.callsign ?? '');
     const [radio, setRadio] = useState(officer.radio ?? '');
@@ -41,6 +43,13 @@ export function OfficerCard({ officer, grades = [], onChanged, onDismissed }: {
     const [notice, setNotice] = useState('');
     const [paged, setPaged] = useState('');
     const [confirmDismiss, setConfirmDismiss] = useState(false);
+
+    const { data: iaData } = useAsyncData(
+        () => mdtAffairsForOfficer(officer.citizenid),
+        [officer.citizenid],
+        { enabled: can('affairs.view') },
+    );
+    const ia = iaData ?? [];
 
     useEffect(() => {
         setCallsign(officer.callsign ?? '');
@@ -232,6 +241,34 @@ export function OfficerCard({ officer, grades = [], onChanged, onDismissed }: {
                         )}
 
                         {notice && <div className={`mt-3 ${mdtRowMeta}`}>{notice}</div>}
+                    </>
+                )}
+
+                {can('affairs.view') && (
+                    <>
+                        <div className={`my-5 ${mdtRuleX}`} />
+                        <div className={`mb-2 ${mdtSectionHeader}`}>{t('mdt.iaHistory', 'Internal Affairs')}</div>
+                        {ia.length === 0 ? (
+                            <div className={mdtRowMeta}>{t('mdt.iaClean', 'No complaints on file.')}</div>
+                        ) : (
+                            <div className="flex flex-col gap-1.5">
+                                {ia.map(file => (
+                                    <button
+                                        key={file.ref}
+                                        type="button"
+                                        onClick={() => open('affairs', file.ref)}
+                                        className={`-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-[8px] px-2 py-1.5 text-left ${mdtRowHover}`}
+                                    >
+                                        <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-black dark:text-white">
+                                            {file.title}
+                                        </span>
+                                        <Pill tone={file.status === 'closed' ? 'green' : 'orange'}>
+                                            {iaStatusLabel(file.status)}
+                                        </Pill>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </>
                 )}
             </Scroller>

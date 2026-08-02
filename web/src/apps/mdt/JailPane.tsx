@@ -78,7 +78,7 @@ export function JailPane() {
 
     useEffect(() => { setPage(1); }, [term, setPage]);
 
-    const { data, loading, refetch } = useAsyncData(() => mdtArrests({ query: term, page }), [term, page]);
+    const { data, loading, settled, refetch } = useAsyncData(() => mdtArrests({ query: term, page }), [term, page]);
 
     const rows = data?.rows ?? [];
     const total = data?.total ?? 0;
@@ -111,11 +111,11 @@ export function JailPane() {
                     {t('mdt.book', 'Book')}
                 </MdtButton>
             ) : undefined}
-            isEmpty={rows.length === 0}
+            isEmpty={settled && rows.length === 0}
             empty={empty}
             footer={<MdtPager page={data?.page ?? page} pageSize={pageSize} total={total} onPage={setPage} />}
         >
-            <div className="flex flex-col gap-0.5 px-1">
+            <div className="mdt-stagger flex flex-col gap-0.5 px-1">
                 {rows.map(row => (
                     <ArrestListRow
                         key={row.ref}

@@ -11,7 +11,7 @@ import { EmptyState } from '@/ui/EmptyState';
 import { Pill } from '@/ui/Pill';
 import { Scroller } from '@/ui/Scroller';
 
-import type { CaseDetail, CasePriority, CaseRole, CaseStatus } from './data';
+import type { CaseDetail, CasePriority, CaseRole, CaseStatus, EvidenceItem } from './data';
 import {
     mdtCase, mdtCaseAssign, mdtCaseLinkReport, mdtCaseNote, mdtDeleteCase, mdtSaveCase,
 } from './mdtApi';
@@ -21,6 +21,9 @@ import { useMdtSession } from './useMdtSession';
 import { mdtFieldArea, mdtPanePad, mdtRef, mdtRowMeta, mdtRowTitle, mdtSectionHeader, STATUS_TONE } from './mdtTheme';
 import { MdtButton } from './ui/MdtButton';
 import { MdtCard } from './ui/MdtCard';
+import { MdtEvidence } from './ui/MdtEvidence';
+import { MdtRichField } from './ui/MdtRichField';
+import { MdtRichText } from './ui/MdtRichText';
 import { MdtField } from './ui/MdtField';
 import { MdtSelect } from './ui/MdtSelect';
 
@@ -49,6 +52,7 @@ export function caseRoleLabel(role: string): string {
 interface NewCase {
     title:    string;
     summary:  string;
+    evidence: EvidenceItem[];
     status:   CaseStatus;
     priority: CasePriority;
 }
@@ -70,7 +74,7 @@ export function CaseFile({ caseRef, onSaved, onDeleted, onClose, onChanged }: {
     );
 
     const [draft, setDraft] = useState<NewCase | null>(() => (
-        caseRef === null ? { title: '', summary: '', status: 'open', priority: 'medium' } : null
+        caseRef === null ? { title: '', summary: '', evidence: [], status: 'open', priority: 'medium' } : null
     ));
     const [summary, setSummary] = useState('');
     const [note, setNote] = useState('');
@@ -107,6 +111,7 @@ export function CaseFile({ caseRef, onSaved, onDeleted, onClose, onChanged }: {
             ref:      file.ref,
             title:    part.title ?? file.title,
             summary:  part.summary ?? file.summary,
+            evidence: part.evidence ?? file.evidence ?? [],
             status:   part.status ?? file.status,
             priority: part.priority ?? file.priority,
         });
@@ -154,8 +159,7 @@ export function CaseFile({ caseRef, onSaved, onDeleted, onClose, onChanged }: {
                         maxLength={160}
                         placeholder={t('mdt.caseTitleHint', 'Vinewood jewellery store robberies')}
                     />
-                    <MdtField
-                        multiline
+                    <MdtRichField
                         rows={6}
                         label={t('mdt.summary', 'Summary')}
                         value={draft.summary}
@@ -274,8 +278,7 @@ export function CaseFile({ caseRef, onSaved, onDeleted, onClose, onChanged }: {
                 <MdtCard className="p-4">
                     {editable ? (
                         <>
-                            <MdtField
-                                multiline
+                            <MdtRichField
                                 rows={5}
                                 value={summary}
                                 onChange={setSummary}
@@ -294,14 +297,22 @@ export function CaseFile({ caseRef, onSaved, onDeleted, onClose, onChanged }: {
                             )}
                         </>
                     ) : file.summary ? (
-                        <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-black dark:text-white">
-                            {file.summary}
-                        </p>
+                        <MdtRichText
+                            text={file.summary}
+                            className="text-[15px] leading-relaxed text-black dark:text-white"
+                        />
                     ) : (
                         <div className="text-[14px] text-ios-gray">
                             {t('mdt.noSummary', 'No summary was written for this case.')}
                         </div>
                     )}
+                </MdtCard>
+
+                <MdtCard className="mt-4 p-4">
+                    <MdtEvidence
+                        items={file.evidence ?? []}
+                        onChange={editable ? evidence => void patch({ evidence }) : undefined}
+                    />
                 </MdtCard>
 
                 <div className="mt-5 grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>

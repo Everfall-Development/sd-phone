@@ -73,6 +73,7 @@ local function bootstrap(src, _payload, me)
             type   = dept.type or 'leo',
             seal   = dept.seal or 'shield',
             accent = dept.accent or '#1D4ED8',
+            bench  = dept.bench == true,
         },
         grants = access.grants(src),
         -- Each terminal is handed its own reference catalog and not the other's: the penal code is

@@ -42,7 +42,7 @@ export function PersonPicker({ title, onPick, onClose }: {
         return () => window.removeEventListener('keydown', onKey, true);
     }, [onClose]);
 
-    const { data, loading } = useAsyncData(() => mdtPersonsSearch(term, page), [term, page]);
+    const { data, loading, settled } = useAsyncData(() => mdtPersonsSearch(term, page), [term, page]);
     const rows     = data?.rows ?? [];
     const total    = data?.total ?? 0;
     const pageSize = data?.pageSize ?? 25;
@@ -73,7 +73,7 @@ export function PersonPicker({ title, onPick, onClose }: {
                     </div>
 
                     <Scroller className="h-[320px] px-2 pb-2">
-                        {rows.length === 0 ? (
+                        {settled && rows.length === 0 ? (
                             <EmptyState
                                 center
                                 icon={Search}
@@ -85,7 +85,7 @@ export function PersonPicker({ title, onPick, onClose }: {
                                     : term ? t('mdt.noCitizenMatch', 'Nobody on record matches that search.') : undefined}
                             />
                         ) : (
-                            <div className="flex flex-col gap-0.5">
+                            <div className="mdt-stagger flex flex-col gap-0.5">
                                 {rows.map(row => (
                                     <CitizenRow
                                         key={row.citizenid}

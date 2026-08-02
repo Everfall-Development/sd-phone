@@ -73,7 +73,7 @@ export function ReportsPane() {
 
     useEffect(() => { setPage(1); }, [term, filter, setPage]);
 
-    const { data, loading, refetch } = useAsyncData(
+    const { data, loading, settled, refetch } = useAsyncData(
         () => mdtReports({ query: term, type: filter, page }),
         [term, filter, page],
     );
@@ -108,7 +108,7 @@ export function ReportsPane() {
                     {t('mdt.newReport', 'Create')}
                 </MdtButton>
             ) : undefined}
-            isEmpty={rows.length === 0}
+            isEmpty={settled && rows.length === 0}
             empty={empty}
             footer={<MdtPager page={data?.page ?? page} pageSize={pageSize} total={total} onPage={setPage} />}
         >
@@ -124,7 +124,7 @@ export function ReportsPane() {
                 />
             </div>
 
-            <div className="flex flex-col gap-0.5 px-1">
+            <div className="mdt-stagger flex flex-col gap-0.5 px-1">
                 {rows.map(row => (
                     <ReportListRow
                         key={row.ref}

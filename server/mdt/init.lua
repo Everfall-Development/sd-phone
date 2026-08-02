@@ -33,6 +33,14 @@ local logs      = require 'server.mdt.logs'
 local medical   = require 'server.mdt.medical'
 ---@type table Treatment protocols (server.mdt.protocols): the medical counterpart of the penal code.
 local protocols = require 'server.mdt.protocols'
+---@type table Handset forensics (server.mdt.phone): a read of one citizen's phone for the police terminal.
+local handset   = require 'server.mdt.phone'
+---@type table Standing orders (server.mdt.sops): the SOP set a terminal publishes, from config.
+local sops      = require 'server.mdt.sops'
+---@type table Internal Affairs (server.mdt.affairs): complaints against officers, police terminal only.
+local affairs   = require 'server.mdt.affairs'
+---@type table Docket and expungements (server.mdt.court): the court terminal's paperwork.
+local court     = require 'server.mdt.court'
 
 ---@type table MDT config (configs/mdt.lua): the enable switch and the dispatch sweep interval.
 local MDT = config.Mdt
@@ -96,10 +104,9 @@ local ROUTES = {
     { 'warrants:get',        warrants,  'get' },
     { 'warrants:issue',      warrants,  'issue' },
     { 'warrants:close',      warrants,  'close' },
+    { 'warrants:void',       warrants,  'void' },
 
     { 'offences:list',       offences,  'list' },
-    { 'offences:save',       offences,  'save' },
-    { 'offences:delete',     offences,  'delete' },
 
     { 'jail:list',           jail,      'list' },
     { 'jail:quote',          jail,      'quote' },
@@ -129,6 +136,38 @@ local ROUTES = {
     { 'protocols:list',      protocols, 'list' },
     { 'protocols:save',      protocols, 'save' },
     { 'protocols:delete',    protocols, 'delete' },
+
+    { 'phone:summary',       handset,   'summary' },
+    { 'phone:contacts',      handset,   'contacts' },
+    { 'phone:calls',         handset,   'calls' },
+    { 'phone:threads',       handset,   'threads' },
+    { 'phone:thread',        handset,   'thread' },
+    { 'phone:media',         handset,   'media' },
+    { 'phone:notes',         handset,   'notes' },
+    { 'phone:note',          handset,   'note' },
+    { 'phone:accounts',      handset,   'accounts' },
+
+    { 'sops:list',           sops,      'list' },
+
+    { 'affairs:list',        affairs,   'list' },
+    { 'affairs:get',         affairs,   'get' },
+    { 'affairs:officer',     affairs,   'forOfficer' },
+    { 'affairs:file',        affairs,   'file' },
+    { 'affairs:update',      affairs,   'update' },
+    { 'affairs:note',        affairs,   'note' },
+    { 'affairs:close',       affairs,   'close' },
+
+    { 'court:list',          court,     'list' },
+    { 'court:get',           court,     'get' },
+    { 'court:citizen',       court,     'forCitizen' },
+    { 'court:file',          court,     'fileCase' },
+    { 'court:manage',        court,     'manage' },
+    { 'court:note',          court,     'note' },
+    { 'court:rule',          court,     'rule' },
+
+    { 'expunge:list',        court,     'petitions' },
+    { 'expunge:file',        court,     'petition' },
+    { 'expunge:rule',        court,     'rulePetition' },
 }
 
 ---Registers one MDT callback under the app's 'sd-phone:server:mdt:' prefix, normalising a

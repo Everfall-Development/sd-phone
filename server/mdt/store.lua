@@ -17,7 +17,10 @@ store.tables = schema.tables
 store.ensureSchema = schema.ensureSchema
 
 ---@type table<string, string> Ref kind -> the letter officers read aloud on the radio.
-local REF_PREFIX = { report = 'R', case = 'C', warrant = 'W', arrest = 'A' }
+local REF_PREFIX = {
+    report = 'R', case = 'C', warrant = 'W', arrest = 'A',
+    ia = 'IA', court = 'CR', expunge = 'EX',
+}
 
 ---@type table<string, boolean> Counters currently mid-allocation, so two concurrent allocations
 ---of the same kind cannot read the same incremented value and mint a duplicate ref.
@@ -294,30 +297,6 @@ function store.namesFor(cids)
         local cid = list[i]
         local profile = fromProfiles[cid]
         out[cid] = (profile and profile.name) or fromFramework[cid] or cid
-    end
-    return out
-end
-
----The whole penal code, ordered by class then code. Read-only; offences.lua owns the writes.
----@return table[] rows { code, label, class, months, fine, description }
-function store.offences()
-    local rows = MySQL.query.await([[
-        SELECT `code`, `label`, `class`, `months`, `fine`, `description`
-        FROM phone_mdt_offences
-        ORDER BY FIELD(`class`, 'felony', 'misdemeanor', 'infraction'), `code`
-    ]]) or {}
-
-    local out = {}
-    for i = 1, #rows do
-        local r = rows[i]
-        out[i] = {
-            code        = r.code,
-            label       = r.label,
-            class       = r.class,
-            months      = tonumber(r.months) or 0,
-            fine        = tonumber(r.fine) or 0,
-            description = r.description or '',
-        }
     end
     return out
 end

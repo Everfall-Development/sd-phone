@@ -24,7 +24,9 @@ export function MdtHeader({ compact = false }: { compact?: boolean }) {
                     <span className="min-w-0 truncate text-[12px] font-semibold uppercase tracking-[0.09em] text-ios-gray">
                         {department?.type === 'ems'
                             ? t('mdt.terminalNameEms', 'Mobile Medical Terminal')
-                            : t('mdt.terminalName', 'Mobile Police Terminal')}
+                            : department?.type === 'doj'
+                                ? t('mdt.terminalNameDoj', 'Court Records Terminal')
+                                : t('mdt.terminalName', 'Mobile Police Terminal')}
                     </span>
                 </div>
 

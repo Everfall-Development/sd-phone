@@ -37,13 +37,41 @@ import {
     type VehicleStatus,
     type Department,
     type DepartmentType,
+    type CourtDetail,
+    type CourtNote,
+    type CourtNoteKind,
+    type CourtPlea,
+    type CourtStatus,
+    type CourtSummary,
+    type CourtVerdict,
+    type IaCategory,
+    type IaDetail,
+    type IaDiscipline,
+    type IaDisposition,
+    type IaNote,
+    type IaSeverity,
+    type IaStatus,
+    type IaSummary,
+    type Petition,
+    type PetitionStatus,
+    type Sop,
     type MedicalFile,
     type PatientDetail,
     type PatientPaperwork,
     type PatientRow,
+    type EvidenceItem,
     type Protocol,
     type Warrant,
     type WarrantCharge,
+    type HandsetAccounts,
+    type HandsetCall,
+    type HandsetContact,
+    type HandsetMemo,
+    type HandsetMessage,
+    type HandsetNote,
+    type HandsetPhoto,
+    type HandsetSummary,
+    type HandsetThread,
 } from './data';
 
 const HOUR = 3600;
@@ -85,12 +113,12 @@ const DEV_BOOTSTRAP: MdtBootstrap = {
         accent: '#1D4ED8',
     },
     grants: [
-        'home.view', 'persons.view', 'persons.edit', 'profiles.view',
+        'home.view', 'phone.view', 'persons.view', 'persons.edit', 'profiles.view',
         'vehicles.view', 'vehicles.edit',
         'reports.view', 'reports.create', 'reports.edit.own', 'reports.edit.any', 'reports.delete',
         'cases.view', 'cases.create', 'cases.edit', 'cases.delete',
         'warrants.view', 'warrants.issue', 'warrants.close',
-        'offences.view', 'offences.manage', 'offences.delete',
+        'offences.view',
         'roster.view', 'employees.view', 'roster.callsign', 'roster.radio', 'roster.grade', 'roster.dismiss',
         'dispatch.view', 'dispatch.attach', 'dispatch.status',
         'chat.view', 'chat.send',
@@ -98,6 +126,9 @@ const DEV_BOOTSTRAP: MdtBootstrap = {
         'jail.view', 'jail.book',
         'logs.view', 'me.update',
         'patients.view', 'patients.edit', 'protocols.view', 'protocols.manage',
+        'affairs.view', 'affairs.file', 'affairs.investigate', 'affairs.close',
+        'court.view', 'court.file', 'court.manage', 'court.rule',
+        'expunge.view', 'expunge.file', 'expunge.rule', 'warrants.void', 'sops.view',
     ],
     offences: DEV_OFFENCES,
     protocols: [],
@@ -110,6 +141,16 @@ const DEV_EMS_DEPARTMENT: Department = {
     type: 'ems',
     seal: 'ems',
     accent: '#E11D48',
+};
+
+const DEV_DOJ_DEPARTMENT: Department = {
+    job: 'judge',
+    label: 'San Andreas Superior Court',
+    short: 'SASC',
+    type: 'doj',
+    seal: 'doj',
+    accent: '#6D28D9',
+    bench: true,
 };
 
 let DEV_PROTOCOLS: Protocol[] = [
@@ -240,6 +281,7 @@ function line(code: string, count: number): WarrantCharge {
 
 let DEV_REPORTS: ReportDetail[] = [
     {
+        evidence: [],
         ref: 'R-0042', title: 'Armed robbery at the Strawberry Rob’s Liquor', type: 'Incident',
         author: 'Dana Whitlock', authorCid: 'WHT44012', callsign: 'LS-114',
         chargeCount: 2, createdAt: now - 3 * HOUR, updatedAt: now - 2 * HOUR,
@@ -252,6 +294,7 @@ let DEV_REPORTS: ReportDetail[] = [
         totalMonths: 38, totalFine: 3900, caseRef: 'C-0007', canEdit: true, canDelete: true,
     },
     {
+        evidence: [],
         ref: 'R-0041', title: 'Pursuit terminated at Mirror Park Boulevard', type: 'Traffic',
         author: 'Miles Okafor', authorCid: 'OKF77120', callsign: 'LS-208',
         chargeCount: 2, createdAt: now - 9 * HOUR, updatedAt: now - 9 * HOUR,
@@ -261,6 +304,7 @@ let DEV_REPORTS: ReportDetail[] = [
         totalMonths: 20, totalFine: 1600, canEdit: false, canDelete: true,
     },
     {
+        evidence: [],
         ref: 'R-0040', title: 'Recovered stolen vehicle, Del Perro lot', type: 'Investigation',
         author: 'Dana Whitlock', authorCid: 'WHT44012', callsign: 'LS-114',
         chargeCount: 1, createdAt: now - DAY, updatedAt: now - 20 * HOUR,
@@ -270,6 +314,7 @@ let DEV_REPORTS: ReportDetail[] = [
         totalMonths: 15, totalFine: 1200, caseRef: 'C-0007', canEdit: true, canDelete: true,
     },
     {
+        evidence: [],
         ref: 'R-0039', title: 'Traffic collision, Power Street and Alta', type: 'Traffic',
         author: 'Rosa Bianchi', authorCid: 'BNC30554', callsign: 'LS-301',
         chargeCount: 0, createdAt: now - 2 * DAY, updatedAt: now - 2 * DAY,
@@ -281,6 +326,7 @@ let DEV_REPORTS: ReportDetail[] = [
         charges: [], totalMonths: 0, totalFine: 0, canEdit: false, canDelete: true,
     },
     {
+        evidence: [],
         ref: 'R-0038', title: 'Arrest report, Kerrigan', type: 'Arrest',
         author: 'Dana Whitlock', authorCid: 'WHT44012', callsign: 'LS-114',
         chargeCount: 1, createdAt: now - 4 * DAY, updatedAt: now - 4 * DAY,
@@ -293,6 +339,7 @@ let DEV_REPORTS: ReportDetail[] = [
 
 let DEV_CASES: CaseDetail[] = [
     {
+        evidence: [],
         ref: 'C-0007', title: 'Strawberry commercial robbery series', status: 'in_progress', priority: 'high',
         createdBy: 'Dana Whitlock', createdAt: now - 5 * DAY, updatedAt: now - 2 * HOUR,
         summary: 'Three armed hold-ups of off-licences in the Strawberry and Davis corridor over eleven days. Same description of the suspect vehicle each time.',
@@ -313,6 +360,7 @@ let DEV_CASES: CaseDetail[] = [
         canEdit: true, canDelete: true,
     },
     {
+        evidence: [],
         ref: 'C-0006', title: 'Boardwalk assault, Vespucci', status: 'open', priority: 'medium',
         createdBy: 'Rosa Bianchi', createdAt: now - 8 * DAY, updatedAt: now - 3 * DAY,
         summary: 'Late night assault outside the Vespucci arcade. Victim declined to give a statement at the scene and has not returned calls.',
@@ -321,6 +369,7 @@ let DEV_CASES: CaseDetail[] = [
         reports: [], canEdit: true, canDelete: true,
     },
     {
+        evidence: [],
         ref: 'C-0005', title: 'Chop shop, Cypress Flats', status: 'closed', priority: 'low',
         createdBy: 'Grace Hartley', createdAt: now - 26 * DAY, updatedAt: now - 12 * DAY,
         summary: 'Warehouse cleared and the parts inventory seized. No further lines of enquiry.',
@@ -516,9 +565,13 @@ function nextRef(prefix: string): string {
 export async function mdtBootstrap(devDomain?: DepartmentType): Promise<MdtBootstrap | null> {
     if (!isFiveM) {
         const medical = devDomain === 'ems';
+        const court = devDomain === 'doj';
         return {
             ...DEV_BOOTSTRAP,
-            department: medical ? DEV_EMS_DEPARTMENT : DEV_BOOTSTRAP.department,
+            me: court
+                ? { ...DEV_BOOTSTRAP.me, name: 'Marion Voss', callsign: 'HON-002', rank: 'Superior Court Judge' }
+                : DEV_BOOTSTRAP.me,
+            department: medical ? DEV_EMS_DEPARTMENT : court ? DEV_DOJ_DEPARTMENT : DEV_BOOTSTRAP.department,
             grants: [...DEV_BOOTSTRAP.grants],
             offences: medical ? [] : [...DEV_OFFENCES],
             protocols: medical ? [...DEV_PROTOCOLS] : [],
@@ -697,6 +750,7 @@ function devSaveReport(draft: ReportDraft): ReportDetail {
 
     const existing = draft.ref ? DEV_REPORTS.find(r => r.ref === draft.ref) : undefined;
     const next: ReportDetail = {
+        evidence: [],
         ref: existing?.ref ?? nextRef('R'),
         title: draft.title,
         type: draft.type,
@@ -752,6 +806,7 @@ export interface CaseDraft {
     ref:      string | null;
     title:    string;
     summary:  string;
+    evidence: EvidenceItem[];
     status:   CaseStatus;
     priority: CasePriority;
 }
@@ -761,6 +816,7 @@ export async function mdtSaveCase(draft: CaseDraft): Promise<CaseDetail | null> 
         const stamp = Math.floor(Date.now() / 1000);
         const existing = draft.ref ? DEV_CASES.find(c => c.ref === draft.ref) : undefined;
         const next: CaseDetail = {
+            evidence: [],
             ref: existing?.ref ?? nextRef('C'),
             title: draft.title,
             summary: draft.summary,
@@ -970,24 +1026,6 @@ export async function mdtOffences(): Promise<Offence[]> {
     return (await apiData<{ rows: Offence[] }>('sd-phone:mdt:offences:list'))?.rows ?? [];
 }
 
-export async function mdtSaveOffence(offence: Offence): Promise<Offence | null> {
-    if (!isFiveM) {
-        const at = DEV_OFFENCES.findIndex(o => o.code === offence.code);
-        if (at >= 0) DEV_OFFENCES[at] = offence;
-        else DEV_OFFENCES.push(offence);
-        return offence;
-    }
-    return (await apiData<{ offence: Offence }>('sd-phone:mdt:offences:save', offence))?.offence ?? null;
-}
-
-export async function mdtDeleteOffence(code: string): Promise<boolean> {
-    if (!isFiveM) {
-        const at = DEV_OFFENCES.findIndex(o => o.code === code);
-        if (at >= 0) DEV_OFFENCES.splice(at, 1);
-        return true;
-    }
-    return (await apiCall<unknown>('sd-phone:mdt:offences:delete', { code })).success;
-}
 
 export async function mdtArrests(opts: { query?: string; page?: number } = {}): Promise<Page<ArrestRow>> {
     if (!isFiveM) {
@@ -1162,4 +1200,509 @@ export async function mdtLogs(opts: { entityType?: string; actor?: string; actio
         return paginate(hits, opts.page ?? 1);
     }
     return (await apiData<Page<AuditRow>>('sd-phone:mdt:logs:list', { ...opts, page: opts.page ?? 1 })) ?? emptyPage<AuditRow>();
+}
+
+const DEV_HANDSET_NUMBER = '555-0114';
+
+export async function mdtPhoneSummary(citizenid: string): Promise<HandsetSummary> {
+    if (!isFiveM) {
+        const person = DEV_PERSONS.find(p => p.citizenid === citizenid);
+        if (!person?.phone) return { device: null };
+        return {
+            device: {
+                number: person.phone, name: person.name, email: `${person.name.split(' ')[0].toLowerCase()}@lifeinvader.com`,
+                address: 'Vespucci Beach, Apt 4', locale: 'en', apps: 14, lastSeen: new Date().toISOString(),
+                sim: { identity: person.citizenid, owner: person.citizenid, adopted: null, since: '2026-01-04' },
+            },
+            counts: { contacts: 3, calls: 4, photos: 2, notes: 2, memos: 1 },
+            blocked: [{ number: '555-0199', created_at: '2026-05-02' }],
+        };
+    }
+    return (await apiData<HandsetSummary>('sd-phone:mdt:phone:summary', { citizenid })) ?? { device: null };
+}
+
+export async function mdtPhoneContacts(citizenid: string, page = 1): Promise<Page<HandsetContact>> {
+    if (!isFiveM) {
+        return paginate(DEV_PERSONS.filter(p => p.citizenid !== citizenid && p.phone).map(p => ({
+            name: p.name, phone: p.phone, email: null, favorite: false, created_at: '2026-04-11',
+        })), page);
+    }
+    return (await apiData<Page<HandsetContact>>('sd-phone:mdt:phone:contacts', { citizenid, page })) ?? emptyPage<HandsetContact>();
+}
+
+export async function mdtPhoneCalls(citizenid: string, page = 1): Promise<Page<HandsetCall>> {
+    if (!isFiveM) {
+        const others = DEV_PERSONS.filter(p => p.citizenid !== citizenid && p.phone);
+        return paginate(others.flatMap((p, i) => ([
+            { number: p.phone, name: p.name, direction: i % 2 ? 'incoming' : 'outgoing', duration: 45 + i * 30,
+              called_at: '2026-07-3' + (i % 2) + ' 14:0' + i, ownerCid: p.citizenid, ownerName: p.name },
+        ])), page);
+    }
+    return (await apiData<Page<HandsetCall>>('sd-phone:mdt:phone:calls', { citizenid, page })) ?? emptyPage<HandsetCall>();
+}
+
+export async function mdtPhoneThreads(citizenid: string, page = 1): Promise<Page<HandsetThread>> {
+    if (!isFiveM) {
+        return paginate(DEV_PERSONS.filter(p => p.citizenid !== citizenid && p.phone).map((p, i) => ({
+            id: p.phone, name: p.name, isGroup: false, messages: 2,
+            last_message: i % 2 ? 'call me when you land' : 'got it, on my way',
+            last_message_timestamp: '2026-07-31 1' + i + ':20',
+            members: [{ number: p.phone, name: p.name, cid: p.citizenid }],
+        })), page);
+    }
+    return (await apiData<Page<HandsetThread>>('sd-phone:mdt:phone:threads', { citizenid, page })) ?? emptyPage<HandsetThread>();
+}
+
+export async function mdtPhoneThread(citizenid: string, channelId: string, page = 1): Promise<Page<HandsetMessage>> {
+    if (!isFiveM) {
+        return paginate([
+            { id: 'm1', sender: DEV_HANDSET_NUMBER, senderName: null, content: 'got it, on my way', attachments: null, timestamp: '2026-07-31 14:02', outgoing: true },
+            { id: 'm2', sender: '555-0201', senderName: 'Marcus Kerrigan', content: 'call me when you land', attachments: null, timestamp: '2026-07-31 14:01', outgoing: false },
+        ], page);
+    }
+    return (await apiData<Page<HandsetMessage>>('sd-phone:mdt:phone:thread', { citizenid, channelId, page })) ?? emptyPage<HandsetMessage>();
+}
+
+export async function mdtPhoneMedia(citizenid: string, page = 1): Promise<Page<HandsetPhoto> & { memos?: HandsetMemo[] }> {
+    if (!isFiveM) {
+        const out = paginate<HandsetPhoto>([
+            { id: 'v1', url: 'dev://handset/clip-1.webm', created_at: '2026-07-31 23:46' },
+            { id: 'p1', url: 'dev://handset/still-1.jpg', created_at: '2026-07-31 23:46' },
+            { id: 'p2', url: 'dev://handset/still-2.jpg', created_at: '2026-07-31 18:31' },
+        ], page);
+        return { ...out, memos: [{ id: 'm1', name: 'Voice memo 1', url: '', duration: 34, created_at: '2026-07-20' }] };
+    }
+    return (await apiData<Page<HandsetPhoto> & { memos?: HandsetMemo[] }>('sd-phone:mdt:phone:media', { citizenid, page })) ?? emptyPage<HandsetPhoto>();
+}
+
+export async function mdtPhoneNotes(citizenid: string, page = 1): Promise<Page<HandsetNote>> {
+    if (!isFiveM) {
+        return paginate([
+            { id: 'n1', body: 'Meet at the lockup, 2am.\nBring the van and the bolt cutters.', images: [], sketchCount: 0, hasSketch: false, hasImage: false, created_at: '2026-07-12', updated_at: '2026-07-12' },
+            { id: 'n2', body: 'Plate to check: 47XKD902', images: ['dev://handset/note-1.jpg', 'dev://handset/note-2.jpg'], sketchCount: 1, hasSketch: true, hasImage: true, created_at: '2026-06-30', updated_at: '2026-07-02' },
+        ], page);
+    }
+    return (await apiData<Page<HandsetNote>>('sd-phone:mdt:phone:notes', { citizenid, page })) ?? emptyPage<HandsetNote>();
+}
+
+export async function mdtPhoneNote(citizenid: string, id: string): Promise<string[]> {
+    if (!isFiveM) return id === 'n2' ? ['dev://handset/sketch-1.png'] : [];
+    return (await apiData<{ sketches: string[] }>('sd-phone:mdt:phone:note', { citizenid, id }))?.sketches ?? [];
+}
+
+export async function mdtPhoneAccounts(citizenid: string): Promise<HandsetAccounts> {
+    if (!isFiveM) {
+        return {
+            mail: [{ email: 'e.moreno@lifeinvader.com', display_name: 'Elena Moreno', created_at: '2026-02-11' }],
+            apps: [
+                { app: 'photogram', username: 'elena.m', display_name: 'Elena', created_at: '2026-02-12' },
+                { app: 'birdy', username: 'emoreno', display_name: 'Elena M', created_at: '2026-03-01' },
+            ],
+        };
+    }
+    return (await apiData<HandsetAccounts>('sd-phone:mdt:phone:accounts', { citizenid })) ?? { mail: [], apps: [] };
+}
+
+const DEV_IA: IaDetail[] = [
+    {
+        ref: 'IA-0007', title: 'Excessive force during Vespucci arrest',
+        subject: 'Miles Okafor', subjectId: 'OKF31207', rank: 'Officer',
+        category: 'force', status: 'investigating', severity: 'high',
+        filedBy: 'Dana Whitlock', assigned: 'Dana Whitlock', assignedId: 'WHT44012',
+        createdAt: now - DAY * 6, updatedAt: now - DAY * 1,
+        summary: 'Complainant states the subject officer struck him **after** he was already restrained on the ground.\n\nBody camera footage covers the first 40 seconds only.',
+        evidence: [], disposition: null, discipline: null, finding: '', closedAt: null,
+        notes: [
+            { author: 'Dana Whitlock', body: 'Pulled the unit history and the dispatch audio for the window. Requested the second unit statement.', createdAt: now - DAY * 5 },
+            { author: 'Dana Whitlock', body: 'Second unit confirms the subject was restrained before the strike. Escalating to review.', createdAt: now - DAY * 1 },
+        ],
+    },
+    {
+        ref: 'IA-0006', title: 'Unlawful database lookup',
+        subject: 'Rosa Bianchi', subjectId: 'BNC77420', rank: 'Officer',
+        category: 'misconduct', status: 'closed', severity: 'medium',
+        filedBy: 'Dana Whitlock', assigned: 'Dana Whitlock', assignedId: 'WHT44012',
+        createdAt: now - DAY * 20, updatedAt: now - DAY * 12,
+        summary: 'Ran a plate belonging to a personal acquaintance with no call attached.',
+        evidence: [], disposition: 'sustained', discipline: 'reprimand',
+        finding: 'The lookup had no operational basis. Written reprimand issued and logged.',
+        closedAt: now - DAY * 12,
+        notes: [{ author: 'Dana Whitlock', body: 'Audit trail confirms the query with no matching call.', createdAt: now - DAY * 18 }],
+    },
+    {
+        ref: 'IA-0005', title: 'Pursuit policy, Route 68',
+        subject: 'Miles Okafor', subjectId: 'OKF31207', rank: 'Officer',
+        category: 'pursuit', status: 'open', severity: 'low',
+        filedBy: 'Dana Whitlock', assigned: null, assignedId: null,
+        createdAt: now - DAY * 2, updatedAt: now - DAY * 2,
+        summary: 'Pursuit continued past the point supervision called it off.',
+        evidence: [], disposition: null, discipline: null, finding: '', closedAt: null, notes: [],
+    },
+];
+
+const DEV_COURT: CourtDetail[] = [
+    {
+        ref: 'CR-0031', title: 'The People v. Kerrigan',
+        defendant: 'Marcus Kerrigan', citizenid: 'KRV20884',
+        status: 'scheduled', plea: 'not_guilty', verdict: null,
+        hearingAt: now + DAY * 2, judge: 'Marion Voss', prosecutor: 'Adrian Cole', defence: 'Nina Ferrara',
+        createdAt: now - DAY * 9, updatedAt: now - DAY * 1,
+        charges: [
+            { code: 'PC 211', label: 'Armed Robbery', class: 'felony', count: 1, months: 32, fine: 3500 },
+            { code: 'PC 501', label: 'Resisting Arrest', class: 'misdemeanor', count: 1, months: 6, fine: 400 },
+        ],
+        evidence: [], summary: 'Arraignment held. Defendant entered a plea of not guilty and was released on bond pending trial.',
+        ruling: '', reportRef: 'R-0042', sentenceMonths: 0, sentenceFine: 0,
+        filedBy: 'Adrian Cole', judgeId: 'VSS10001', prosecutorId: 'COL22110', defenceId: 'FRR33009',
+        notes: [
+            { author: 'Adrian Cole', kind: 'filing', body: 'Information filed on both counts. Requesting a trial date inside 14 days.', createdAt: now - DAY * 9 },
+            { author: 'Nina Ferrara', kind: 'motion', body: 'Motion to suppress the second search. No warrant is attached to the report.', createdAt: now - DAY * 4 },
+            { author: 'Marion Voss', kind: 'ruling', body: 'Motion to suppress denied. The search falls inside the arrest. Trial set.', createdAt: now - DAY * 1 },
+        ],
+    },
+    {
+        ref: 'CR-0030', title: 'The People v. Moreno',
+        defendant: 'Elena Moreno', citizenid: 'MRN91223',
+        status: 'closed', plea: 'guilty', verdict: 'plea',
+        hearingAt: now - DAY * 3, judge: 'Marion Voss', prosecutor: 'Adrian Cole', defence: null,
+        createdAt: now - DAY * 15, updatedAt: now - DAY * 3,
+        charges: [{ code: 'PC 918', label: 'Reckless Driving', class: 'misdemeanor', count: 1, months: 10, fine: 800 }],
+        evidence: [], summary: 'Resolved by plea agreement at the first hearing.',
+        ruling: 'Plea accepted. Custodial term suspended, fine imposed in full.',
+        reportRef: 'R-0039', sentenceMonths: 0, sentenceFine: 800,
+        filedBy: 'Adrian Cole', judgeId: 'VSS10001', prosecutorId: 'COL22110', defenceId: null,
+        notes: [{ author: 'Marion Voss', kind: 'ruling', body: 'Plea accepted on the record.', createdAt: now - DAY * 3 }],
+    },
+    {
+        ref: 'CR-0029', title: 'The People v. Bashir',
+        defendant: 'Cody Bashir', citizenid: 'BSH70145',
+        status: 'filed', plea: null, verdict: null,
+        hearingAt: null, judge: null, prosecutor: 'Adrian Cole', defence: null,
+        createdAt: now - DAY * 1, updatedAt: now - DAY * 1,
+        charges: [{ code: 'PC 204', label: 'Vehicle Theft', class: 'felony', count: 1, months: 15, fine: 1200 }],
+        evidence: [], summary: '', ruling: '', reportRef: 'R-0040', sentenceMonths: 0, sentenceFine: 0,
+        filedBy: 'Adrian Cole', judgeId: null, prosecutorId: 'COL22110', defenceId: null, notes: [],
+    },
+];
+
+const DEV_PETITIONS: Petition[] = [
+    {
+        ref: 'EX-0012', citizenid: 'MRN91223', subject: 'Elena Moreno',
+        scope: ['R-0039'], reason: 'Single misdemeanor, sentence served in full, four years clear since.',
+        status: 'pending', ruling: '', filedBy: 'Nina Ferrara', ruledBy: null, cleared: 0,
+        createdAt: now - DAY * 3, updatedAt: now - DAY * 3,
+    },
+    {
+        ref: 'EX-0011', citizenid: 'ODN55310', subject: 'Priya Odenkirk',
+        scope: [], reason: 'Blanket petition. Charges arose from a single incident later found to be mistaken identity.',
+        status: 'granted', ruling: 'Granted in full. The record is sealed.',
+        filedBy: 'Nina Ferrara', ruledBy: 'Marion Voss', cleared: 3,
+        createdAt: now - DAY * 30, updatedAt: now - DAY * 22,
+    },
+    {
+        ref: 'EX-0010', citizenid: 'KRV20884', subject: 'Marcus Kerrigan',
+        scope: ['R-0042'], reason: 'Petition filed while the underlying matter is still before the court.',
+        status: 'denied', ruling: 'Denied. The charges named are the subject of a pending trial.',
+        filedBy: 'Nina Ferrara', ruledBy: 'Marion Voss', cleared: 0,
+        createdAt: now - DAY * 8, updatedAt: now - DAY * 7,
+    },
+];
+
+function iaSummary(f: IaDetail): IaSummary {
+    return {
+        ref: f.ref, title: f.title, subject: f.subject, subjectId: f.subjectId, rank: f.rank,
+        category: f.category, status: f.status, severity: f.severity,
+        filedBy: f.filedBy, assigned: f.assigned, createdAt: f.createdAt, updatedAt: f.updatedAt,
+    };
+}
+
+function courtSummary(c: CourtDetail): CourtSummary {
+    return {
+        ref: c.ref, title: c.title, defendant: c.defendant, citizenid: c.citizenid,
+        status: c.status, plea: c.plea, verdict: c.verdict, hearingAt: c.hearingAt,
+        judge: c.judge, prosecutor: c.prosecutor, defence: c.defence,
+        charges: c.charges.length, createdAt: c.createdAt, updatedAt: c.updatedAt,
+    };
+}
+
+export async function mdtAffairs(opts: { query?: string; status?: IaStatus; category?: IaCategory; page?: number } = {}): Promise<Page<IaSummary>> {
+    if (!isFiveM) {
+        const hits = DEV_IA.filter(f => {
+            if (opts.status && f.status !== opts.status) return false;
+            if (opts.category && f.category !== opts.category) return false;
+            if (!opts.query || opts.query.trim().length < 2) return true;
+            return matches(opts.query, f.title, f.subject, f.ref);
+        });
+        return paginate(hits.map(iaSummary), opts.page ?? 1);
+    }
+    return (await apiData<Page<IaSummary>>('sd-phone:mdt:affairs:list', { ...opts, page: opts.page ?? 1 })) ?? emptyPage<IaSummary>();
+}
+
+export async function mdtAffairsGet(ref: string): Promise<IaDetail | null> {
+    if (!isFiveM) return DEV_IA.find(f => f.ref === ref) ?? null;
+    return apiData<{ file: IaDetail }>('sd-phone:mdt:affairs:get', { ref }).then(d => d?.file ?? null);
+}
+
+export async function mdtAffairsForOfficer(citizenid: string): Promise<IaSummary[]> {
+    if (!isFiveM) return DEV_IA.filter(f => f.subjectId === citizenid).map(iaSummary);
+    return apiData<{ rows: IaSummary[] }>('sd-phone:mdt:affairs:officer', { citizenid }).then(d => d?.rows ?? []);
+}
+
+export async function mdtAffairsFile(input: {
+    citizenid: string; title: string; category: IaCategory; severity: IaSeverity;
+    summary: string; rank?: string; evidence?: EvidenceItem[];
+}): Promise<IaDetail | null> {
+    if (!isFiveM) {
+        const file: IaDetail = {
+            ref: nextRef('IA'), title: input.title, subject: input.citizenid, subjectId: input.citizenid,
+            rank: input.rank ?? '', category: input.category, status: 'open', severity: input.severity,
+            filedBy: DEV_BOOTSTRAP.me.name, assigned: null, assignedId: null,
+            createdAt: now, updatedAt: now, summary: input.summary, evidence: input.evidence ?? [],
+            disposition: null, discipline: null, finding: '', closedAt: null, notes: [],
+        };
+        DEV_IA.unshift(file);
+        return file;
+    }
+    return apiCall<{ file: IaDetail }>('sd-phone:mdt:affairs:file', input).then(r => r.data?.file ?? null);
+}
+
+export async function mdtAffairsUpdate(input: {
+    ref: string; status?: IaStatus; severity?: IaSeverity; category?: IaCategory;
+    title?: string; summary?: string; assign?: string | null; evidence?: EvidenceItem[];
+}): Promise<IaDetail | null> {
+    if (!isFiveM) {
+        const file = DEV_IA.find(f => f.ref === input.ref);
+        if (!file) return null;
+        Object.assign(file, {
+            status: input.status ?? file.status,
+            severity: input.severity ?? file.severity,
+            category: input.category ?? file.category,
+            title: input.title ?? file.title,
+            summary: input.summary ?? file.summary,
+            evidence: input.evidence ?? file.evidence,
+            updatedAt: Math.floor(Date.now() / 1000),
+        });
+        return file;
+    }
+    return apiCall<{ file: IaDetail }>('sd-phone:mdt:affairs:update', input).then(r => r.data?.file ?? null);
+}
+
+export async function mdtAffairsNote(ref: string, body: string): Promise<IaNote[] | null> {
+    if (!isFiveM) {
+        const file = DEV_IA.find(f => f.ref === ref);
+        if (!file) return null;
+        file.notes = [...file.notes, { author: DEV_BOOTSTRAP.me.name, body, createdAt: Math.floor(Date.now() / 1000) }];
+        return file.notes;
+    }
+    return apiCall<{ notes: IaNote[] }>('sd-phone:mdt:affairs:note', { ref, body }).then(r => r.data?.notes ?? null);
+}
+
+export async function mdtAffairsClose(input: {
+    ref: string; disposition: IaDisposition; discipline: IaDiscipline; finding: string;
+}): Promise<IaDetail | null> {
+    if (!isFiveM) {
+        const file = DEV_IA.find(f => f.ref === input.ref);
+        if (!file) return null;
+        const stamp = Math.floor(Date.now() / 1000);
+        Object.assign(file, {
+            status: 'closed' as IaStatus,
+            disposition: input.disposition,
+            discipline: input.disposition === 'sustained' ? input.discipline : 'none',
+            finding: input.finding, closedAt: stamp, updatedAt: stamp,
+        });
+        return file;
+    }
+    return apiCall<{ file: IaDetail }>('sd-phone:mdt:affairs:close', input).then(r => r.data?.file ?? null);
+}
+
+export async function mdtCourt(opts: { query?: string; status?: CourtStatus; mine?: boolean; page?: number } = {}): Promise<Page<CourtSummary>> {
+    if (!isFiveM) {
+        const hits = DEV_COURT.filter(c => {
+            if (opts.status && c.status !== opts.status) return false;
+            if (!opts.query || opts.query.trim().length < 2) return true;
+            return matches(opts.query, c.title, c.defendant, c.ref);
+        });
+        return paginate(hits.map(courtSummary), opts.page ?? 1);
+    }
+    return (await apiData<Page<CourtSummary>>('sd-phone:mdt:court:list', { ...opts, page: opts.page ?? 1 })) ?? emptyPage<CourtSummary>();
+}
+
+export async function mdtCourtGet(ref: string): Promise<CourtDetail | null> {
+    if (!isFiveM) return DEV_COURT.find(c => c.ref === ref) ?? null;
+    return apiData<{ file: CourtDetail }>('sd-phone:mdt:court:get', { ref }).then(d => d?.file ?? null);
+}
+
+export async function mdtCourtForCitizen(citizenid: string): Promise<CourtSummary[]> {
+    if (!isFiveM) return DEV_COURT.filter(c => c.citizenid === citizenid).map(courtSummary);
+    return apiData<{ rows: CourtSummary[] }>('sd-phone:mdt:court:citizen', { citizenid }).then(d => d?.rows ?? []);
+}
+
+export async function mdtCourtFile(input: {
+    citizenid: string; title: string; reportRef?: string; charges?: ChargeInput[];
+    summary?: string; evidence?: EvidenceItem[];
+}): Promise<CourtDetail | null> {
+    if (!isFiveM) {
+        const file: CourtDetail = {
+            ref: nextRef('CR'), title: input.title, defendant: input.citizenid, citizenid: input.citizenid,
+            status: 'filed', plea: null, verdict: null, hearingAt: null,
+            judge: null, prosecutor: DEV_BOOTSTRAP.me.name, defence: null,
+            createdAt: now, updatedAt: now,
+            charges: (input.charges ?? []).map(c => {
+                const o = DEV_OFFENCES.find(x => x.code === c.code);
+                return {
+                    code: c.code, label: o?.label ?? c.code, class: o?.class ?? 'infraction',
+                    count: c.count ?? 1, months: o?.months ?? 0, fine: o?.fine ?? 0,
+                };
+            }),
+            evidence: input.evidence ?? [], summary: input.summary ?? '', ruling: '',
+            reportRef: input.reportRef ?? null, sentenceMonths: 0, sentenceFine: 0,
+            filedBy: DEV_BOOTSTRAP.me.name, judgeId: null, prosecutorId: null, defenceId: null, notes: [],
+        };
+        DEV_COURT.unshift(file);
+        return file;
+    }
+    return apiCall<{ file: CourtDetail }>('sd-phone:mdt:court:file', input).then(r => r.data?.file ?? null);
+}
+
+export async function mdtCourtManage(input: {
+    ref: string; status?: CourtStatus; title?: string; summary?: string; plea?: CourtPlea | null;
+    hearingAt?: number | null; judge?: string | null; prosecutor?: string | null;
+    defence?: string | null; evidence?: EvidenceItem[];
+}): Promise<CourtDetail | null> {
+    if (!isFiveM) {
+        const file = DEV_COURT.find(c => c.ref === input.ref);
+        if (!file) return null;
+        Object.assign(file, {
+            status: input.status ?? file.status,
+            title: input.title ?? file.title,
+            summary: input.summary ?? file.summary,
+            plea: input.plea !== undefined ? input.plea : file.plea,
+            hearingAt: input.hearingAt !== undefined ? input.hearingAt : file.hearingAt,
+            evidence: input.evidence ?? file.evidence,
+            updatedAt: Math.floor(Date.now() / 1000),
+        });
+        return file;
+    }
+    return apiCall<{ file: CourtDetail }>('sd-phone:mdt:court:manage', input).then(r => r.data?.file ?? null);
+}
+
+export async function mdtCourtNote(ref: string, body: string, kind: CourtNoteKind): Promise<CourtNote[] | null> {
+    if (!isFiveM) {
+        const file = DEV_COURT.find(c => c.ref === ref);
+        if (!file) return null;
+        file.notes = [...file.notes, { author: DEV_BOOTSTRAP.me.name, kind, body, createdAt: Math.floor(Date.now() / 1000) }];
+        return file.notes;
+    }
+    return apiCall<{ notes: CourtNote[] }>('sd-phone:mdt:court:note', { ref, body, kind }).then(r => r.data?.notes ?? null);
+}
+
+export async function mdtCourtRule(input: {
+    ref: string; verdict: CourtVerdict; sentenceMonths?: number; sentenceFine?: number; ruling?: string;
+}): Promise<CourtDetail | null> {
+    if (!isFiveM) {
+        const file = DEV_COURT.find(c => c.ref === input.ref);
+        if (!file) return null;
+        const guilty = input.verdict === 'guilty' || input.verdict === 'plea';
+        Object.assign(file, {
+            status: input.verdict === 'dismissed' ? ('dismissed' as CourtStatus) : ('closed' as CourtStatus),
+            verdict: input.verdict,
+            sentenceMonths: guilty ? (input.sentenceMonths ?? 0) : 0,
+            sentenceFine: guilty ? (input.sentenceFine ?? 0) : 0,
+            ruling: input.ruling ?? '',
+            judge: file.judge ?? DEV_BOOTSTRAP.me.name,
+            updatedAt: Math.floor(Date.now() / 1000),
+        });
+        return file;
+    }
+    return apiCall<{ file: CourtDetail }>('sd-phone:mdt:court:rule', input).then(r => r.data?.file ?? null);
+}
+
+export async function mdtPetitions(opts: { query?: string; status?: PetitionStatus; page?: number } = {}): Promise<Page<Petition>> {
+    if (!isFiveM) {
+        const hits = DEV_PETITIONS.filter(p => {
+            if (opts.status && p.status !== opts.status) return false;
+            if (!opts.query || opts.query.trim().length < 2) return true;
+            return matches(opts.query, p.subject, p.citizenid, p.ref);
+        });
+        return paginate(hits, opts.page ?? 1);
+    }
+    return (await apiData<Page<Petition>>('sd-phone:mdt:expunge:list', { ...opts, page: opts.page ?? 1 })) ?? emptyPage<Petition>();
+}
+
+export async function mdtPetitionFile(input: { citizenid: string; reason: string; scope?: string[] }): Promise<Petition | null> {
+    if (!isFiveM) {
+        const petition: Petition = {
+            ref: nextRef('EX'), citizenid: input.citizenid, subject: input.citizenid,
+            scope: input.scope ?? [], reason: input.reason, status: 'pending', ruling: '',
+            filedBy: DEV_BOOTSTRAP.me.name, ruledBy: null, cleared: 0,
+            createdAt: Math.floor(Date.now() / 1000), updatedAt: Math.floor(Date.now() / 1000),
+        };
+        DEV_PETITIONS.unshift(petition);
+        return petition;
+    }
+    return apiCall<{ petition: Petition }>('sd-phone:mdt:expunge:file', input).then(r => r.data?.petition ?? null);
+}
+
+export async function mdtPetitionRule(input: { ref: string; grant: boolean; ruling?: string }): Promise<Petition | null> {
+    if (!isFiveM) {
+        const petition = DEV_PETITIONS.find(p => p.ref === input.ref);
+        if (!petition) return null;
+        Object.assign(petition, {
+            status: input.grant ? ('granted' as PetitionStatus) : ('denied' as PetitionStatus),
+            ruling: input.ruling ?? '',
+            ruledBy: DEV_BOOTSTRAP.me.name,
+            cleared: input.grant ? petition.scope.length || 3 : 0,
+            updatedAt: Math.floor(Date.now() / 1000),
+        });
+        return petition;
+    }
+    return apiCall<{ petition: Petition }>('sd-phone:mdt:expunge:rule', input).then(r => r.data?.petition ?? null);
+}
+
+export async function mdtWarrantVoid(ref: string): Promise<boolean> {
+    if (!isFiveM) return true;
+    return apiCall('sd-phone:mdt:warrants:void', { ref }).then(r => r.success === true);
+}
+
+const DEV_SOPS: Sop[] = [
+    {
+        code: 'SOP 100', title: 'Use of Force', category: 'Conduct', revised: 'Revision 4',
+        summary: 'The force continuum, and what has to be reported afterwards.',
+        body: 'Force used must be **objectively reasonable** for the resistance actually met, and it stops the moment the resistance does.\n\nThe continuum, in order:\n- Presence and verbal direction\n- Soft empty hand control\n- Hard empty hand control\n- Intermediate weapons\n- Deadly force\n\nDeadly force is authorised only against an immediate threat of death or serious bodily harm. A fleeing suspect is not, by itself, that threat.\n\n**After any force above verbal direction:**\n- Render or summon medical aid before anything else\n- Notify a supervisor on the air, not afterwards in person\n- File a report the same shift, naming every officer present',
+    },
+    {
+        code: 'SOP 101', title: 'Vehicle Pursuits', category: 'Conduct', revised: 'Revision 2',
+        summary: 'When a pursuit may start, when it must be called off.',
+        body: 'A pursuit is justified only when the offence in hand is **serious enough to outweigh the risk** the pursuit itself creates. Speeding alone is not.\n\nThe primary unit calls the pursuit and gives direction, speed and street names. The secondary handles the radio. **No more than two units** join without supervisory approval.\n\nA supervisor may terminate at any time, and a termination is absolute: acknowledge it and disengage, do not shadow the vehicle.',
+    },
+    {
+        code: 'SOP 102', title: 'Traffic Stops', category: 'Patrol', revised: 'Revision 1',
+        summary: 'Positioning, approach, and what to call in before you leave the car.',
+        body: 'Call the stop in **before** you leave the vehicle: your location, the plate, and the number of occupants.\n\nPosition with an offset to the driver side and turn the wheels away from the lane. Approach on the passenger side where traffic makes the driver side unsafe.\n\nState the reason for the stop first. A driver who knows why they were stopped argues less.',
+    },
+    {
+        code: 'SOP 103', title: 'Arrest and Booking', category: 'Custody', revised: 'Revision 3',
+        summary: 'From cuffs to cell, and the paperwork each step needs.',
+        body: 'Search every arrestee before they enter a vehicle, including one arrested by another officer. **Never accept that somebody else already searched them.**\n\nAt booking:\n- Photograph and record the arrest on the person record\n- List every charge from the penal code, not from memory\n- Property is inventoried in front of the arrestee',
+    },
+    {
+        code: 'SOP 104', title: 'Evidence Handling', category: 'Investigations', revised: 'Revision 2',
+        summary: 'Chain of custody, and what breaks it.',
+        body: 'Evidence is photographed **in place** before it is moved. A photograph taken after the fact proves nothing about where the item was found.\n\nEvery transfer is recorded: who had it, who took it, and when. An unexplained gap in that chain is what a defence attorney is looking for.',
+    },
+    {
+        code: 'SOP 105', title: 'Radio Discipline', category: 'Communications', revised: 'Revision 1',
+        summary: 'Callsigns, status codes and priority traffic.',
+        body: 'Identify with your callsign first, then the message. Listen before transmitting.\n\nStatus codes:\n- `10-8` available\n- `10-6` busy on a call\n- `10-7` out of service\n- `10-90` emergency, all other traffic stops\n\n`10-90` is for an officer in immediate danger. Using it for anything else trains everybody to ignore it.',
+    },
+    {
+        code: 'SOP 107', title: 'Report Writing', category: 'Records', revised: 'Revision 2',
+        summary: 'What a narrative has to contain to survive a courtroom.',
+        body: 'Write in the **first person, past tense, and in the order it happened**.\n\nDo not write conclusions. "He was nervous" is an opinion; "his hands were shaking and he looked repeatedly at the passenger footwell" is evidence.\n\nCharges are attached from the penal code, and the terminal totals the sentence. Never write a figure into the narrative by hand.',
+    },
+];
+
+export async function mdtSops(): Promise<Sop[]> {
+    if (!isFiveM) return [...DEV_SOPS];
+    return (await apiData<{ rows: Sop[] }>('sd-phone:mdt:sops:list'))?.rows ?? [];
 }

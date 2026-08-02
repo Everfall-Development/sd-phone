@@ -254,11 +254,14 @@ local function priorsFor(me, citizenid)
     for i = 1, #args do params[#params + 1] = args[i] end
     params[#params + 1] = PRIORS_LIMIT
 
+    -- An expunged charge line is gone from the record as far as anyone reading it is concerned.
+    -- The row survives so the report it was filed on stays whole; a court sealed the charge, it
+    -- did not rewrite the officer's paperwork.
     local rows = MySQL.query.await(([[
         SELECT r.ref, c.code, c.label, c.class, c.count, r.title, r.created_at
         FROM phone_mdt_report_charges c
         JOIN phone_mdt_reports r ON r.id = c.report_id
-        WHERE c.citizenid = ? AND %s
+        WHERE c.citizenid = ? AND c.expunged = 0 AND %s
         ORDER BY r.created_at DESC
         LIMIT ?
     ]]):format(clause), params) or {}

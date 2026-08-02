@@ -269,7 +269,7 @@ export function ProtocolsPane() {
                     ]}
                 />
             </div>
-            <div className="flex flex-col gap-0.5">
+            <div className="mdt-stagger flex flex-col gap-0.5">
                 {shown.map(p => (
                     <button
                         key={p.code}

@@ -16,7 +16,7 @@ import { SegmentedControl } from '@/ui/SegmentedControl';
 
 import { catalogIndex, ChargePicker, inputTotals, sentenceLabel } from './ChargePicker';
 import type { ChargeInput, Warrant } from './data';
-import { mdtCloseWarrant, mdtIssueWarrant, mdtWarrant, mdtWarrants } from './mdtApi';
+import { mdtCloseWarrant, mdtIssueWarrant, mdtWarrant, mdtWarrantVoid, mdtWarrants } from './mdtApi';
 import { PersonPicker } from './PersonPicker';
 import { ReportLinker } from './ReportEditor';
 import { useMdtSession } from './useMdtSession';
@@ -90,7 +90,7 @@ export function WarrantsPane() {
 
     useEffect(() => { setPage(1); }, [term, status, setPage]);
 
-    const { data, loading, refetch } = useAsyncData(
+    const { data, loading, settled, refetch } = useAsyncData(
         () => mdtWarrants({ status, query: term, page }),
         [status, term, page],
     );
@@ -127,7 +127,7 @@ export function WarrantsPane() {
                     {t('mdt.issueWarrant', 'Issue')}
                 </MdtButton>
             ) : undefined}
-            isEmpty={rows.length === 0}
+            isEmpty={settled && rows.length === 0}
             empty={empty}
             footer={<MdtPager page={data?.page ?? page} pageSize={pageSize} total={total} onPage={setPage} />}
         >
@@ -142,7 +142,7 @@ export function WarrantsPane() {
                 />
             </div>
 
-            <div className="flex flex-col gap-0.5 px-1">
+            <div className="mdt-stagger flex flex-col gap-0.5 px-1">
                 {rows.map(row => (
                     <WarrantListRow
                         key={row.ref}
@@ -165,6 +165,7 @@ export function WarrantsPane() {
                         key={selected}
                         warrantRef={selected}
                         canClose={can('warrants.close')}
+                        canVoid={can('warrants.void')}
                         onClosed={refetch}
                     />
                 ) : undefined}
@@ -203,9 +204,10 @@ function Figure({ label, value }: { label: string; value: string }) {
     );
 }
 
-function WarrantDetail({ warrantRef, canClose, onClosed }: {
+function WarrantDetail({ warrantRef, canClose, canVoid, onClosed }: {
     warrantRef: string;
     canClose:   boolean;
+    canVoid:    boolean;
     onClosed:   () => void;
 }) {
     const { open } = useMdtSession();
@@ -214,6 +216,7 @@ function WarrantDetail({ warrantRef, canClose, onClosed }: {
     const { loading } = useAsyncData(() => mdtWarrant(warrantRef), [warrantRef], { onData: setWarrant });
 
     const [confirm, setConfirm] = useState(false);
+    const [voiding, setVoiding] = useState(false);
     const [error, setError] = useState('');
 
     async function close() {
@@ -224,6 +227,19 @@ function WarrantDetail({ warrantRef, canClose, onClosed }: {
             return;
         }
         setWarrant(next);
+        setError('');
+        onClosed();
+    }
+
+    async function quash() {
+        setVoiding(false);
+        const ok = await mdtWarrantVoid(warrantRef);
+        if (!ok) {
+            setError(t('mdt.actionFailed', 'That could not be done.'));
+            return;
+        }
+        const next = await mdtWarrant(warrantRef);
+        if (next) setWarrant(next);
         setError('');
         onClosed();
     }
@@ -270,11 +286,15 @@ function WarrantDetail({ warrantRef, canClose, onClosed }: {
                         })}
                     </div>
                 </div>
-                {canClose && warrant.active && (
+                {canVoid && warrant.active ? (
+                    <MdtButton variant="destructive" size="sm" onClick={() => setVoiding(true)}>
+                        {t('mdt.voidWarrant', 'Quash warrant')}
+                    </MdtButton>
+                ) : canClose && warrant.active ? (
                     <MdtButton variant="destructive" size="sm" onClick={() => setConfirm(true)}>
                         {t('mdt.closeWarrant', 'Close warrant')}
                     </MdtButton>
-                )}
+                ) : null}
             </div>
 
             <button
@@ -344,6 +364,17 @@ function WarrantDetail({ warrantRef, canClose, onClosed }: {
                     confirmLabel={t('mdt.closeWarrant', 'Close warrant')}
                     onCancel={() => setConfirm(false)}
                     onConfirm={() => void close()}
+                />
+            )}
+
+            {voiding && (
+                <AlertDialog
+                    destructive
+                    title={t('mdt.voidWarrantTitle', 'Quash this warrant?')}
+                    message={t('mdt.voidWarrantSub', 'The court sets the warrant aside. The subject stops being wanted for it whichever department issued it.')}
+                    confirmLabel={t('mdt.voidWarrant', 'Quash warrant')}
+                    onCancel={() => setVoiding(false)}
+                    onConfirm={() => void quash()}
                 />
             )}
         </Scroller>

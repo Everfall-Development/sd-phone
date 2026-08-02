@@ -77,6 +77,7 @@ const APP_REGISTRY = {
     birdy:       entry(() => import('@/apps/birdy/Birdy').then(m => ({ default: m.Birdy }))),
     mdt:         entry(() => import('@/apps/mdt/Mdt').then(m => ({ default: m.Mdt }))),
     emsmdt:      entry(() => import('@/apps/mdt/Mdt').then(m => ({ default: m.EmsMdt }))),
+    dojmdt:      entry(() => import('@/apps/mdt/Mdt').then(m => ({ default: m.DojMdt }))),
     appstore: {
         load: () => import('@/apps/appstore/AppStore'),
         render: (ctx) => (

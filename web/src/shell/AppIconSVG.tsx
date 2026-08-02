@@ -1270,6 +1270,59 @@ function EmsMdtIcon() {
     );
 }
 
+function DojMdtIcon() {
+    const pan = (cx: number) => (
+        <g key={cx}>
+            <path
+                d={`M${cx - 7.4} 27.8 Q${cx} 37 ${cx + 7.4} 27.8 Z`}
+                fill="url(#dojbrassDeep)"
+            />
+            <ellipse cx={cx} cy="27.8" rx="7.4" ry="1.7" fill="url(#dojbrass)" />
+            <ellipse cx={cx} cy="27.8" rx="5.2" ry="0.8" fill="#7A5A18" fillOpacity="0.32" />
+        </g>
+    );
+
+    return (
+        <svg viewBox={`0 0 ${S} ${S}`} width={S} height={S}>
+            <defs>
+                <LinearGrad id="dojbg" top="#7C4DFF" mid="#5B21B6" bot="#1E0942" angle={158} />
+                <RadialGrad id="dojglow" inner="rgba(196,168,255,0.42)" outer="rgba(196,168,255,0)" cx="34%" cy="24%" />
+                <LinearGrad id="dojbrass" top="#FFF3C4" mid="#E8B84B" bot="#A9741F" angle={0} />
+                <LinearGrad id="dojbrassDeep" top="#D9A63C" bot="#7A4E12" angle={0} />
+                <filter id="dojsh" x="-40%" y="-40%" width="180%" height="180%">
+                    <feDropShadow dx="0" dy="1.4" stdDeviation="1.3" floodColor="#12042C" floodOpacity="0.55" />
+                </filter>
+            </defs>
+
+            <rect width={S} height={S} fill="url(#dojbg)" />
+            <rect width={S} height={S} fill="url(#dojglow)" />
+            <path d={`M0 0 H${S} V19 Q${S / 2} 27 0 19 Z`} fill="rgba(255,255,255,0.10)" />
+
+            <g filter="url(#dojsh)">
+                <path d="M21.2 44.6 H38.8 L42 50 H18Z" fill="url(#dojbrassDeep)" />
+                <rect x="16.2" y="49.6" width="27.6" height="3.9" rx="1.95" fill="url(#dojbrass)" />
+
+                <rect x="28.35" y="12.8" width="3.3" height="32.4" fill="url(#dojbrass)" />
+
+                <g stroke="#C08A28" strokeWidth="1.25" strokeLinecap="round">
+                    <path d="M13.2 20.6 10.6 27M13.2 20.6 21.6 27" />
+                    <path d="M46.8 20.6 38.4 27M46.8 20.6 49.4 27" />
+                </g>
+
+                <rect x="10.6" y="16.9" width="38.8" height="3.4" rx="1.7" fill="url(#dojbrass)" />
+                <circle cx="13.2" cy="18.6" r="2.35" fill="url(#dojbrass)" />
+                <circle cx="46.8" cy="18.6" r="2.35" fill="url(#dojbrass)" />
+
+                {pan(16.1)}
+                {pan(43.9)}
+
+                <circle cx="30" cy="11.4" r="3.9" fill="url(#dojbrass)" />
+                <circle cx="30" cy="10.4" r="1.35" fill="#FFF8DC" fillOpacity="0.8" />
+            </g>
+        </svg>
+    );
+}
+
 function MdtIcon() {
     return (
         <svg viewBox={`0 0 ${S} ${S}`} width={S} height={S}>
@@ -1358,6 +1411,7 @@ const ICON_MAP: Record<string, IconComponent> = {
     streaks:     StreaksIcon,
     mdt:         MdtIcon,
     emsmdt:      EmsMdtIcon,
+    dojmdt:      DojMdtIcon,
 };
 
 export type IconId = string;

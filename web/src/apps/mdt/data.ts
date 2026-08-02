@@ -1,3 +1,8 @@
+export interface EvidenceItem {
+    url:   string;
+    label: string;
+}
+
 export type MdtSection =
     | 'home'
     | 'dispatch'
@@ -10,28 +15,41 @@ export type MdtSection =
     | 'employees'
     | 'chat'
     | 'jail'
+    | 'phone'
     | 'logs'
     | 'patients'
-    | 'protocols';
+    | 'protocols'
+    | 'affairs'
+    | 'court'
+    | 'expunge'
+    | 'sops';
 
 export type DepartmentType = 'leo' | 'ems' | 'doj';
 
 export const LEO_SECTIONS: readonly MdtSection[] = [
     'home', 'dispatch', 'profiles', 'vehicles', 'reports', 'cases',
-    'warrants', 'offences', 'employees', 'chat', 'jail', 'logs',
+    'warrants', 'offences', 'sops', 'employees', 'affairs', 'chat', 'jail', 'phone', 'logs',
 ] as const;
 
 export const EMS_SECTIONS: readonly MdtSection[] = [
     'home', 'dispatch', 'patients', 'reports', 'cases',
-    'protocols', 'employees', 'chat', 'logs',
+    'protocols', 'sops', 'employees', 'chat', 'logs',
+] as const;
+
+export const DOJ_SECTIONS: readonly MdtSection[] = [
+    'home', 'court', 'expunge', 'profiles', 'warrants', 'reports',
+    'cases', 'offences', 'employees', 'chat', 'logs',
 ] as const;
 
 export function sectionsFor(type: DepartmentType | undefined): readonly MdtSection[] {
-    return type === 'ems' ? EMS_SECTIONS : LEO_SECTIONS;
+    if (type === 'ems') return EMS_SECTIONS;
+    if (type === 'doj') return DOJ_SECTIONS;
+    return LEO_SECTIONS;
 }
 
 export type MdtPermission =
     | 'home.view'
+    | 'phone.view'
     | 'persons.view'
     | 'persons.edit'
     | 'profiles.view'
@@ -50,8 +68,6 @@ export type MdtPermission =
     | 'warrants.issue'
     | 'warrants.close'
     | 'offences.view'
-    | 'offences.manage'
-    | 'offences.delete'
     | 'roster.view'
     | 'employees.view'
     | 'roster.callsign'
@@ -72,7 +88,20 @@ export type MdtPermission =
     | 'patients.view'
     | 'patients.edit'
     | 'protocols.view'
-    | 'protocols.manage';
+    | 'protocols.manage'
+    | 'affairs.view'
+    | 'affairs.file'
+    | 'affairs.investigate'
+    | 'affairs.close'
+    | 'court.view'
+    | 'court.file'
+    | 'court.manage'
+    | 'court.rule'
+    | 'expunge.view'
+    | 'expunge.file'
+    | 'expunge.rule'
+    | 'warrants.void'
+    | 'sops.view';
 
 export const SECTION_PERMISSION: Record<MdtSection, MdtPermission> = {
     home:      'home.view',
@@ -86,9 +115,14 @@ export const SECTION_PERMISSION: Record<MdtSection, MdtPermission> = {
     employees: 'roster.view',
     chat:      'chat.view',
     jail:      'jail.view',
+    phone:     'phone.view',
     logs:      'logs.view',
     patients:  'patients.view',
     protocols: 'protocols.view',
+    affairs:   'affairs.view',
+    court:     'court.view',
+    expunge:   'expunge.view',
+    sops:      'sops.view',
 };
 
 export type ChargeClass = 'felony' | 'misdemeanor' | 'infraction';
@@ -199,6 +233,7 @@ export interface Department {
     type:   'leo' | 'ems' | 'doj';
     seal:   string;
     accent: string;
+    bench?: boolean;
 }
 
 export interface Offence {
@@ -314,6 +349,7 @@ export interface ReportSummary {
 
 export interface ReportDetail extends ReportSummary {
     body:        string;
+    evidence:    EvidenceItem[];
     involved:    Involved[];
     charges:     Charge[];
     totalMonths: number;
@@ -328,6 +364,7 @@ export interface ReportDraft {
     title:    string;
     type:     AnyReportType;
     body:     string;
+    evidence: EvidenceItem[];
     involved: { citizenid: string; role: AnyInvolvedRole; notes?: string }[];
     charges:  ChargeInput[];
 }
@@ -365,6 +402,7 @@ export interface CaseDetail {
     status:    CaseStatus;
     priority:  CasePriority;
     summary:   string;
+    evidence:  EvidenceItem[];
     createdBy: string;
     createdAt: number;
     updatedAt: number;
@@ -539,4 +577,215 @@ export interface Coords {
 
 export function emptyPage<T>(pageSize = 25): Page<T> {
     return { rows: [], total: 0, page: 1, pageSize };
+}
+
+export interface HandsetDevice {
+    number:   string;
+    name:     string;
+    email:    string;
+    address:  string;
+    locale:   string;
+    apps:     number;
+    lastSeen: string | null;
+    sim?:     { identity: string | null; owner: string | null; adopted: string | null; since: string | null };
+}
+
+export interface HandsetSummary {
+    device:  HandsetDevice | null;
+    counts?: { contacts: number; calls: number; photos: number; notes: number; memos: number };
+    blocked?: { number: string; created_at: string }[];
+}
+
+export interface HandsetContact {
+    name:       string;
+    phone:      string;
+    email:      string | null;
+    favorite:   boolean;
+    created_at: string;
+}
+
+export interface HandsetCall {
+    number:     string;
+    name:       string | null;
+    direction:  string;
+    duration:   number;
+    called_at:  string;
+    ownerCid?:  string | null;
+    ownerName?: string | null;
+}
+
+export interface HandsetThread {
+    id:                     string;
+    name:                   string | null;
+    isGroup:                boolean;
+    messages:               number;
+    last_message:           string | null;
+    last_message_timestamp: string | null;
+    members:                { number: string; name?: string | null; cid?: string | null }[];
+}
+
+export interface HandsetMessage {
+    id:          string;
+    sender:      string;
+    senderName?: string | null;
+    content:     string | null;
+    attachments: string | null;
+    timestamp:   string;
+    outgoing:    boolean;
+}
+
+export interface HandsetMemo {
+    id:         string;
+    name:       string | null;
+    url:        string;
+    duration:   number;
+    created_at: string;
+}
+
+export interface HandsetPhoto {
+    id:         string;
+    url:        string;
+    created_at: string;
+}
+
+export interface HandsetNote {
+    id:          string;
+    body:        string | null;
+    images:      string[];
+    sketchCount: number;
+    hasSketch:   boolean;
+    hasImage:    boolean;
+    created_at:  string;
+    updated_at:  string;
+}
+
+export interface HandsetAccounts {
+    mail: { email: string; display_name: string | null; created_at: string }[];
+    apps: { app: string; username: string; display_name: string | null; created_at: string }[];
+}
+
+export type IaCategory = 'force' | 'misconduct' | 'corruption' | 'negligence' | 'discourtesy' | 'pursuit' | 'other';
+export type IaStatus = 'open' | 'investigating' | 'review' | 'closed';
+export type IaSeverity = 'low' | 'medium' | 'high';
+export type IaDisposition = 'sustained' | 'unfounded' | 'exonerated' | 'not_sustained';
+export type IaDiscipline = 'none' | 'counselling' | 'reprimand' | 'suspension' | 'demotion' | 'termination';
+
+export const IA_CATEGORIES: readonly IaCategory[] =
+    ['force', 'misconduct', 'corruption', 'negligence', 'discourtesy', 'pursuit', 'other'] as const;
+export const IA_STATUSES: readonly IaStatus[] = ['open', 'investigating', 'review', 'closed'] as const;
+export const IA_SEVERITIES: readonly IaSeverity[] = ['low', 'medium', 'high'] as const;
+export const IA_DISPOSITIONS: readonly IaDisposition[] =
+    ['sustained', 'unfounded', 'exonerated', 'not_sustained'] as const;
+export const IA_DISCIPLINE: readonly IaDiscipline[] =
+    ['none', 'counselling', 'reprimand', 'suspension', 'demotion', 'termination'] as const;
+
+export interface IaNote {
+    author:    string;
+    body:      string;
+    createdAt: number;
+}
+
+export interface IaSummary {
+    ref:       string;
+    title:     string;
+    subject:   string;
+    subjectId: string;
+    rank:      string;
+    category:  IaCategory;
+    status:    IaStatus;
+    severity:  IaSeverity;
+    filedBy:   string;
+    assigned:  string | null;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface IaDetail extends IaSummary {
+    summary:     string;
+    evidence:    EvidenceItem[];
+    disposition: IaDisposition | null;
+    discipline:  IaDiscipline | null;
+    finding:     string;
+    assignedId:  string | null;
+    closedAt:    number | null;
+    notes:       IaNote[];
+}
+
+export type CourtStatus = 'filed' | 'arraigned' | 'scheduled' | 'trial' | 'closed' | 'dismissed';
+export type CourtPlea = 'guilty' | 'not_guilty' | 'no_contest';
+export type CourtVerdict = 'guilty' | 'not_guilty' | 'dismissed' | 'mistrial' | 'plea';
+export type CourtNoteKind = 'note' | 'motion' | 'filing' | 'ruling';
+
+export const COURT_STATUSES: readonly CourtStatus[] =
+    ['filed', 'arraigned', 'scheduled', 'trial', 'closed', 'dismissed'] as const;
+export const COURT_PLEAS: readonly CourtPlea[] = ['guilty', 'not_guilty', 'no_contest'] as const;
+export const COURT_VERDICTS: readonly CourtVerdict[] =
+    ['guilty', 'not_guilty', 'dismissed', 'mistrial', 'plea'] as const;
+export const COURT_NOTE_KINDS: readonly CourtNoteKind[] = ['note', 'motion', 'filing', 'ruling'] as const;
+
+export interface CourtNote {
+    author:    string;
+    kind:      CourtNoteKind;
+    body:      string;
+    createdAt: number;
+}
+
+export interface CourtSummary {
+    ref:        string;
+    title:      string;
+    defendant:  string;
+    citizenid:  string;
+    status:     CourtStatus;
+    plea:       CourtPlea | null;
+    verdict:    CourtVerdict | null;
+    hearingAt:  number | null;
+    judge:      string | null;
+    prosecutor: string | null;
+    defence:    string | null;
+    charges:    number;
+    createdAt:  number;
+    updatedAt:  number;
+}
+
+export interface CourtDetail extends Omit<CourtSummary, 'charges'> {
+    charges:        WarrantCharge[];
+    evidence:       EvidenceItem[];
+    summary:        string;
+    ruling:         string;
+    reportRef:      string | null;
+    sentenceMonths: number;
+    sentenceFine:   number;
+    filedBy:        string;
+    judgeId:        string | null;
+    prosecutorId:   string | null;
+    defenceId:      string | null;
+    notes:          CourtNote[];
+}
+
+export type PetitionStatus = 'pending' | 'granted' | 'denied';
+
+export const PETITION_STATUSES: readonly PetitionStatus[] = ['pending', 'granted', 'denied'] as const;
+
+export interface Petition {
+    ref:       string;
+    citizenid: string;
+    subject:   string;
+    scope:     string[];
+    reason:    string;
+    status:    PetitionStatus;
+    ruling:    string;
+    filedBy:   string;
+    ruledBy:   string | null;
+    cleared:   number;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface Sop {
+    code:     string;
+    title:    string;
+    category: string;
+    summary:  string;
+    revised:  string;
+    body:     string;
 }

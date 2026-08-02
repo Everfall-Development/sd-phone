@@ -26,31 +26,60 @@ local PERMISSIONS = MDT.Permissions or {}
 ---@type boolean Whether a boss of their department holds every key.
 local BOSS_BYPASS = MDT.BossBypass ~= false
 
----@type table<string, 'leo'|'ems'> Keys that exist on ONE terminal only. A key absent from this
----table is shared by both (home, reports, cases, roster, dispatch, chat, bulletins, logs).
+---@type table<string, table<string, boolean>> Keys that exist on SOME terminals only, as the set of
+---domains that reach them. A key absent from this table is shared by all three (home, reports,
+---cases, roster, chat, bulletins, logs).
 ---
 ---This is declared here rather than in configs/mdt.lua because it is not a setting: it states
 ---which service a capability belongs to, and a server owner moving `jail.book` to the medical
 ---terminal would be describing something that has no handler behind it.
 local KEY_DOMAIN = {
-    ['patients.view']    = 'ems',
-    ['patients.edit']    = 'ems',
-    ['protocols.view']   = 'ems',
-    ['protocols.manage'] = 'ems',
+    ['patients.view']       = { ems = true },
+    ['patients.edit']       = { ems = true },
+    ['protocols.view']      = { ems = true },
+    ['protocols.manage']    = { ems = true },
 
-    ['persons.view']     = 'leo',
-    ['persons.edit']     = 'leo',
-    ['profiles.view']    = 'leo',
-    ['vehicles.view']    = 'leo',
-    ['vehicles.edit']    = 'leo',
-    ['warrants.view']    = 'leo',
-    ['warrants.issue']   = 'leo',
-    ['warrants.close']   = 'leo',
-    ['offences.view']    = 'leo',
-    ['offences.manage']  = 'leo',
-    ['offences.delete']  = 'leo',
-    ['jail.view']        = 'leo',
-    ['jail.book']        = 'leo',
+    ['persons.edit']        = { leo = true },
+    ['vehicles.view']       = { leo = true },
+    ['vehicles.edit']       = { leo = true },
+    ['warrants.issue']      = { leo = true },
+    ['warrants.close']      = { leo = true },
+    ['jail.view']           = { leo = true },
+    ['jail.book']           = { leo = true },
+    ['phone.view']          = { leo = true },
+    ['affairs.view']        = { leo = true },
+    ['affairs.file']        = { leo = true },
+    ['affairs.investigate'] = { leo = true },
+    ['affairs.close']       = { leo = true },
+    ['dispatch.view']       = { leo = true, ems = true },
+    ['dispatch.attach']     = { leo = true, ems = true },
+    ['dispatch.status']     = { leo = true, ems = true },
+
+    -- A court looks people up, reads the penal code it sentences against, and reads the warrants
+    -- it may void. It never edits a record, never issues a warrant and never books anyone.
+    ['persons.view']        = { leo = true, doj = true },
+    ['profiles.view']       = { leo = true, doj = true },
+    ['warrants.view']       = { leo = true, doj = true },
+    ['offences.view']       = { leo = true, doj = true },
+
+    ['court.view']          = { doj = true },
+    ['court.file']          = { doj = true },
+    ['court.manage']        = { doj = true },
+    ['court.rule']          = { doj = true },
+    ['expunge.view']        = { doj = true },
+    ['expunge.file']        = { doj = true },
+    ['expunge.rule']        = { doj = true },
+    ['warrants.void']       = { doj = true },
+}
+
+---@type table<string, boolean> Keys only a department marked `bench` reaches, at any grade. The
+---robe is a property of the department, not of a rank: a senior attorney does not become a judge
+---by being promoted, so this is checked before the grade and before the boss bypass.
+local BENCH_ONLY = {
+    ['court.rule']    = true,
+    ['court.manage']  = true,
+    ['expunge.rule']  = true,
+    ['warrants.void'] = true,
 }
 ---@type string Sequence format auto-generated callsigns are minted with.
 local CALLSIGN_FORMAT = (MDT.Dispatch or {}).CallsignFormat or '%s-%03d'
@@ -82,6 +111,16 @@ local function gradeLabel(jobName, level)
     local label = society.gradeLabel(jobName, level)
     gradeLabels[key] = label
     return label
+end
+
+---The terminal a department drives. Anything not explicitly medical or judicial is police, so a
+---department that omits `type` keeps the behaviour it had before the field existed.
+---@param dept table|nil department entry
+---@return 'leo'|'ems'|'doj' domain
+local function domainOf(dept)
+    local kind = dept and dept.type
+    if kind == 'ems' or kind == 'doj' then return kind end
+    return 'leo'
 end
 
 ---The department a framework job belongs to, or nil when the job has no terminal.
@@ -172,9 +211,12 @@ function access.can(src, key)
     -- Which terminal the key belongs to is checked BEFORE the boss bypass, and before the grade.
     -- The permission table is one flat list of names, so without this a police chief would clear
     -- `patients.view` on grade alone and read medical files, and a medic would clear `jail.view`.
-    -- A service's own keys are unreachable from the other service at any rank.
+    -- A service's own keys are unreachable from the other services at any rank.
     local only = KEY_DOMAIN[key]
-    if only and only ~= (dept.type == 'ems' and 'ems' or 'leo') then return false end
+    if only and not only[domainOf(dept)] then return false end
+
+    -- The robe outranks the bypass: a chief attorney is still not a judge.
+    if BENCH_ONLY[key] and dept.bench ~= true then return false end
 
     if BOSS_BYPASS and job.isBoss(src, dept.job, dept.bossGrade or 0) then return true end
 
@@ -232,33 +274,54 @@ function access.belowMe(src, targetCid)
     return true
 end
 
----The record domain a caller reads and writes: 'ems' for a medical department, 'leo' for everyone
----else. This is the whole of the separation between the two terminals' paperwork, so it is derived
----from the CONFIGURED department type and never from anything the client sends.
+---The record domain a caller reads and writes. This is the whole of the separation between the
+---terminals' paperwork, so it is derived from the CONFIGURED department type and never from
+---anything the client sends.
 ---@param me table caller identity from access.identity
----@return 'leo'|'ems' domain
+---@return 'leo'|'ems'|'doj' domain
 function access.domain(me)
-    return me.department.type == 'ems' and 'ems' or 'leo'
+    return domainOf(me.department)
 end
 
 ---Whether the caller works the medical terminal.
 ---@param me table caller identity
 ---@return boolean
 function access.isMedical(me)
-    return me.department.type == 'ems'
+    return domainOf(me.department) == 'ems'
+end
+
+---Whether the caller works the court terminal.
+---@param me table caller identity
+---@return boolean
+function access.isCourt(me)
+    return domainOf(me.department) == 'doj'
+end
+
+---Whether the caller's department wears the robe. Only a bench department rules.
+---@param me table caller identity
+---@return boolean
+function access.isBench(me)
+    return me.department.bench == true
 end
 
 ---The restriction identifiers that admit this caller to a record: their own citizenid, their job,
 ---and their department type. Report queries fold these into an IN clause, so a department's
 ---paperwork is not merely un-editable by outsiders, it is un-listable.
+---
+---A court also carries the `leo` jobtype, because discovery is the point of the terminal: a
+---defence attorney who cannot read the report behind the charge cannot argue the case. It does
+---NOT carry any individual police job, so paperwork a department restricted to itself stays shut.
 ---@param me table caller identity from access.identity
 ---@return { type: string, identifier: string }[]
 function access.restrictions(me)
-    return {
+    local domain = domainOf(me.department)
+    local out = {
         { type = 'citizenid', identifier = me.citizenid },
         { type = 'job',       identifier = me.job },
-        { type = 'jobtype',   identifier = me.department.type or 'leo' },
+        { type = 'jobtype',   identifier = domain },
     }
+    if domain == 'doj' then out[#out + 1] = { type = 'jobtype', identifier = 'leo' } end
+    return out
 end
 
 ---Every connected player whose active job has a terminal. Dispatch, chat and bulletins fan their

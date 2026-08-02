@@ -5,13 +5,18 @@ import { t } from '@/i18n';
 import { EmptyState } from '@/ui/EmptyState';
 import { NavContext } from '@/hooks/useIosPush';
 import type { DepartmentType, MdtSection } from './data';
+import { AffairsPane } from './AffairsPane';
 import { CasesPane } from './CasesPane';
 import { ChatPane } from './ChatPane';
+import { CourtPane } from './CourtPane';
+import { ExpungePane } from './ExpungePane';
+import { SopsPane } from './SopsPane';
 import { DepartmentSeal } from './DepartmentSeal';
 import { DispatchPane } from './DispatchPane';
 import { EmployeesPane } from './EmployeesPane';
 import { HomePane } from './HomePane';
 import { JailPane } from './JailPane';
+import { PhonePane } from './PhonePane';
 import { LogsPane } from './LogsPane';
 import { MdtHeader } from './MdtHeader';
 import { MdtTabs } from './MdtTabs';
@@ -39,9 +44,14 @@ function pane(section: MdtSection) {
         case 'employees': return <EmployeesPane />;
         case 'chat':      return <ChatPane />;
         case 'jail':      return <JailPane />;
+        case 'phone':     return <PhonePane />;
         case 'logs':      return <LogsPane />;
         case 'patients':  return <PatientsPane />;
         case 'protocols': return <ProtocolsPane />;
+        case 'affairs':   return <AffairsPane />;
+        case 'court':     return <CourtPane />;
+        case 'expunge':   return <ExpungePane />;
+        case 'sops':      return <SopsPane />;
         default:          return <HomePane />;
     }
 }
@@ -135,4 +145,8 @@ export function Mdt({ onClose: _onClose }: { onClose: () => void }) {
 
 export function EmsMdt({ onClose: _onClose }: { onClose: () => void }) {
     return <Terminal devDomain="ems" />;
+}
+
+export function DojMdt({ onClose: _onClose }: { onClose: () => void }) {
+    return <Terminal devDomain="doj" />;
 }

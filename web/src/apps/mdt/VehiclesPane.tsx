@@ -61,7 +61,7 @@ export function VehiclesPane() {
 
     useEffect(() => { setPage(1); }, [term, setPage]);
 
-    const { data, loading } = useAsyncData(() => mdtVehiclesSearch(term, page), [term, page]);
+    const { data, loading, settled } = useAsyncData(() => mdtVehiclesSearch(term, page), [term, page]);
     const rows     = data?.rows ?? [];
     const total    = data?.total ?? 0;
     const pageSize = data?.pageSize ?? 25;
@@ -86,11 +86,11 @@ export function VehiclesPane() {
             query={query}
             onQuery={setQuery}
             placeholder={t('mdt.searchVehicles', 'Plate or model')}
-            isEmpty={rows.length === 0}
+            isEmpty={settled && rows.length === 0}
             empty={empty}
             footer={<MdtPager page={data?.page ?? page} pageSize={pageSize} total={total} onPage={setPage} />}
         >
-            <div className="flex flex-col gap-0.5">
+            <div className="mdt-stagger flex flex-col gap-0.5">
                 {rows.map(row => (
                     <VehicleListRow
                         key={row.plate}

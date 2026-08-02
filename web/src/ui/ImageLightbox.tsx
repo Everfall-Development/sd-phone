@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 
 import { t } from '@/i18n';
+import { isVideoUrl } from '@/core/photosApi';
 import { portalToPhoneScreen } from './portal';
 
 export function ImageLightbox({ src, onClose, action }: {
@@ -34,15 +35,30 @@ export function ImageLightbox({ src, onClose, action }: {
             >
                 <X className="h-6 w-6" strokeWidth={2.2} />
             </button>
-            <img
-                src={src}
-                alt=""
-                className="max-h-[80%] max-w-full rounded-[8px] object-contain"
-                style={{ animation: exiting
-                    ? 'lightbox-zoom-out 0.2s cubic-bezier(0.32,0,0.68,1) forwards'
-                    : 'lightbox-zoom-in 0.32s cubic-bezier(0.34,1.28,0.64,1)' }}
-                onClick={e => e.stopPropagation()}
-            />
+            {isVideoUrl(src) ? (
+                <video
+                    src={src}
+                    controls
+                    autoPlay
+                    loop
+                    playsInline
+                    className="max-h-[80%] max-w-full rounded-[8px] object-contain"
+                    style={{ animation: exiting
+                        ? 'lightbox-zoom-out 0.2s cubic-bezier(0.32,0,0.68,1) forwards'
+                        : 'lightbox-zoom-in 0.32s cubic-bezier(0.34,1.28,0.64,1)' }}
+                    onClick={e => e.stopPropagation()}
+                />
+            ) : (
+                <img
+                    src={src}
+                    alt=""
+                    className="max-h-[80%] max-w-full rounded-[8px] object-contain"
+                    style={{ animation: exiting
+                        ? 'lightbox-zoom-out 0.2s cubic-bezier(0.32,0,0.68,1) forwards'
+                        : 'lightbox-zoom-in 0.32s cubic-bezier(0.34,1.28,0.64,1)' }}
+                    onClick={e => e.stopPropagation()}
+                />
+            )}
             {action && (
                 <button
                     type="button"

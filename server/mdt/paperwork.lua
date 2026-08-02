@@ -89,6 +89,49 @@ local function likeSafe(term)
     return (term:gsub('([%%_\\])', '\\%1'))
 end
 
+---@type integer Most evidence entries one piece of paperwork may carry.
+local MAX_EVIDENCE = 24
+---@type integer Longest evidence URL kept, matching the 512-char url column Photos stores.
+local MAX_EVIDENCE_URL = 512
+
+---Normalises the evidence array a client sent: hosted URLs with an optional caption, never inline
+---data. One bad entry is dropped rather than failing the save, so a typo cannot cost the report.
+---@param value any
+---@return string|nil json encoded array, or nil when there is nothing to store
+local function sanitizeEvidence(value)
+    if type(value) ~= 'table' then return nil end
+    local out = {}
+    for i = 1, #value do
+        local item = value[i]
+        if type(item) == 'table' and #out < MAX_EVIDENCE then
+            local url = util.limitedString(item.url, MAX_EVIDENCE_URL)
+            if url and (url:match('^https?://') or url:match('^nui://')) then
+                out[#out + 1] = { url = url, label = util.limitedString(item.label, 120) or '' }
+            end
+        end
+    end
+    if #out == 0 then return nil end
+    local ok, encoded = pcall(json.encode, out)
+    return ok and encoded or nil
+end
+
+---Decodes a stored evidence column back into the array the pane renders.
+---@param raw any
+---@return table[]
+local function readEvidence(raw)
+    if type(raw) ~= 'string' or #raw < 3 then return {} end
+    local ok, list = pcall(json.decode, raw)
+    if not ok or type(list) ~= 'table' then return {} end
+    local out = {}
+    for i = 1, #list do
+        local item = list[i]
+        if type(item) == 'table' and type(item.url) == 'string' then
+            out[#out + 1] = { url = item.url, label = type(item.label) == 'string' and item.label or '' }
+        end
+    end
+    return out
+end
+
 ---The visibility clause every report read folds in, against the alias `r`: a report with no
 ---restriction rows is department-wide, otherwise the caller must match one of them.
 ---@param me table caller identity from access.identity
@@ -216,6 +259,7 @@ local function detailOf(me, src, row)
     local detail = summaryOf(row)
     detail.chargeCount = #lines
     detail.body        = row.body or ''
+    detail.evidence    = readEvidence(row.evidence)
     detail.involved    = involved
     detail.charges     = lines
     detail.totalMonths = months
@@ -266,7 +310,7 @@ local function sanitizeReport(payload, me)
     -- the medical editor never shows a charge picker, so anything arriving in this field on a
     -- medical report was not typed by a medic.
     if access.isMedical(me) then
-        return { title = title, type = kind, body = body, involved = involved, charges = {} }
+        return { title = title, type = kind, body = body, evidence = sanitizeEvidence(payload.evidence), involved = involved, charges = {} }
     end
 
     local raw = {}
@@ -286,7 +330,7 @@ local function sanitizeReport(payload, me)
     local charges = offences.totalFor(raw)
     if #raw > 0 and #charges == 0 then return nil, 'None of those charges are in the penal code' end
 
-    return { title = title, type = kind, body = body, involved = involved, charges = charges }
+    return { title = title, type = kind, body = body, evidence = sanitizeEvidence(payload.evidence), involved = involved, charges = charges }
 end
 
 ---The child-row inserts a report save writes. Shared by create and amend, which differ only in
@@ -368,9 +412,9 @@ local function createReport(src, payload, me)
     local now = os.time()
     local id = MySQL.insert.await([[
         INSERT INTO phone_mdt_reports
-            (ref, title, type, body, author_cid, author_name, author_callsign, department, domain, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ]], { ref, draft.title, draft.type, draft.body, me.citizenid, me.name, me.callsign, me.job, access.domain(me), now, now })
+            (ref, title, type, body, evidence, author_cid, author_name, author_callsign, department, domain, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ]], { ref, draft.title, draft.type, draft.body, draft.evidence, me.citizenid, me.name, me.callsign, me.job, access.domain(me), now, now })
     if not id then return util.fail('The report could not be filed') end
 
     local queries = {
@@ -401,8 +445,8 @@ local function updateReport(src, payload, me)
 
     local queries = {
         {
-            query  = 'UPDATE phone_mdt_reports SET title = ?, type = ?, body = ?, updated_at = ? WHERE id = ?',
-            values = { draft.title, draft.type, draft.body, os.time(), row.id },
+            query  = 'UPDATE phone_mdt_reports SET title = ?, type = ?, body = ?, evidence = ?, updated_at = ? WHERE id = ?',
+            values = { draft.title, draft.type, draft.body, draft.evidence, os.time(), row.id },
         },
         { query = 'DELETE FROM phone_mdt_report_involved WHERE report_id = ?', values = { row.id } },
         { query = 'DELETE FROM phone_mdt_report_charges WHERE report_id = ?',  values = { row.id } },
@@ -596,6 +640,7 @@ end
 local function caseDetail(src, row)
     local detail = caseSummaryOf(row)
     detail.summary   = row.summary or ''
+    detail.evidence  = readEvidence(row.evidence)
     detail.officers  = caseOfficers(row.id)
     detail.notes     = caseNotes(row.id)
     detail.reports   = caseReports(row.id)
@@ -665,9 +710,9 @@ local function createCase(src, payload, me)
 
     local id = MySQL.insert.await([[
         INSERT INTO phone_mdt_cases
-            (ref, title, summary, status, priority, department, created_cid, created_name, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ]], { ref, title, summary, status, priority, me.job, me.citizenid, me.name, now, now })
+            (ref, title, summary, evidence, status, priority, department, created_cid, created_name, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ]], { ref, title, summary, sanitizeEvidence(payload.evidence), status, priority, me.job, me.citizenid, me.name, now, now })
     if not id then return util.fail('The case could not be opened') end
 
     MySQL.query.await([[
@@ -693,9 +738,9 @@ local function updateCase(src, payload, me)
     local priority = PRIORITIES[payload.priority] and payload.priority or row.priority
 
     MySQL.update.await([[
-        UPDATE phone_mdt_cases SET title = ?, summary = ?, status = ?, priority = ?, updated_at = ?
+        UPDATE phone_mdt_cases SET title = ?, summary = ?, evidence = ?, status = ?, priority = ?, updated_at = ?
         WHERE id = ?
-    ]], { title, summary, status, priority, os.time(), row.id })
+    ]], { title, summary, sanitizeEvidence(payload.evidence), status, priority, os.time(), row.id })
 
     return util.ok({ case = caseDetail(src, caseRow(me, ref)) }),
         { entityType = 'case', entityId = ref, details = { title = title, status = status, priority = priority } }

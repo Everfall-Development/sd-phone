@@ -2,10 +2,10 @@
 local config = require 'configs.config'
 ---@type table Shared server helpers (server.util): envelopes, clamping, string caps.
 local util   = require 'server.util'
----@type table MDT persistence (server.mdt.store): the penal-code read.
-local store  = require 'server.mdt.store'
----@type table MDT permissions (server.mdt.access): the read gate and the audited write wrapper.
+---@type table MDT permissions (server.mdt.access): the read gate.
 local access = require 'server.mdt.access'
+---@type table[] The penal code (configs/penalcode.lua): a static catalogue, not a table.
+local PENAL  = require 'configs.penalcode'
 
 ---@type table Offences module; the table returned at end of file. The penal code, and the single
 ---place a sentence or a fine is ever calculated.
@@ -17,35 +17,51 @@ local CLASSES = { felony = true, misdemeanor = true, infraction = true }
 ---@type integer Highest count one charge line may carry.
 local MAX_COUNT = 99
 
----@type integer Highest month value an offence may be worth.
-local MAX_MONTHS = 600
-
----@type integer Highest fine an offence may carry.
-local MAX_FINE = 1000000
-
 ---@type integer Charge lines one record may carry.
 local MAX_LINES = math.floor(tonumber(((config.Mdt or {}).Limits or {}).Charges) or 40)
 
----@type table|nil Cached catalog: { rows = Offence[], byCode = table<string, Offence> }. Dropped
----on every write, so a management edit is visible on the next read.
+---@type table<string, integer> Class sort order: felonies read first, then down.
+local CLASS_ORDER = { felony = 1, misdemeanor = 2, infraction = 3 }
+
+---@type table|nil Catalog built once from the config: { rows = Offence[], byCode = ... }.
 local cache
 
----Reads the catalog into memory, or returns the cached copy.
+---Builds the catalog from the config file. A malformed entry is skipped with a console line rather
+---than taken on trust: a charge with no class would otherwise sentence at zero months forever.
 ---@return table catalog { rows: table[], byCode: table<string, table> }
 local function load()
     if cache then return cache end
 
-    local rows = store.offences()
-    local byCode = {}
-    for i = 1, #rows do byCode[rows[i].code] = rows[i] end
+    local rows, byCode = {}, {}
+    for i = 1, #PENAL do
+        local entry = PENAL[i]
+        local code  = type(entry) == 'table' and type(entry.code) == 'string' and entry.code or nil
+        if not code or not CLASSES[entry.class] then
+            print(('^3[sd-phone:mdt]^0 penal code entry %d is malformed and was skipped'):format(i))
+        elseif byCode[code] then
+            print(('^3[sd-phone:mdt]^0 penal code %s is listed twice; the first wins'):format(code))
+        else
+            local row = {
+                code        = code,
+                label       = type(entry.label) == 'string' and entry.label or code,
+                class       = entry.class,
+                months      = math.max(0, math.floor(tonumber(entry.months) or 0)),
+                fine        = math.max(0, math.floor(tonumber(entry.fine) or 0)),
+                description = type(entry.description) == 'string' and entry.description or '',
+            }
+            rows[#rows + 1] = row
+            byCode[code] = row
+        end
+    end
+
+    table.sort(rows, function(a, b)
+        local ca, cb = CLASS_ORDER[a.class] or 9, CLASS_ORDER[b.class] or 9
+        if ca ~= cb then return ca < cb end
+        return a.code < b.code
+    end)
 
     cache = { rows = rows, byCode = byCode }
     return cache
-end
-
----Drops the cached catalog so the next read hits the table.
-function offences.invalidate()
-    cache = nil
 end
 
 ---Every offence, felonies first then by code.
@@ -120,52 +136,6 @@ end
 ---The whole penal code. Read by the charge picker, every report total and the jail quote.
 offences.list = access.gated('offences.view', function()
     return util.ok({ rows = offences.all() })
-end)
-
----Creates or replaces one offence, keyed on its code.
-offences.save = access.audited('offences.manage', function(_, payload)
-    local code = util.limitedString(payload.code, 16)
-    if not code then return util.fail('A code is required') end
-
-    local label = util.limitedString(payload.label, 120)
-    if not label then return util.fail('A label is required') end
-
-    local class = type(payload.class) == 'string' and payload.class or ''
-    if not CLASSES[class] then return util.fail('Pick a valid class') end
-
-    local months = util.wholeAmount(payload.months)
-    if months > MAX_MONTHS then months = MAX_MONTHS end
-
-    local fine = util.wholeAmount(payload.fine)
-    if fine > MAX_FINE then fine = MAX_FINE end
-
-    local description = util.limitedString(payload.description, 255) or ''
-
-    MySQL.query.await([[
-        INSERT INTO phone_mdt_offences (`code`, `label`, `class`, `months`, `fine`, `description`)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-            `label`       = VALUES(`label`),
-            `class`       = VALUES(`class`),
-            `months`      = VALUES(`months`),
-            `fine`        = VALUES(`fine`),
-            `description` = VALUES(`description`)
-    ]], { code, label, class, months, fine, description })
-
-    offences.invalidate()
-    return util.ok({ offence = offences.byCode(code) }),
-        { entityType = 'offence', entityId = code, details = { label = label, class = class } }
-end)
-
----Removes one offence. Charge lines already filed keep the label and figures they were stamped
----with, so deleting a code never rewrites history.
-offences.delete = access.audited('offences.delete', function(_, payload)
-    local code = util.limitedString(payload.code, 16)
-    if not code or not offences.byCode(code) then return util.fail('That offence no longer exists') end
-
-    MySQL.update.await('DELETE FROM phone_mdt_offences WHERE `code` = ?', { code })
-    offences.invalidate()
-    return util.ok({ code = code }), { entityType = 'offence', entityId = code }
 end)
 
 return offences

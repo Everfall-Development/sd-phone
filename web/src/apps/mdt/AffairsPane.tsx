@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FolderOpen } from 'lucide-react';
+import { ShieldQuestion } from 'lucide-react';
 
 import { t } from '@/i18n';
 import { formatListDate } from '@/lib/time';
@@ -9,11 +9,9 @@ import { EmptyState } from '@/ui/EmptyState';
 import { Pill } from '@/ui/Pill';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 
-import {
-    CASE_PRIORITIES, CASE_STATUSES, CaseFile, casePriorityLabel, caseStatusLabel,
-} from './CaseFile';
-import type { CasePriority, CaseStatus, CaseSummary } from './data';
-import { mdtCases } from './mdtApi';
+import { AffairsFile, iaCategoryLabel, iaSeverityLabel, iaStatusLabel } from './AffairsFile';
+import { IA_STATUSES, type IaStatus, type IaSummary } from './data';
+import { mdtAffairs } from './mdtApi';
 import { useMdtSession } from './useMdtSession';
 import { mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle, mdtSegmented, STATUS_TONE } from './mdtTheme';
 import { MdtButton } from './ui/MdtButton';
@@ -21,13 +19,19 @@ import { MdtColumn } from './ui/MdtColumn';
 import { MdtMaster } from './ui/MdtMaster';
 import { MdtPager } from './ui/MdtPager';
 
-type StatusFilter = CaseStatus | 'all';
-type PriorityFilter = CasePriority | 'all';
+type StatusFilter = IaStatus | 'all';
 
-const NEW_CASE = 'new';
+const NEW_FILE = 'new';
 
-function CaseListRow({ file, selected, onPress }: {
-    file:     CaseSummary;
+const IA_TONE: Record<string, 'red' | 'orange' | 'blue' | 'green'> = {
+    open:          'blue',
+    investigating: 'orange',
+    review:        'orange',
+    closed:        'green',
+};
+
+function AffairsListRow({ file, selected, onPress }: {
+    file:     IaSummary;
     selected: boolean;
     onPress:  () => void;
 }) {
@@ -42,28 +46,24 @@ function CaseListRow({ file, selected, onPress }: {
             <span className="flex w-full items-center gap-2">
                 <span className={`shrink-0 ${mdtRef}`}>{file.ref}</span>
                 <span className={`min-w-0 flex-1 truncate ${mdtRowTitle}`}>{file.title}</span>
-                <Pill tone={STATUS_TONE[file.status] ?? 'blue'}>{caseStatusLabel(file.status)}</Pill>
+                <Pill tone={IA_TONE[file.status] ?? 'blue'}>{iaStatusLabel(file.status)}</Pill>
             </span>
             <span className={`flex w-full items-center gap-2 ${mdtRowMeta}`}>
-                <Pill tone={STATUS_TONE[file.priority] ?? 'orange'}>{casePriorityLabel(file.priority)}</Pill>
-                <span className="truncate tabular-nums">
-                    {file.officers === 1
-                        ? t('mdt.oneOfficer', '1 officer')
-                        : t('mdt.nOfficers', '{n} officers', { n: file.officers })}
-                </span>
+                <Pill tone={STATUS_TONE[file.severity] ?? 'orange'}>{iaSeverityLabel(file.severity)}</Pill>
+                <span className="truncate">{file.subject}</span>
+                <span className="truncate text-ios-gray">{iaCategoryLabel(file.category)}</span>
                 <span className="ml-auto shrink-0 tabular-nums">{formatListDate(file.updatedAt * 1000)}</span>
             </span>
         </button>
     );
 }
 
-export function CasesPane() {
+export function AffairsPane() {
     const { can, selected, select } = useMdtSession();
 
-    const [status, setStatus] = useSessionState<StatusFilter>('mdt:cases:status', 'all');
-    const [priority, setPriority] = useSessionState<PriorityFilter>('mdt:cases:priority', 'all');
-    const [query, setQuery] = useSessionState('mdt:cases:query', '');
-    const [page, setPage] = useSessionState('mdt:cases:page', 1);
+    const [status, setStatus] = useSessionState<StatusFilter>('mdt:affairs:status', 'all');
+    const [query, setQuery] = useSessionState('mdt:affairs:query', '');
+    const [page, setPage] = useSessionState('mdt:affairs:page', 1);
     const [term, setTerm] = useState(query.trim());
 
     useEffect(() => {
@@ -71,51 +71,45 @@ export function CasesPane() {
         return () => window.clearTimeout(id);
     }, [query]);
 
-    useEffect(() => { setPage(1); }, [term, status, priority, setPage]);
+    useEffect(() => { setPage(1); }, [term, status, setPage]);
 
     const { data, loading, settled, refetch } = useAsyncData(
-        () => mdtCases({
-            query:    term,
-            status:   status === 'all' ? undefined : status,
-            priority: priority === 'all' ? undefined : priority,
-            page,
-        }),
-        [term, status, priority, page],
+        () => mdtAffairs({ query: term, status: status === 'all' ? undefined : status, page }),
+        [term, status, page],
     );
 
     const rows = data?.rows ?? [];
     const total = data?.total ?? 0;
-    const pageSize = data?.pageSize ?? 25;
 
     const empty = (
         <EmptyState
             center
-            icon={FolderOpen}
-            title={term ? t('mdt.noMatchingCases', 'No matching cases') : t('mdt.noCases', 'No case files')}
+            icon={ShieldQuestion}
+            title={term ? t('mdt.iaNoMatch', 'No matching files') : t('mdt.iaNone', 'No open complaints')}
             subtitle={loading
                 ? undefined
                 : term
-                    ? t('mdt.noMatchingCasesSub', 'Nothing matches that title or reference.')
-                    : t('mdt.noCasesSub', 'A case groups the reports and the people of one investigation.')}
+                    ? t('mdt.iaNoMatchSub', 'Nothing matches that officer or reference.')
+                    : t('mdt.iaNoneSub', 'Complaints filed against officers of this department appear here.')}
         />
     );
 
     const master = (
         <MdtColumn
             className="flex-1"
-            title={t('mdt.cases', 'Cases')}
+            title={t('mdt.affairs', 'Internal Affairs')}
             count={total}
             query={query}
             onQuery={setQuery}
-            placeholder={t('mdt.searchCases', 'Title or reference')}
-            action={can('cases.create') ? (
-                <MdtButton size="sm" onClick={() => select(NEW_CASE)}>
-                    {t('mdt.newCase', 'Create')}
+            placeholder={t('mdt.iaSearch', 'Officer or reference')}
+            action={can('affairs.file') ? (
+                <MdtButton size="sm" onClick={() => select(NEW_FILE)}>
+                    {t('mdt.iaFile', 'File')}
                 </MdtButton>
             ) : undefined}
             isEmpty={settled && rows.length === 0}
             empty={empty}
-            footer={<MdtPager page={data?.page ?? page} pageSize={pageSize} total={total} onPage={setPage} />}
+            footer={<MdtPager page={data?.page ?? page} pageSize={data?.pageSize ?? 25} total={total} onPage={setPage} />}
         >
             <div className="flex flex-col gap-2 px-3 pb-2">
                 <SegmentedControl<StatusFilter>
@@ -124,23 +118,14 @@ export function CasesPane() {
                     onChange={setStatus}
                     options={[
                         { value: 'all', label: t('common.all', 'All') },
-                        ...CASE_STATUSES.map((s: CaseStatus) => ({ value: s as StatusFilter, label: caseStatusLabel(s) })),
-                    ]}
-                />
-                <SegmentedControl<PriorityFilter>
-                    className={mdtSegmented}
-                    value={priority}
-                    onChange={setPriority}
-                    options={[
-                        { value: 'all', label: t('mdt.anyPriority', 'Any priority') },
-                        ...CASE_PRIORITIES.map((p: CasePriority) => ({ value: p as PriorityFilter, label: casePriorityLabel(p) })),
+                        ...IA_STATUSES.map((s: IaStatus) => ({ value: s as StatusFilter, label: iaStatusLabel(s) })),
                     ]}
                 />
             </div>
 
             <div className="mdt-stagger flex flex-col gap-0.5 px-1">
                 {rows.map(row => (
-                    <CaseListRow
+                    <AffairsListRow
                         key={row.ref}
                         file={row}
                         selected={row.ref === selected}
@@ -156,11 +141,10 @@ export function CasesPane() {
             master={master}
             hasDetail={selected !== null}
             detail={selected ? (
-                <CaseFile
+                <AffairsFile
                     key={selected}
-                    caseRef={selected === NEW_CASE ? null : selected}
+                    fileRef={selected === NEW_FILE ? null : selected}
                     onSaved={file => { select(file.ref); refetch(); }}
-                    onDeleted={() => { select(null); refetch(); }}
                     onClose={() => select(null)}
                     onChanged={refetch}
                 />
@@ -168,9 +152,9 @@ export function CasesPane() {
             placeholder={
                 <EmptyState
                     center
-                    icon={FolderOpen}
-                    title={t('mdt.pickCase', 'No case selected')}
-                    subtitle={t('mdt.pickCaseSub', 'Open a case to see its reports, the officers on it and the running notes.')}
+                    icon={ShieldQuestion}
+                    title={t('mdt.iaPick', 'No file selected')}
+                    subtitle={t('mdt.iaPickSub', 'Open a complaint to read the allegation, the investigation notes and the finding.')}
                 />
             }
             onCloseDetail={() => select(null)}

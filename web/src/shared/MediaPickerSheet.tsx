@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronLeft } from 'lucide-react';
 
+import { device } from '@device';
 import { Sheet } from '@/ui/Sheet';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { t } from '@/i18n';
@@ -10,6 +11,13 @@ import {
     type Album, type Photo,
 } from '@/core/photosApi';
 import { PhotoTile } from '@/apps/photos/PhotoTile';
+
+const PHOTO_COLS = Math.max(3, Math.round(device.screen.w / 170));
+const ALBUM_COLS = Math.max(2, Math.round(device.screen.w / 260));
+
+function cols(n: number) {
+    return { gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` };
+}
 
 export function MediaPickerSheet({ onSelect, onSelectMany, multiple = false, max, forceDark = false, initialSelectedUrls, filter, onClose }: {
     onSelect?:     (photo: Photo) => void;
@@ -160,7 +168,7 @@ function PhotoGrid({ photos, selectedIds, onPick }: {
             {groups.map(group => (
                 <section key={group.key} className="mb-3">
                     <h2 className="px-4 pb-2 pt-1 text-[15px] font-bold tracking-tight text-black dark:text-white">{group.label}</h2>
-                    <div className="grid grid-cols-3 gap-[2px]">
+                    <div className="grid gap-[2px]" style={cols(PHOTO_COLS)}>
                         {group.photos.map(p => (
                             <PhotoTile
                                 key={p.id}
@@ -183,7 +191,7 @@ function AlbumList({ albums, onOpen }: { albums: Album[]; onOpen: (a: Album) => 
     }
 
     return (
-        <div className="grid grid-cols-2 gap-3 px-4 pt-2">
+        <div className="grid gap-3 px-4 pt-2" style={cols(ALBUM_COLS)}>
             {albums.map(a => (
                 <button key={a.id} type="button" onClick={() => onOpen(a)} className="text-left active:opacity-70">
                     <div className="aspect-square overflow-hidden rounded-[12px] bg-black/10 dark:bg-white/10">

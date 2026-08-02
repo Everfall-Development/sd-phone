@@ -46,7 +46,20 @@ local COLUMNS = {
     -- row that predates the medical terminal was written by a police department, and the default
     -- states exactly that rather than leaving a NULL for the scoping clause to interpret.
     phone_mdt_reports = {
-        domain = "`domain` VARCHAR(8) NOT NULL DEFAULT 'leo' AFTER `department`",
+        domain   = "`domain` VARCHAR(8) NOT NULL DEFAULT 'leo' AFTER `department`",
+        evidence = '`evidence` MEDIUMTEXT NULL AFTER `body`',
+    },
+
+    -- Evidence is a JSON array of { url, label } attached to the paperwork, held on the row
+    -- rather than its own table: it is written and read whole, never queried across.
+    phone_mdt_cases = {
+        evidence = '`evidence` MEDIUMTEXT NULL AFTER `summary`',
+    },
+
+    -- A granted expungement hides a charge line from the priors sheet without deleting the row the
+    -- report it was filed on still owns, so the paperwork stays whole and the record reads clean.
+    phone_mdt_report_charges = {
+        expunged = '`expunged` TINYINT(1) NOT NULL DEFAULT 0 AFTER `fine`',
     },
 
     marketplace_listings = {

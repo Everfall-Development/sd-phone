@@ -1,6 +1,7 @@
 import {
-    Car, ClipboardList, FileText, FolderOpen, Gavel, HeartPulse, IdCard,
-    LayoutDashboard, Lock, MessageSquare, RadioTower, Scale, ScrollText, Users, type LucideIcon,
+    BookText, Car, ClipboardList, Eraser, FileText, FolderOpen, Gavel, HeartPulse, IdCard, Landmark,
+    LayoutDashboard, Lock, MessageSquare, RadioTower, Scale, ScrollText, ShieldQuestion,
+    Smartphone, Users, type LucideIcon,
 } from 'lucide-react';
 
 import { t } from '@/i18n';
@@ -25,8 +26,13 @@ export function navItems(): Record<MdtSection, MdtNavItem> {
         employees: { id: 'employees', label: t('mdt.navEmployees', 'Employees'), icon: Users },
         chat:      { id: 'chat',      label: t('mdt.navChat', 'Chat'),           icon: MessageSquare },
         jail:      { id: 'jail',      label: t('mdt.navJail', 'Jail'),           icon: Lock },
+        phone:     { id: 'phone',     label: t('mdt.navPhone', 'Phone'),         icon: Smartphone },
         logs:      { id: 'logs',      label: t('mdt.navLogs', 'Logs'),           icon: ScrollText },
         patients:  { id: 'patients',  label: t('mdt.navPatients', 'Patients'),   icon: HeartPulse },
         protocols: { id: 'protocols', label: t('mdt.navProtocols', 'Protocols'), icon: ClipboardList },
+        affairs:   { id: 'affairs',   label: t('mdt.navAffairs', 'Affairs'),     icon: ShieldQuestion },
+        court:     { id: 'court',     label: t('mdt.navCourt', 'Docket'),        icon: Landmark },
+        expunge:   { id: 'expunge',   label: t('mdt.navExpunge', 'Petitions'),   icon: Eraser },
+        sops:      { id: 'sops',      label: t('mdt.navSops', 'SOPs'),           icon: BookText },
     };
 }
