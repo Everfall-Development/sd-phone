@@ -5,19 +5,20 @@ import { t } from '@/i18n';
 import { MediaPickerSheet } from '@/shared/MediaPickerSheet';
 import { AlertDialog } from '@/ui/AlertDialog';
 import { Toggle } from '@/ui/Toggle';
-import { apiDeleteAccount, apiLogout, apiUpdateProfile } from '../birdyApi';
+import { apiDeleteAccount, apiUpdateProfile } from '../birdyApi';
 import { accountsForgetPassword } from '@/core/accountsApi';
 import { ChangePasswordPage } from '@/shared/ChangePasswordPage';
 import { BG, BLUE, type BirdyProfile } from '../data';
 
 const RED = '#ff3b30';
 
-export function EditProfile({ profile, onCancel, onSaved, onSignOut, onDeleted }: {
-    profile:   BirdyProfile;
-    onCancel:  () => void;
-    onSaved:   (p: BirdyProfile) => void;
-    onSignOut: () => void;
-    onDeleted: () => void;
+export function EditProfile({ profile, onCancel, onSaved, onSignOut, onSwitchAccount, onDeleted }: {
+    profile:         BirdyProfile;
+    onCancel:        () => void;
+    onSaved:         (p: BirdyProfile) => void;
+    onSignOut:       () => void;
+    onSwitchAccount: () => void;
+    onDeleted:       () => void;
 }) {
     const [name,       setName]       = useState(profile.name);
     const [bio,        setBio]        = useState(profile.bio);
@@ -45,8 +46,7 @@ export function EditProfile({ profile, onCancel, onSaved, onSignOut, onDeleted }
         if (p) dismiss(() => onSaved(p));
     }
 
-    async function signOut() {
-        await apiLogout();
+    function signOut() {
         onSignOut();
     }
 
@@ -117,6 +117,7 @@ export function EditProfile({ profile, onCancel, onSaved, onSignOut, onDeleted }
 
                 <div className="flex flex-col gap-3 px-4 py-6">
                     <button type="button" onClick={() => setPwOpen(true)} className="w-full rounded-[12px] bg-white py-4 text-[18px] font-semibold active:opacity-70" style={{ color: BLUE }}>{t('squawk.changePassword', 'Change Password')}</button>
+                    <button type="button" onClick={() => dismiss(onSwitchAccount)} className="w-full rounded-[12px] bg-white py-4 text-[18px] font-semibold active:opacity-70" style={{ color: BLUE }}>{t('accounts.switchAccount', 'Switch account')}</button>
                     <button type="button" onClick={() => setConfirmSignOut(true)} className="w-full rounded-[12px] bg-white py-4 text-[18px] font-semibold active:opacity-70" style={{ color: RED }}>{t('squawk.signOut', 'Sign Out')}</button>
                     <button type="button" onClick={() => setConfirmDel(true)} className="w-full rounded-[12px] bg-white py-4 text-[18px] font-semibold active:opacity-70" style={{ color: RED }}>{t('squawk.deleteAccount', 'Delete Account')}</button>
                 </div>

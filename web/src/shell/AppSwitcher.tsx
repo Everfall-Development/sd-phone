@@ -17,8 +17,6 @@ const CARD_H     = Math.round(SH * CARD_W / SW);
 const SCALE      = CARD_W / SW;
 const CARD_STEP  = Math.round(CARD_W * 0.74);   // overlap so the focused card sits forward
 const CENTER     = (SW - CARD_W) / 2;
-const COMMIT_PX  = CARD_STEP * 0.25;   // easier to page: drop the drag threshold
-const FLICK_VX   = 0.35;               // px/ms - a quick flick pages even on a short drag
 const HEADER_H   = 42;
 const HEADER_TOP = 46;
 const CARD_TOP   = HEADER_TOP + HEADER_H + 8;
@@ -69,7 +67,6 @@ export function AppSwitcher({
 }: Props) {
     const badges = useBadges();
     const [focusedIdx, setFocusedIdx] = useState(0);
-    const [dragX,      setDragX]      = useState(0);
     const [swipeUpY,   setSwipeUpY]   = useState(0);
     const [ejectingId, setEjectingId] = useState<string | null>(null);
 
@@ -85,9 +82,6 @@ export function AppSwitcher({
     const suppressMount  = useRef(true);
     const focusedRef     = useRef(focusedIdx);
     focusedRef.current   = focusedIdx;
-    const lastXRef       = useRef(0);   // last pointer x + time, for release velocity
-    const lastTRef       = useRef(0);
-    const vxRef          = useRef(0);   // px/ms
 
     useEffect(() => {
         const t = setTimeout(() => { suppressMount.current = false; }, 200);
@@ -114,9 +108,6 @@ export function AppSwitcher({
         capturedRef.current   = false;
         axisRef.current       = null;
         swipeDragIdx.current  = focusedRef.current;
-        lastXRef.current      = e.clientX;
-        lastTRef.current      = Date.now();
-        vxRef.current         = 0;
     }
 
     function onPointerMove(e: React.PointerEvent) {
@@ -127,54 +118,24 @@ export function AppSwitcher({
         if (!axisRef.current && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
             axisRef.current = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v';
         }
+        if (axisRef.current !== 'v') return;
 
-        if (axisRef.current === 'h') {
-            if (!capturedRef.current) {
-                capturedRef.current = true;
-                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-            }
-            const now = Date.now();
-            const dt  = now - lastTRef.current;
-            if (dt > 0) vxRef.current = (e.clientX - lastXRef.current) / dt;
-            lastXRef.current = e.clientX;
-            lastTRef.current = now;
-
-            const fi   = focusedRef.current;
-            const maxL = fi * CARD_STEP;
-            const maxR = (recents.length - 1 - fi) * CARD_STEP;
-            // Follow the finger within range; past the first/last card apply rubber-band
-            // resistance so the carousel feels elastic instead of hitting a hard wall.
-            const nx = dx > maxL  ? maxL + (dx - maxL) * 0.35
-                     : dx < -maxR ? -maxR + (dx + maxR) * 0.35
-                     : dx;
-            setDragX(nx);
-        } else if (axisRef.current === 'v') {
-            if (!capturedRef.current) {
-                capturedRef.current = true;
-                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-            }
-            const newY = Math.min(0, dy);
-            swipeUpYRef.current = newY;
-            setSwipeUpY(newY);
+        if (!capturedRef.current) {
+            capturedRef.current = true;
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
         }
+        const newY = Math.min(0, dy);
+        swipeUpYRef.current = newY;
+        setSwipeUpY(newY);
     }
 
     function onPointerUp() {
-        if (axisRef.current === 'h') {
+        if (axisRef.current) {
             suppressClick.current = true;
             setTimeout(() => { suppressClick.current = false; }, 80);
+        }
 
-            const vx = vxRef.current;
-            setDragX(prev => {
-                const fi = focusedRef.current;
-                // Page on a past-threshold drag OR a quick flick (whichever happens first).
-                if ((prev < -COMMIT_PX || vx < -FLICK_VX) && fi < recents.length - 1)
-                    setFocusedIdx(f => f + 1);
-                else if ((prev > COMMIT_PX || vx > FLICK_VX) && fi > 0)
-                    setFocusedIdx(f => f - 1);
-                return 0;
-            });
-        } else if (axisRef.current === 'v') {
+        if (axisRef.current === 'v') {
             const draggedId = recents[swipeDragIdx.current];
             if (swipeUpYRef.current < -80 && draggedId) {
                 setSwipeUpY(0);
@@ -188,8 +149,6 @@ export function AppSwitcher({
                 setSwipeUpY(0);
                 swipeUpYRef.current = 0;
             }
-        } else {
-            setDragX(0);
         }
         isDraggingRef.current = false;
         axisRef.current       = null;
@@ -231,7 +190,7 @@ export function AppSwitcher({
             >
                 {recents.map((appId, idx) => {
                     const appDef    = apps.find(a => a.id === appId);
-                    const tx        = CENTER + (idx - focusedIdx) * CARD_STEP + dragX;
+                    const tx        = CENTER + (idx - focusedIdx) * CARD_STEP;
                     const snapping  = !isDraggingRef.current;
                     const isEjecting = ejectingId === appId;
                     const isSwiping  = idx === swipeDragIdx.current;
@@ -244,9 +203,9 @@ export function AppSwitcher({
 
                     // Focused card sits forward: larger, full brightness, on top; neighbours are
                     // smaller and dimmed - the "highlighted centre card" look. `d` is the
-                    // signed distance from centre and shifts live with the drag. Scaling from the
-                    // top keeps every card's name/icon row on the same line.
-                    const d       = (idx - focusedIdx) + dragX / CARD_STEP;
+                    // signed distance from centre. Scaling from the top keeps every card's
+                    // name/icon row on the same line.
+                    const d       = idx - focusedIdx;
                     const ad      = Math.abs(d);
                     const cScale  = Math.max(0.78, 1 - Math.min(ad, 1) * 0.15 - Math.max(0, ad - 1) * 0.04);
                     const cBright = Math.max(0.6, 1 - Math.min(ad, 1) * 0.34);

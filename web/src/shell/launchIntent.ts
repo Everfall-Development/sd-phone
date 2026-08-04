@@ -40,7 +40,10 @@ export function subscribeLaunchIntent(appId: string, fn: () => void): () => void
     };
 }
 
-/** Test seam: drops all queued intents. */
+/**
+ * Drops all queued intents.
+ * @testseam
+ */
 export function resetLaunchIntents(): void {
     pending.clear();
 }

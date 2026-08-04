@@ -2,7 +2,10 @@
 local efVehiclekeys = require 'bridge.client.providers.ef_vehiclekeys'
 
 ---@type string[] Supported vehicle-key resources, in detection-priority order.
-local RESOURCES = { 'ef_vehiclekeys', 'qbx_vehiclekeys', 'qb-vehiclekeys', 'qs-vehiclekeys', 'vehicles_keys', 'mk_vehiclekeys' }
+local RESOURCES = {
+    'ef_vehiclekeys', 'qbx_vehiclekeys', 'qb-vehiclekeys', 'qs-vehiclekeys', 'Renewed-Vehiclekeys',
+    'dusa_vehiclekeys', 'wasabi_carlock', 'vehicles_keys', 'mk_vehiclekeys',
+}
 
 ---@type table Vehicle-lock module; the table returned at end of file. Reads and toggles lock
 ---state on the live entity found by plate; returns nil for vehicles not streamed nearby.
@@ -83,8 +86,10 @@ local function fobLights(veh)
 end
 
 ---Lock or unlock the nearby spawned vehicle for a plate, requesting network control first. Fires
----the active Everfall/QBox key resource's own lock path when available, else the native door lock
----plus hazard flash; nil when not streamed nearby or access is denied.
+---ef_vehiclekeys' access-checked lock path or qbx_vehiclekeys' own lock path when active, or
+---Renewed-Vehiclekeys' `vehicleLock` statebag; the rest (wasabi_carlock, dusa_vehiclekeys,
+---qs-vehiclekeys, qb) read the door lock straight off the entity, so they get the native door
+---lock + hazard flash. nil when not streamed nearby or access is denied.
 ---@param plate string
 ---@param locked boolean true = lock, false = unlock
 ---@return boolean|nil locked the applied state, or nil if no nearby entity
@@ -100,16 +105,46 @@ function M.setLocked(plate, locked)
         NetworkRequestControlOfEntity(veh)
     end
 
+    local sys       = M.active()
     local lockstate = locked and 2 or 1
-    if M.active() == 'qbx_vehiclekeys' then
+    if sys == 'qbx_vehiclekeys' then
         TriggerServerEvent('qb-vehiclekeys:server:setVehLockState', NetworkGetNetworkIdFromEntity(veh), lockstate)
         PlaySoundFromEntity(-1, 'Remote_Control_Fob', veh, 'PI_Menu_Sounds', false, 0)
+        fobLights(veh)
+    elseif sys == 'Renewed-Vehiclekeys' then
+        Entity(veh).state:set('vehicleLock', { lock = lockstate, sound = true }, true)
         fobLights(veh)
     else
         SetVehicleDoorsLocked(veh, lockstate)
         blip(veh, locked)
     end
     return locked
+end
+
+---Grant the player keys to a vehicle on whichever key resource is running. No-op when none is.
+---@param plate string
+---@param veh number vehicle entity
+function M.giveKeys(plate, veh)
+    local sys = M.active()
+    if not sys or type(plate) ~= 'string' or plate == '' or not DoesEntityExist(veh) then return end
+
+    pcall(function()
+        if sys == 'qbx_vehiclekeys' or sys == 'qb-vehiclekeys' then
+            TriggerEvent('vehiclekeys:client:SetOwner', plate)
+        elseif sys == 'qs-vehiclekeys' then
+            exports['qs-vehiclekeys']:GiveKeys(plate, GetEntityArchetypeName(veh))
+        elseif sys == 'Renewed-Vehiclekeys' then
+            exports['Renewed-Vehiclekeys']:addKey(plate)
+        elseif sys == 'dusa_vehiclekeys' then
+            exports['dusa_vehiclekeys']:AddKey(plate)
+        elseif sys == 'wasabi_carlock' then
+            exports['wasabi_carlock']:GiveKey(plate)
+        elseif sys == 'vehicles_keys' then
+            TriggerServerEvent('vehicles_keys:selfGiveVehicleKeys', plate)
+        elseif sys == 'mk_vehiclekeys' then
+            exports['mk_vehiclekeys']:AddKey(veh)
+        end
+    end)
 end
 
 return M

@@ -46,6 +46,12 @@ lib.callback.register('sd-phone:server:weazelnews:feed', function(src)
     return actions.feed(src)
 end)
 
+lib.callback.register('sd-phone:server:weazelnews:watch', function(src, payload)
+    if type(payload) ~= 'table' then payload = {} end
+    require('server.watchers').of('weazelnews').watch(src, payload.on == true)
+    return { success = true }
+end)
+
 lib.callback.register('sd-phone:server:weazelnews:view', function(src, payload)
     if type(payload) ~= 'table' then payload = {} end
     return actions.view(src, payload.id)

@@ -15,6 +15,12 @@ local live = {}
 
 ---@type table Live-video knobs (configs/photogram.lua Photogram.Live).
 local CFG = (config.Photogram and config.Photogram.Live) or {}
+---@type boolean Whether broadcasting is available at all.
+local ENABLED = CFG.Enabled == true
+
+---Whether broadcasting is switched on, for the app to hide its Go Live action.
+---@return boolean
+function live.enabled() return ENABLED end
 ---@type integer Concurrent viewers allowed on one stream (0 = unlimited).
 local MAX_VIEWERS = tonumber(CFG.MaxViewers) or 50
 ---@type integer Per-viewer latent-event send ceiling (bytes/s).
@@ -210,6 +216,8 @@ end
 ---@param src integer hosting player server id
 ---@return table result { liveId, startedAt (ms), enc } or failure
 function live.start(src)
+    if not ENABLED then return fail('Live is not available') end
+
     local acc = viewerAccount(src)
     if not acc then return fail('Not signed in') end
 

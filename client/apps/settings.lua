@@ -44,5 +44,6 @@ writeCallback('sd-phone:settings:setVolumes',       'sd-phone:server:settings:se
 writeCallback('sd-phone:settings:setLocale',        'sd-phone:server:settings:setLocale')
 proxyCallback('sd-phone:settings:versionInfo',  'sd-phone:server:settings:versionInfo')
 proxyCallback('sd-phone:settings:getNotifPref', 'sd-phone:server:settings:getNotifPref')
+proxyCallback('sd-phone:settings:getNotifPrefs', 'sd-phone:server:settings:getNotifPrefs')
 writeCallback('sd-phone:settings:setNotifPref', 'sd-phone:server:settings:setNotifPref')
 writeCallback('sd-phone:settings:factoryReset', 'sd-phone:server:settings:factoryReset')

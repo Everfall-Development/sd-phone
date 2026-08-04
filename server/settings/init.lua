@@ -423,13 +423,25 @@ lib.callback.register('sd-phone:server:settings:getNotifPref', function(source, 
     return { success = true, data = { enabled = store.getNotifPref(cid, payload.app) } }
 end)
 
----Persists the caller's notification preference for one app.
+---Every stored notification override for the caller, keyed by app. Read-only.
+lib.callback.register('sd-phone:server:settings:getNotifPrefs', function(source)
+    local cid = player.getIdentifier(source)
+    if not cid then return { success = false, message = 'Player not found' } end
+    return { success = true, data = store.getNotifPrefs(cid) }
+end)
+
+---Persists the caller's notification preferences for one app. `on`, `sounds` and `tone` are each
+---optional; whatever is omitted keeps its stored value.
 lib.callback.register('sd-phone:server:settings:setNotifPref', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     if not writeAllowed(cid, 'notifPref') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
-    store.setNotifPref(cid, payload.app, payload.on == true)
+    store.setNotifPref(cid, payload.app, {
+        enabled = payload.on,
+        sounds  = payload.sounds,
+        tone    = payload.tone,
+    })
     return { success = true }
 end)
 

@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { Car, ChevronRight, Fuel, Gauge, Image, ImageOff, Lock, MapPin, Navigation, SearchX, Shield, Unlock } from 'lucide-react';
+import { Car, ChevronRight, ConciergeBell, Fuel, Gauge, Image, ImageOff, Lock, MapPin, Navigation, SearchX, Shield, Unlock } from 'lucide-react';
 
 import { SearchBar } from '@/ui/SearchBar';
 import { EmptyState } from '@/ui/EmptyState';
 import { NavBar } from '@/ui/NavBar';
+import { AlertDialog } from '@/ui/AlertDialog';
 import { fetchNui, isFiveM } from '@/core/nui';
 import type { Envelope } from '@/core/api';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useIosPush } from '@/hooks/useIosPush';
 import { useSessionState } from '@/hooks/useSessionState';
-import { VEHICLES, type Vehicle, type VehicleStatus } from './data';
+import { VEHICLES, type ValetInfo, type Vehicle, type VehicleStatus } from './data';
 import { t } from '@/i18n';
 import { Pill, type PillTone } from '@/ui/Pill';
 
@@ -28,20 +29,25 @@ export function Garages({ onClose: _onClose }: { onClose: () => void }) {
 
     const [imgCfg, setImgCfg] = useState<{ allowToggle: boolean; default: boolean }>(() => ({ allowToggle: !isFiveM, default: true }));
     const [imgPref, setImgPref] = useState<boolean | null>(readImagePref);
+    const [valet, setValet] = useState<ValetInfo>(() => ({ enabled: !isFiveM, price: 100 }));
 
-    const { data: list, loading } = useAsyncData<{ vehicles: Vehicle[]; images?: { allowToggle: boolean; default: boolean } }>(
+    const { data: list, loading, refetch } = useAsyncData<{ vehicles: Vehicle[]; images?: { allowToggle: boolean; default: boolean }; valet?: ValetInfo }>(
         async () => {
-            const res = await fetchNui<Envelope<Vehicle[]> & { images?: { allowToggle: boolean; default: boolean } }>('sd-phone:garages:list');
+            const res = await fetchNui<Envelope<Vehicle[]> & { images?: { allowToggle: boolean; default: boolean }; valet?: ValetInfo }>('sd-phone:garages:list');
             if (!res?.success || !Array.isArray(res.data)) return null;
             return {
                 vehicles: res.data.map((v, i) => ({ ...v, accent: v.accent || ACCENTS[i % ACCENTS.length] })),
                 images:   res.images,
+                valet:    res.valet,
             };
         },
         [],
         {
             enabled: isFiveM,
-            onData: d => { if (d.images) setImgCfg({ allowToggle: !!d.images.allowToggle, default: d.images.default !== false }); },
+            onData: d => {
+                if (d.images) setImgCfg({ allowToggle: !!d.images.allowToggle, default: d.images.default !== false });
+                if (d.valet) setValet({ enabled: d.valet.enabled === true, price: Number(d.valet.price) || 0 });
+            },
         },
     );
     const vehicles = list?.vehicles ?? (isFiveM ? [] : VEHICLES);
@@ -104,7 +110,16 @@ export function Garages({ onClose: _onClose }: { onClose: () => void }) {
                 </div>
             )}
 
-            {open && <VehicleDetail v={open} showImages={showImages} animateIn={didEnter.current} onBack={() => setOpenId(null)} />}
+            {open && (
+                <VehicleDetail
+                    v={open}
+                    showImages={showImages}
+                    valet={valet}
+                    animateIn={didEnter.current}
+                    onBack={() => setOpenId(null)}
+                    onDelivered={refetch}
+                />
+            )}
         </div>
     );
 }
@@ -188,7 +203,9 @@ function VehicleCard({ v, showImages, onOpen }: { v: Vehicle; showImages: boolea
     );
 }
 
-function VehicleDetail({ v, showImages, onBack, animateIn = true }: { v: Vehicle; showImages: boolean; onBack: () => void; animateIn?: boolean }) {
+function VehicleDetail({ v, showImages, valet, onBack, onDelivered, animateIn = true }: {
+    v: Vehicle; showImages: boolean; valet: ValetInfo; onBack: () => void; onDelivered: () => void; animateIn?: boolean;
+}) {
     const { goBack, pageStyle } = useIosPush(onBack, animateIn);
     const setWaypoint = () => { if (v.waypoint) void fetchNui('sd-phone:garages:waypoint', v.waypoint); };
 
@@ -238,6 +255,21 @@ function VehicleDetail({ v, showImages, onBack, animateIn = true }: { v: Vehicle
         }
     }
 
+    const canValet = valet.enabled && v.status === 'stored';
+    const [confirming, setConfirming] = useState(false);
+    const [valetBusy, setValetBusy] = useState(false);
+
+    async function requestValet() {
+        if (valetBusy || !isFiveM) return;
+        setValetBusy(true);
+        const r = await fetchNui<Envelope<void>>('sd-phone:garages:valet', { plate: v.plate, class: v.class });
+        setValetBusy(false);
+        if (r?.success) {
+            onDelivered();
+            goBack();
+        }
+    }
+
     const lockPillCls = `flex items-center gap-1 rounded-full px-2.5 py-[3px] text-[13px] font-bold uppercase tracking-wide ${locked ? 'bg-ios-blue/20 text-[#1d4ed8] dark:text-ios-blue' : 'bg-ios-red/20 text-[#c1121f] dark:text-ios-red'}`;
     const lockPillInner = (
         <>
@@ -282,6 +314,22 @@ function VehicleDetail({ v, showImages, onBack, animateIn = true }: { v: Vehicle
                     )}
                 </div>
 
+                {canValet && (
+                    <button
+                        type="button"
+                        onClick={() => setConfirming(true)}
+                        disabled={valetBusy}
+                        className="mt-5 flex h-[48px] w-full items-center justify-center gap-2 rounded-[14px] bg-ios-blue text-[17px] font-semibold text-white transition-opacity active:opacity-70 disabled:opacity-50"
+                    >
+                        <ConciergeBell className="h-[19px] w-[19px]" strokeWidth={2.3} />
+                        {valetBusy
+                            ? t('garages.valetRequesting', 'Requesting valet...')
+                            : valet.price > 0
+                                ? t('garages.valetRequestPaid', 'Request valet · ${price}', { price: valet.price.toLocaleString() })
+                                : t('garages.valetRequest', 'Request valet')}
+                    </button>
+                )}
+
                 <SectionLabel>{t('garages.condition', 'Condition')}</SectionLabel>
                 <div className="overflow-hidden rounded-[14px] bg-[#e5e5e5] px-4 py-1 ring-1 ring-black/[0.04] dark:bg-surface dark:ring-white/[0.06]">
                     <StatBar icon={<Fuel className="h-[20px] w-[20px]" strokeWidth={2.2} />}  label={t('garages.fuel', 'Fuel')}   value={v.fuel} />
@@ -299,6 +347,18 @@ function VehicleDetail({ v, showImages, onBack, animateIn = true }: { v: Vehicle
                     )}
                 </div>
             </div>
+
+            {confirming && (
+                <AlertDialog
+                    title={t('garages.valetTitle', 'Request valet')}
+                    message={valet.price > 0
+                        ? t('garages.valetConfirmPaid', 'Have your {model} delivered to you for ${price}?', { model: v.model, price: valet.price.toLocaleString() })
+                        : t('garages.valetConfirmFree', 'Have your {model} delivered to you?', { model: v.model })}
+                    confirmLabel={t('garages.valetConfirmAction', 'Request')}
+                    onCancel={() => setConfirming(false)}
+                    onConfirm={() => { setConfirming(false); void requestValet(); }}
+                />
+            )}
         </div>
     );
 }

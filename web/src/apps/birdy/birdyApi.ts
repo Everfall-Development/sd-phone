@@ -46,11 +46,6 @@ export async function apiLogin(input: { username: string; password: string }): P
     return res.success ? { ok: true, me: res.data?.me } : { ok: false, message: res.message };
 }
 
-export async function apiLogout(): Promise<void> {
-    if (!isFiveM) { devLoggedIn = false; return; }
-    await fetchNui('sd-phone:birdy:logout');
-}
-
 /** Subscribe/unsubscribe this phone to the feed push. The server only pushes to watchers, so a
  * phone that is closed or backgrounded no longer pays to receive and discard one. */
 export function apiWatch(on: boolean): void {
@@ -128,7 +123,7 @@ export async function apiDmMarkRead(id: string): Promise<void> {
 
 export interface DmSendResult { message: BirdyMessage | null; error?: string }
 
-export async function apiDmSend(toCid: string, draft: MessageDraft): Promise<DmSendResult> {
+export async function apiDmSend(to: string, draft: MessageDraft): Promise<DmSendResult> {
     if (!isFiveM) {
         return { message: {
             id: newId('m'), fromMe: true, body: draft.body, at: clock(), ts: Date.now(),
@@ -138,7 +133,7 @@ export async function apiDmSend(toCid: string, draft: MessageDraft): Promise<DmS
             wpCode: draft.wpCode, wpSub: draft.wpSub,
         } };
     }
-    const r = await apiCall<{ message: BirdyMessage }>('sd-phone:birdy:dmSend', { toCid, ...draft });
+    const r = await apiCall<{ message: BirdyMessage }>('sd-phone:birdy:dmSend', { to, ...draft });
     if (r.success && r.data?.message) return { message: r.data.message };
     return { message: null, error: r.message };
 }

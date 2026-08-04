@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bold, Code, Italic, List, Strikethrough, Underline } from 'lucide-react';
+import { Bold, Code, Heading1, Heading2, Heading3, Italic, List, Strikethrough, Underline } from 'lucide-react';
 
 import { t } from '@/i18n';
 import { mdtFieldBase, mdtSectionHeader } from '../mdtTheme';
 import { domToMarkdown, mdToFragment } from './mdtRich';
 
 interface Tool {
-    id:   string;
-    icon: typeof Bold;
-    cmd?: string;
+    id:     string;
+    icon:   typeof Bold;
+    cmd?:   string;
+    block?: 'h1' | 'h2' | 'h3';
 }
 
 const TOOLS: Tool[] = [
+    { id: 'h1',                  icon: Heading1,      block: 'h1' },
+    { id: 'h2',                  icon: Heading2,      block: 'h2' },
+    { id: 'h3',                  icon: Heading3,      block: 'h3' },
     { id: 'bold',                icon: Bold,          cmd: 'bold' },
     { id: 'italic',              icon: Italic,        cmd: 'italic' },
     { id: 'underline',           icon: Underline,     cmd: 'underline' },
@@ -22,6 +26,9 @@ const TOOLS: Tool[] = [
 
 function toolLabels(): Record<string, string> {
     return {
+        h1:                  t('mdt.rtH1', 'Heading 1'),
+        h2:                  t('mdt.rtH2', 'Heading 2'),
+        h3:                  t('mdt.rtH3', 'Heading 3'),
         bold:                t('mdt.rtBold', 'Bold'),
         italic:              t('mdt.rtItalic', 'Italic'),
         underline:           t('mdt.rtUnderline', 'Underline'),
@@ -29,6 +36,44 @@ function toolLabels(): Record<string, string> {
         code:                t('mdt.rtCode', 'Code'),
         insertUnorderedList: t('mdt.rtBullet', 'Bullet list'),
     };
+}
+
+function currentBlock(): string {
+    try {
+        return (document.queryCommandValue('formatBlock') || '').toLowerCase();
+    } catch {
+        return '';
+    }
+}
+
+function headingAncestor(root: HTMLElement): HTMLElement | null {
+    const sel = window.getSelection();
+    let node: Node | null = sel?.anchorNode ?? null;
+    while (node && node !== root) {
+        if (node.nodeType === Node.ELEMENT_NODE && /^H[1-3]$/.test((node as HTMLElement).tagName)) {
+            return node as HTMLElement;
+        }
+        node = node.parentNode;
+    }
+    return null;
+}
+
+function unwrapHeading(root: HTMLElement) {
+    const head = headingAncestor(root);
+    if (!head?.parentNode) return;
+
+    const div = document.createElement('div');
+    while (head.firstChild) div.appendChild(head.firstChild);
+    if (!div.firstChild) div.appendChild(document.createElement('br'));
+    head.parentNode.replaceChild(div, head);
+
+    const sel = window.getSelection();
+    if (!sel) return;
+    const range = document.createRange();
+    range.selectNodeContents(div);
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
 }
 
 function codeAncestor(root: HTMLElement): HTMLElement | null {
@@ -109,9 +154,12 @@ export function MdtRichField({ label, value, onChange, rows = 8, maxLength, plac
         const el = ref.current;
         const sel = window.getSelection();
         if (!el || !sel?.anchorNode || !el.contains(sel.anchorNode)) return;
+        const block = currentBlock();
+        const head = headingAncestor(el)?.tagName.toLowerCase() ?? '';
         const next: Record<string, boolean> = { code: !!codeAncestor(el) };
         for (const tool of TOOLS) {
             if (tool.cmd) next[tool.id] = document.queryCommandState(tool.cmd);
+            else if (tool.block) next[tool.id] = block === tool.block || head === tool.block;
         }
         setActive(next);
     }, []);
@@ -152,6 +200,11 @@ export function MdtRichField({ label, value, onChange, rows = 8, maxLength, plac
         if (!el) return;
         restore();
         if (tool.cmd) document.execCommand(tool.cmd);
+        else if (tool.block) {
+            const on = currentBlock() === tool.block || headingAncestor(el)?.tagName.toLowerCase() === tool.block;
+            document.execCommand('formatBlock', false, on ? '<div>' : `<${tool.block}>`);
+            if (on) unwrapHeading(el);
+        }
         else toggleCode(el);
         syncMarks();
         emit();
@@ -206,7 +259,7 @@ export function MdtRichField({ label, value, onChange, rows = 8, maxLength, plac
                         e.preventDefault();
                         document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
                     }}
-                    className={`w-full overflow-y-auto px-3 py-2 text-[15px] leading-snug ${mdtFieldBase} [&_code]:rounded-[4px] [&_code]:bg-black/[0.07] [&_code]:px-1 [&_code]:font-mono [&_code]:text-[0.92em] dark:[&_code]:bg-white/[0.14] [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5`}
+                    className={`w-full overflow-y-auto px-3 py-2 text-[15px] leading-snug ${mdtFieldBase} [&_code]:rounded-[4px] [&_code]:bg-black/[0.07] [&_code]:px-1 [&_code]:font-mono [&_code]:text-[0.92em] dark:[&_code]:bg-white/[0.14] [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_h1]:mb-1 [&_h1]:mt-3 [&_h1]:text-[1.3em] [&_h1]:font-bold [&_h1]:leading-tight [&_h2]:mb-1 [&_h2]:mt-3 [&_h2]:text-[1.15em] [&_h2]:font-bold [&_h2]:leading-tight [&_h3]:mb-0.5 [&_h3]:mt-2.5 [&_h3]:text-[1.02em] [&_h3]:font-semibold [&_h3]:leading-tight [&>*:first-child]:mt-0`}
                     style={{ minHeight: rows * 22, maxHeight: rows * 34 }}
                 />
                 {empty && placeholder && (

@@ -13,7 +13,8 @@ import { CHERRY, type Gender, type InterestedIn, type MyProfile } from './data';
 
 const MAX_PHOTOS = 6;
 
-export function EditProfile({ profile, onChange, onSignOut, onDeleteAccount }: {
+export function EditProfile({ profile, onChange, onSignOut, onSwitchAccount, onDeleteAccount }: {
+    onSwitchAccount?: () => void;
     profile:         MyProfile;
     onChange:        (p: MyProfile) => void;
     onSignOut:       () => void;
@@ -169,6 +170,16 @@ export function EditProfile({ profile, onChange, onSignOut, onDeleteAccount }: {
                 >
                     {t('cherry.changePassword', 'Change Password')}
                 </button>
+
+                {onSwitchAccount && (
+                    <button
+                        type="button"
+                        onClick={onSwitchAccount}
+                        className="mt-3 w-full rounded-[12px] bg-black/[0.05] py-4 text-[17px] font-semibold text-ios-blue active:opacity-80"
+                    >
+                        {t('accounts.switchAccount', 'Switch account')}
+                    </button>
+                )}
 
                 <button
                     type="button"

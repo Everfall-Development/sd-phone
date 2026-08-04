@@ -3,6 +3,11 @@
 -- stream (VP8/VP9) and the server (server/photogram/live.lua) relays it to viewers.
 return {
     Live = {
+        -- Whether players can broadcast at all. Off by default: a live stream relays real
+        -- video through your server, so it costs bandwidth on every viewer. With this off
+        -- the Go Live action is hidden from the app and the server refuses to start one.
+        Enabled           = false,
+
         -- Concurrent viewers allowed on one stream (0 = unlimited). Each viewer costs
         -- ~Bitrate of server uplink, so this is the main protection knob on large servers.
         MaxViewers = 50,

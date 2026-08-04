@@ -16,6 +16,11 @@ export async function weazelFeed(): Promise<NewsFeed> {
     return (await apiData<NewsFeed>('sd-phone:weazelnews:feed')) ?? { articles: [], ticker: [], canManage: false };
 }
 
+export async function weazelWatch(on: boolean): Promise<void> {
+    if (!isFiveM) return;
+    await apiCall('sd-phone:weazelnews:watch', { on });
+}
+
 export async function weazelView(id: string): Promise<number | null> {
     if (!isFiveM) {
         const a = DEV_ARTICLES.find(x => x.id === id);

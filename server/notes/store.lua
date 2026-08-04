@@ -28,6 +28,14 @@ function store.ensureSchema()
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
 
+    util.ensureColumns('phone_notes', {
+        body       = '`body` MEDIUMTEXT NULL',
+        sketches   = '`sketches` MEDIUMTEXT NULL',
+        images     = '`images` MEDIUMTEXT NULL',
+        created_at = "`created_at` VARCHAR(40) NOT NULL DEFAULT ''",
+        updated_at = "`updated_at` VARCHAR(40) NOT NULL DEFAULT ''",
+    })
+
     local hasImages = MySQL.scalar.await([[
         SELECT 1 FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'phone_notes' AND COLUMN_NAME = 'images' LIMIT 1

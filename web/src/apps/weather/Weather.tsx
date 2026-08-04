@@ -172,7 +172,7 @@ function Card({ children }: { children: React.ReactNode }) {
     return (
         <div
             className="mx-3 mt-3 overflow-hidden rounded-[14px] border"
-            style={{ background: 'rgba(255,255,255,0.12)', borderColor: 'rgba(255,255,255,0.20)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
+            style={{ background: 'rgba(255,255,255,0.19)', borderColor: 'rgba(255,255,255,0.20)' }}
         >
             {children}
         </div>
@@ -183,7 +183,7 @@ function Tile({ label, value, icon }: { label: string; value: string; icon?: Rea
     return (
         <div
             className="overflow-hidden rounded-[14px] border p-3"
-            style={{ background: 'rgba(255,255,255,0.12)', borderColor: 'rgba(255,255,255,0.20)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
+            style={{ background: 'rgba(255,255,255,0.19)', borderColor: 'rgba(255,255,255,0.20)' }}
         >
             <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-white/70">
                 {icon}

@@ -18,6 +18,8 @@ const OFFENCE_PAGE = 8;
 
 const MAX_COUNT = 99;
 
+const ALL_SUSPECTS = '__all__';
+
 export interface ChargeSubject {
     citizenid: string;
     name:      string;
@@ -115,9 +117,25 @@ export function ChargePicker({ lines, onChange, subjects = [], className = '' }:
     }
 
     function setSubject(index: number, citizenid: string) {
-        const next = lines.slice();
-        next[index] = { ...next[index], citizenid };
-        onChange(next);
+        const line = lines[index];
+        if (citizenid !== ALL_SUSPECTS) {
+            const next = lines.slice();
+            next[index] = { ...line, citizenid };
+            onChange(next);
+            return;
+        }
+        const spread = [
+            ...lines.slice(0, index),
+            ...subjects.map(subject => ({ ...line, citizenid: subject.citizenid })),
+            ...lines.slice(index + 1),
+        ];
+        const seen = new Set<string>();
+        onChange(spread.filter(l => {
+            const key = `${l.code}:${l.citizenid ?? ''}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        }));
     }
 
     return (
@@ -153,7 +171,10 @@ export function ChargePicker({ lines, onChange, subjects = [], className = '' }:
                                         <MdtSelect
                                             value={line.citizenid ?? ''}
                                             onChange={next => setSubject(index, next)}
-                                            options={subjects.map(subject => ({ value: subject.citizenid, label: subject.name }))}
+                                            options={[
+                                                ...subjects.map(subject => ({ value: subject.citizenid, label: subject.name })),
+                                                { value: ALL_SUSPECTS, label: t('mdt.allSuspects', 'All suspects') },
+                                            ]}
                                             size="xs"
                                             ariaLabel={t('mdt.attributeCharge', 'Attribute charge')}
                                             className="max-w-[150px] shrink-0"

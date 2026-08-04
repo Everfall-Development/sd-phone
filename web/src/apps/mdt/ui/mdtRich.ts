@@ -6,9 +6,12 @@ export interface RichSpan {
     kids?: RichSpan[];
 }
 
+export type HeadingLevel = 1 | 2 | 3;
+
 export interface RichLine {
-    bullet: boolean;
-    spans:  RichSpan[];
+    bullet:   boolean;
+    heading?: HeadingLevel;
+    spans:    RichSpan[];
 }
 
 const INLINE: { mark: MarkId; re: RegExp }[] = [
@@ -31,7 +34,9 @@ const MARK_OF_TAG: Record<string, MarkId> = {
 
 const WRAP: Record<MarkId, string> = { b: '**', i: '*', u: '__', s: '~~', code: '`' };
 
-const BLOCK = new Set(['DIV', 'P', 'LI', 'UL', 'OL', 'SECTION', 'ARTICLE', 'BLOCKQUOTE', 'PRE']);
+const BLOCK = new Set(['DIV', 'P', 'LI', 'UL', 'OL', 'SECTION', 'ARTICLE', 'BLOCKQUOTE', 'PRE', 'H1', 'H2', 'H3']);
+
+const HEADING_OF_TAG: Record<string, HeadingLevel> = { H1: 1, H2: 2, H3: 3 };
 
 const NBSP = new RegExp(String.fromCharCode(160), 'g');
 
@@ -51,6 +56,14 @@ export function parseInline(text: string): RichSpan[] {
 export function parseLines(md: string): RichLine[] {
     return md.split('\n').map(raw => {
         const line = raw.trimEnd();
+        const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+        if (heading) {
+            return {
+                bullet:  false,
+                heading: heading[1].length as HeadingLevel,
+                spans:   parseInline(heading[2]),
+            };
+        }
         const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
         return bullet
             ? { bullet: true,  spans: parseInline(bullet[1]) }
@@ -93,6 +106,13 @@ export function mdToFragment(md: string): DocumentFragment {
             continue;
         }
         list = null;
+        if (line.heading) {
+            const head = document.createElement(`h${line.heading}`);
+            spansToDom(line.spans, head);
+            if (!head.firstChild) head.appendChild(document.createElement('br'));
+            frag.appendChild(head);
+            continue;
+        }
         if (line.spans.length === 0) {
             frag.appendChild(emptyLine());
             continue;
@@ -127,16 +147,17 @@ function inlineText(node: Node): string {
 export function domToMarkdown(root: Node): string {
     const out: string[] = [];
 
-    function emit(text: string, bullet: boolean) {
-        for (const line of text.split('\n')) out.push(bullet ? `- ${line}` : line);
+    function emit(text: string, bullet: boolean, heading: HeadingLevel | 0) {
+        const prefix = bullet ? '- ' : heading ? `${'#'.repeat(heading)} ` : '';
+        for (const line of text.split('\n')) out.push(prefix + line);
     }
 
-    function walk(node: Node, bullet: boolean) {
+    function walk(node: Node, bullet: boolean, heading: HeadingLevel | 0) {
         const kids = Array.from(node.childNodes);
         const nested = kids.some(k => k.nodeType === Node.ELEMENT_NODE && BLOCK.has((k as HTMLElement).tagName));
 
         if (!nested) {
-            emit(inlineText(node), bullet);
+            emit(inlineText(node), bullet, heading);
             return;
         }
 
@@ -144,15 +165,15 @@ export function domToMarkdown(root: Node): string {
         for (const kid of kids) {
             const el = kid.nodeType === Node.ELEMENT_NODE ? kid as HTMLElement : null;
             if (el && BLOCK.has(el.tagName)) {
-                if (pending) { emit(pending, bullet); pending = ''; }
-                walk(el, el.tagName === 'LI' ? true : bullet);
+                if (pending) { emit(pending, bullet, heading); pending = ''; }
+                walk(el, el.tagName === 'LI' ? true : bullet, HEADING_OF_TAG[el.tagName] ?? 0);
                 continue;
             }
             pending += inlineNode(kid);
         }
-        if (pending) emit(pending, bullet);
+        if (pending) emit(pending, bullet, heading);
     }
 
-    walk(root, false);
+    walk(root, false, 0);
     return out.join('\n').replace(/\s+$/, '');
 }

@@ -7,7 +7,8 @@ import { ChangePasswordPage } from '@/shared/ChangePasswordPage';
 import { Toggle } from '@/ui/Toggle';
 import { IG, type ProfileData } from '../data';
 
-export function EditProfile({ profile, onCancel, onSave, onSignOut, onDelete }: {
+export function EditProfile({ profile, onCancel, onSave, onSignOut, onSwitchAccount, onDelete }: {
+    onSwitchAccount: () => void;
     profile:   ProfileData;
     onCancel:  () => void;
     onSave:    (p: ProfileData) => void;
@@ -91,6 +92,7 @@ export function EditProfile({ profile, onCancel, onSave, onSignOut, onDelete }: 
 
                 <div className="flex flex-col gap-3 px-4 py-8">
                     <button type="button" onClick={() => setPwOpen(true)} className="w-full rounded-[12px] bg-black/[0.06] py-3.5 text-[18px] font-semibold active:opacity-70" style={{ color: IG.blue }}>{t('photogram.changePassword', 'Change Password')}</button>
+                    <button type="button" onClick={onSwitchAccount} className="w-full rounded-[12px] bg-black/[0.06] py-3.5 text-[18px] font-semibold active:opacity-70" style={{ color: IG.blue }}>{t('accounts.switchAccount', 'Switch account')}</button>
                     <button type="button" onClick={() => setConfirmOut(true)} className="w-full rounded-[12px] bg-black/[0.06] py-3.5 text-[18px] font-semibold text-black active:opacity-70">{t('photogram.signOut', 'Sign Out')}</button>
                     <button type="button" onClick={() => setConfirmDel(true)} className="w-full rounded-[12px] py-3.5 text-[18px] font-semibold text-white active:opacity-80" style={{ background: IG.red }}>{t('photogram.deleteAccount', 'Delete Account')}</button>
                 </div>

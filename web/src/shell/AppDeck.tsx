@@ -65,8 +65,17 @@ function buildAppNode(id: AppId, ctx: DeckAppCtx): ReactNode {
             onLandscapeChange: ctx.onLandscapeChange,
         });
     }
-    if (entry?.Component) return <entry.Component onClose={ctx.onClose} />;
+    if (entry) return <AppMount id={id} onClose={ctx.onClose} />;
     return null;
+}
+
+function AppMount({ id, onClose }: { id: AppId; onClose: () => void }) {
+    const [Comp] = useState(() => {
+        const e = getAppEntry(id);
+        return e.Resolved ?? e.Component ?? null;
+    });
+    if (!Comp) return null;
+    return <Comp onClose={onClose} />;
 }
 
 interface AppHostProps {
@@ -103,6 +112,7 @@ const AppHost = memo(function AppHost({ id, ctx, active, openKey, origin, expand
     }, [openKey]);
 
     useLayoutEffect(() => { if (closing) setPhase('close'); }, [closing]);
+
 
     const ox = origin ? `${(origin.x * 100).toFixed(1)}%` : '50%';
     const oy = origin ? `${(origin.y * 100).toFixed(1)}%` : '80%';

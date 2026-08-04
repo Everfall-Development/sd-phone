@@ -21,6 +21,8 @@ import { useDockReflow } from './useDockReflow';
 import { widgetByKind } from './widgets/registry';
 import { launchOriginFrom } from './launchOrigin';
 import { WidgetGallery } from './widgets/WidgetGallery';
+import { WidgetStack } from './widgets/WidgetStack';
+import { addCard, cardsOf, patchCard, removeCard } from './widgets/stack';
 import { t } from '@/i18n';
 
 
@@ -266,6 +268,30 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
 
     const removeWidget = useCallback((uid: string) => {
         setWidgets(prev => prev.filter(w => w.uid !== uid));
+    }, []);
+
+    // Which card each stack is showing. Deliberately not persisted: a swipe is cheap to redo and
+    // writing the layout on every one would churn phone_settings for a purely visual preference.
+    const [stackAt, setStackAt] = useState<Record<string, number>>({});
+
+    // uid the gallery is adding a card to, rather than placing a new widget.
+    const [stackFor, setStackFor] = useState<string | null>(null);
+
+    /** Drops one card off a stack, or the whole widget when it was the last one. */
+    const dropCard = useCallback((uid: string, index: number) => {
+        setWidgets(prev => prev.flatMap(w => {
+            if (w.uid !== uid) return [w];
+            const next = removeCard(w, index);
+            return next ? [next] : [];
+        }));
+        setStackAt(prev => ({ ...prev, [uid]: Math.max(0, index - 1) }));
+    }, []);
+
+    /** Appends a card to an existing stack. Same footprint, so size is fixed by the placement. */
+    const addToStack = useCallback((uid: string, kind: string, align: WidgetAlign, theme: WidgetTheme): boolean => {
+        setWidgets(prev => prev.map(w => (w.uid === uid ? addCard(w, { kind, align, theme }) : w)));
+        setStackFor(null);
+        return true;
     }, []);
 
     // Widget dragging is deliberately separate from the icon drag above. Icons swap, fold into
@@ -830,6 +856,19 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
 
             {galleryOpen && <WidgetGallery onAdd={addWidget} onClose={() => setGalleryOpen(false)} wallpaper={wallpaper} />}
 
+            {stackFor && (() => {
+                const host = widgets.find(w => w.uid === stackFor);
+                if (!host) return null;
+                return (
+                    <WidgetGallery
+                        lockSize={host.size}
+                        onAdd={(kind, _size, align, theme) => addToStack(host.uid, kind, align, theme)}
+                        onClose={() => setStackFor(null)}
+                        wallpaper={wallpaper}
+                    />
+                );
+            })()}
+
             {editing && (
                 <div className="absolute left-0 right-0 top-[10px] z-50 flex items-center justify-between px-5">
                     <div className="flex items-center gap-2">
@@ -884,7 +923,9 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                                 />
                             )}
                             {previewWidgets.filter(w => w.uid !== dragW?.uid && w.page === pi).map(w => {
-                                const def = widgetByKind(w.kind);
+                                const cards = cardsOf(w);
+                                const at = Math.min(stackAt[w.uid] ?? 0, cards.length - 1);
+                                const def = widgetByKind(cards[at].kind);
                                 if (!def) return null;
                                 const pos = slot(w.row * COLS + w.col);
                                 const { width, height } = widgetPx(w.size);
@@ -929,20 +970,43 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                                                 launch(a, launchOriginFrom(e.currentTarget as HTMLElement));
                                             }}
                                         >
-                                            {def.render({ size: w.size, width, height, align: w.align ?? 'left', theme: w.theme ?? 'dark', picks: w.picks,
-                                                onPicks: ids => setWidgets(prev => prev.map(o => (o.uid === w.uid ? { ...o, picks: ids.length ? ids : undefined } : o))) })}
+                                            <WidgetStack
+                                                cards={cards}
+                                                active={at}
+                                                onActive={i => setStackAt(prev => ({ ...prev, [w.uid]: i }))}
+                                                height={height}
+                                                editing={editing}
+                                                render={(card, ci) => {
+                                                    const cd = widgetByKind(card.kind);
+                                                    if (!cd) return null;
+                                                    return cd.render({ size: w.size, width, height, align: card.align ?? 'left', theme: card.theme ?? 'dark', picks: card.picks,
+                                                        onPicks: ids => setWidgets(prev => prev.map(o => (o.uid === w.uid ? patchCard(o, ci, { picks: ids.length ? ids : undefined }) : o))) });
+                                                }}
+                                            />
                                         </div>
                                         {editing && (
+                                            <>
                                             <button
                                                 type="button"
-                                                aria-label={t('widgets.remove', 'Remove widget')}
+                                                aria-label={cards.length > 1 ? t('widgets.removeCard', 'Remove from stack') : t('widgets.remove', 'Remove widget')}
                                                 onPointerDown={e => e.stopPropagation()}
-                                                onClick={e => { e.stopPropagation(); removeWidget(w.uid); }}
+                                                onClick={e => { e.stopPropagation(); dropCard(w.uid, at); }}
                                                 className="absolute -left-1.5 -top-1.5 flex h-[24px] w-[24px] items-center justify-center rounded-full bg-[#1c1c1e] text-white shadow-lg"
                                                 style={{ border: '0.5px solid rgba(255,255,255,0.25)' }}
                                             >
                                                 <Minus className="h-[15px] w-[15px]" strokeWidth={3} />
                                             </button>
+                                            <button
+                                                type="button"
+                                                aria-label={t('widgets.addToStack', 'Add to stack')}
+                                                onPointerDown={e => e.stopPropagation()}
+                                                onClick={e => { e.stopPropagation(); setStackFor(w.uid); }}
+                                                className="absolute -right-1.5 -top-1.5 flex h-[24px] w-[24px] items-center justify-center rounded-full bg-[#1c1c1e] text-white shadow-lg"
+                                                style={{ border: '0.5px solid rgba(255,255,255,0.25)' }}
+                                            >
+                                                <Plus className="h-[15px] w-[15px]" strokeWidth={3} />
+                                            </button>
+                                            </>
                                         )}
                                     </div>
                                     </div>

@@ -35,6 +35,21 @@ function store.ensureSchema()
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
 
+    util.ensureColumns('phone_documents', {
+        folder_id  = '`folder_id` VARCHAR(16) NULL',
+        name       = "`name` VARCHAR(80) NOT NULL DEFAULT ''",
+        kind       = "`kind` VARCHAR(16) NOT NULL DEFAULT 'text'",
+        content    = '`content` MEDIUMTEXT NULL',
+        url        = '`url` VARCHAR(1024) NULL',
+        size       = '`size` INT NOT NULL DEFAULT 0',
+        locked     = '`locked` TINYINT(1) NOT NULL DEFAULT 0',
+        signable   = '`signable` TINYINT(1) NOT NULL DEFAULT 1',
+        deletable  = '`deletable` TINYINT(1) NOT NULL DEFAULT 1',
+        source     = '`source` VARCHAR(64) NULL',
+        created_at = '`created_at` BIGINT NOT NULL DEFAULT 0',
+        updated_at = '`updated_at` BIGINT NOT NULL DEFAULT 0',
+    })
+
     migrations.apply('phone_documents')
 
     MySQL.query.await([[
@@ -47,6 +62,12 @@ function store.ensureSchema()
             PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
+
+    util.ensureColumns('phone_document_folders', {
+        name       = "`name` VARCHAR(60) NOT NULL DEFAULT ''",
+        parent_id  = '`parent_id` VARCHAR(16) NULL',
+        created_at = '`created_at` BIGINT NOT NULL DEFAULT 0',
+    })
 
     MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS `phone_document_signatures` (

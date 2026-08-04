@@ -12,30 +12,128 @@ local jail = {}
 ---@type table MDT jail settings (configs/mdt.lua Jail); Resource may name a prison resource.
 local JAIL = (config.Mdt or {}).Jail or {}
 
----@type string[] Prison resources probed in order when no explicit override is configured.
-local RESOURCES = { 'qbx_prison', 'qb-prison', 'xt-prison' }
+---@type integer Real seconds one MDT month is worth when a prison counts in seconds or minutes.
+local SECONDS_PER_MONTH = math.max(1, math.floor(tonumber(JAIL.SecondsPerMonth) or 60))
 
----@type string[] Export names tried on the active prison resource, in order.
-local EXPORTS = { 'JailPlayer', 'jailPlayer', 'SendToJail', 'sendToJail' }
+---@type string Unit override for the detected prison; 'auto' trusts the adapter's own declaration.
+local UNIT_OVERRIDE = type(JAIL.TimeUnit) == 'string' and JAIL.TimeUnit or 'auto'
 
----@type string[] Client events tried when the active resource exposes no usable export.
-local EVENTS = { 'prison:client:Enter', 'police:client:SendToJail' }
+---Converts an MDT sentence in months into whatever unit the target prison counts in.
+---@param months integer
+---@param unit 'months'|'minutes'|'seconds'
+---@return integer
+local function inUnit(months, unit)
+    local target = UNIT_OVERRIDE ~= 'auto' and UNIT_OVERRIDE or unit
+    if target == 'seconds' then return months * SECONDS_PER_MONTH end
+    if target == 'minutes' then return math.max(1, math.floor(months * SECONDS_PER_MONTH / 60)) end
+    return months
+end
 
----Resolve the running prison resource: an explicit config override wins, otherwise the first
----candidate reporting `started`.
----@return string|nil name resource name, nil when none is running
+---@type table[] Prison adapters probed in order. `unit` is what that script's own API counts in,
+---which is NOT the same across them: qb-prison takes months, esx_jail and qb-policejob take seconds.
+local ADAPTERS = {
+    {
+        resource = 'qbx_prison',
+        unit     = 'months',
+        apply    = function(source, time)
+            return pcall(function() return exports.qbx_prison:JailPlayer(source, time) end)
+        end,
+    },
+    {
+        resource = 'qb-prison',
+        unit     = 'months',
+        apply    = function(source, time)
+            TriggerClientEvent('prison:client:Enter', source, time)
+            return true
+        end,
+    },
+    {
+        resource = 'xt-prison',
+        unit     = 'months',
+        apply    = function(source, time)
+            return pcall(function() return exports['xt-prison']:JailPlayer(source, time) end)
+        end,
+    },
+    {
+        resource = 'pickle_prisons',
+        unit     = 'seconds',
+        apply    = function(source, time)
+            return pcall(function() return exports.pickle_prisons:JailPlayer(source, time) end)
+        end,
+    },
+    {
+        resource = 'tk_jail',
+        unit     = 'minutes',
+        apply    = function(source, time)
+            return pcall(function() return exports.tk_jail:jail(source, time) end)
+        end,
+    },
+    {
+        resource = 'esx_tk_jail',
+        unit     = 'minutes',
+        apply    = function(source, time)
+            return pcall(function() return exports.esx_tk_jail:jail(source, time) end)
+        end,
+    },
+    {
+        resource = 'qb-policejob',
+        unit     = 'seconds',
+        apply    = function(source, time)
+            return pcall(function() return exports['qb-policejob']:JailPlayer(source, time, 'MDT booking') end)
+        end,
+    },
+    {
+        resource = 'ps-policejob',
+        unit     = 'seconds',
+        apply    = function(source, time)
+            return pcall(function() return exports['ps-policejob']:JailPlayer(source, time, 'MDT booking') end)
+        end,
+    },
+    {
+        resource = 'esx_jail',
+        unit     = 'seconds',
+        apply    = function(source, time)
+            TriggerEvent('esx_jail:sendToJail', source, time, true)
+            return true
+        end,
+    },
+    {
+        resource = 'esx-qalle-jail',
+        unit     = 'minutes',
+        apply    = function(source, time)
+            TriggerEvent('esx-qalle-jail:jailPlayer', source, time)
+            return true
+        end,
+    },
+    {
+        resource = 'rcore_prison',
+        unit     = 'minutes',
+        apply    = function(source, time)
+            return pcall(function() return exports.rcore_prison:JailPlayer(source, time) end)
+        end,
+    },
+}
+
+---Resolve the running prison adapter: an explicit config override wins, otherwise the first
+---candidate whose resource reports `started`.
+---@return table|nil adapter
 local function detect()
     local override = JAIL.Resource
     if type(override) == 'string' and override ~= '' and override ~= 'auto' then
-        return GetResourceState(override) == 'started' and override or nil
+        for i = 1, #ADAPTERS do
+            if ADAPTERS[i].resource == override then
+                return GetResourceState(override) == 'started' and ADAPTERS[i] or nil
+            end
+        end
+        return nil
     end
-    for i = 1, #RESOURCES do
-        if GetResourceState(RESOURCES[i]) == 'started' then return RESOURCES[i] end
+    for i = 1, #ADAPTERS do
+        if GetResourceState(ADAPTERS[i].resource) == 'started' then return ADAPTERS[i] end
     end
     return nil
 end
 
----@type string|nil Active prison resource, resolved once at load.
+---@type table|nil Active prison adapter, resolved once at load.
 local ACTIVE = detect()
 
 ---Whether this server can actually imprison anyone: a detected prison resource, or the QBCore /
@@ -45,24 +143,10 @@ function jail.available()
     return ACTIVE ~= nil or framework.qb == true
 end
 
----@type string|nil Resource name of the detected prison system, nil when there is none.
+---Resource name of the detected prison system, nil when there is none.
+---@return string|nil
 function jail.system()
-    return ACTIVE
-end
-
----Try the active prison resource's own export. Each candidate is pcall'd because an export that
----does not exist raises rather than returning nil.
----@param source integer target player server id
----@param months integer sentence length
----@return boolean handled
-local function viaExport(source, months)
-    if not ACTIVE then return false end
-    for i = 1, #EXPORTS do
-        local name = EXPORTS[i]
-        local ok, res = pcall(function() return exports[ACTIVE][name](nil, source, months) end)
-        if ok and res ~= false then return true end
-    end
-    return false
+    return ACTIVE and ACTIVE.resource or nil
 end
 
 ---Write the QBCore / QBox jail metadata the framework's own prison scripts read on spawn.
@@ -86,18 +170,24 @@ function jail.sendToJail(source, months)
     if time < 1 then return false end
     if not source or not GetPlayerName(source) then return false end
 
-    if viaExport(source, time) then
-        writeMetadata(source, time)
-        return true
+    if ACTIVE then
+        local ok = ACTIVE.apply(source, inUnit(time, ACTIVE.unit))
+        if ok ~= false then
+            writeMetadata(source, time)
+            return true
+        end
     end
 
     if not framework.qb then return false end
 
     writeMetadata(source, time)
-    for i = 1, #EVENTS do
-        TriggerClientEvent(EVENTS[i], source, time)
-    end
+    TriggerClientEvent('prison:client:Enter', source, time)
     return true
+end
+
+if ACTIVE then
+    print(('^2[sd-phone]^0 MDT jail bridge using %s (sentences sent in %s).')
+        :format(ACTIVE.resource, UNIT_OVERRIDE ~= 'auto' and UNIT_OVERRIDE or ACTIVE.unit))
 end
 
 return jail

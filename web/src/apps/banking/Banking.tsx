@@ -3,6 +3,7 @@ import { ChevronRight, House, ReceiptText } from 'lucide-react';
 
 import { useDeckActive } from '@/shell/deckActive';
 
+import { warm } from '@/core/warm';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -22,11 +23,20 @@ type BankingTab = 'home' | 'invoices';
 
 const CARD_EXPIRY = '08/29';
 
+const loadOverview = () => warm('bank:overview', fetchOverview);
+const loadReceived = () => warm('bank:received', fetchReceivedInvoices);
+
+export function warmBanking(): void {
+    void loadOverview();
+    void loadReceived();
+}
+
 export function Banking({ onClose: _onClose }: { onClose: () => void }) {
-    const { data: overview, loading, refetch: refresh } = useAsyncData<BankOverview>(fetchOverview, []);
+    const { data: overview, loading, refetch: refresh } = useAsyncData<BankOverview>(loadOverview, []);
     // Received invoices live here, above the animated tab subtree: segment/tab switches render
     // instantly from cached data, and the pending count feeds the Invoices tab badge.
-    const { data: receivedInv, loading: receivedLoading, refetch: refetchReceived } = useAsyncData(fetchReceivedInvoices, []);
+    const { data: receivedInv, loading: receivedLoading, refetch: refetchReceived } = useAsyncData(loadReceived, []);
+
     const [tab,      setTab]      = useSessionState<BankingTab>('banking:tab', 'home');
     const [showAll,  setShowAll]  = useSessionState('banking:showAll', false);
     const [sending,  setSending]  = useSessionState('banking:sending', false);

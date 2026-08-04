@@ -68,6 +68,8 @@ function store.ensureSchema()
             INDEX idx_phone_message_reactions_mid (mid)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
+    util.ensureColumns('phone_message_reactions', { created_at = 'created_at BIGINT NOT NULL DEFAULT 0' })
+
     local pk = MySQL.query.await([[
         SELECT COLUMN_NAME AS col FROM information_schema.KEY_COLUMN_USAGE
         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'phone_message_reactions'
@@ -106,37 +108,23 @@ function store.ensureSchema()
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
 
-    local wcol = MySQL.single.await([[
-        SELECT COUNT(*) AS n FROM information_schema.columns
-        WHERE table_schema = DATABASE()
-          AND table_name = 'phone_messages'
-          AND column_name = 'withheld'
-    ]])
-    if not wcol or tonumber(wcol.n) == 0 then
-        MySQL.query.await('ALTER TABLE phone_messages ADD COLUMN withheld TINYINT(1) NOT NULL DEFAULT 0')
-    end
-
-    local mcol = MySQL.single.await([[
-        SELECT COUNT(*) AS n FROM information_schema.columns
-        WHERE table_schema = DATABASE()
-          AND table_name = 'phone_messages'
-          AND column_name = 'mid'
-    ]])
-    if not mcol or tonumber(mcol.n) == 0 then
-        MySQL.query.await('ALTER TABLE phone_messages ADD COLUMN mid VARCHAR(16) NULL')
-        MySQL.query.await('ALTER TABLE phone_messages ADD INDEX idx_phone_messages_mid (mid)')
-    end
+    util.ensureColumns('phone_messages', {
+        mid          = 'mid VARCHAR(16) NULL',
+        conversation = "conversation VARCHAR(48) NOT NULL DEFAULT ''",
+        sender       = "sender VARCHAR(32) NOT NULL DEFAULT ''",
+        direction    = "direction VARCHAR(16) NOT NULL DEFAULT 'in'",
+        kind         = "kind VARCHAR(16) NOT NULL DEFAULT 'text'",
+        body         = 'body TEXT NULL',
+        meta         = 'meta JSON NULL',
+        is_read      = 'is_read TINYINT(1) NOT NULL DEFAULT 0',
+        withheld     = 'withheld TINYINT(1) NOT NULL DEFAULT 0',
+        created_at   = 'created_at BIGINT NOT NULL DEFAULT 0',
+    })
+    util.ensureIndex('phone_messages', 'idx_phone_messages_mid', '(mid)')
+    util.ensureIndex('phone_messages', 'idx_phone_messages_thread', '(citizenid, conversation, created_at)')
     MySQL.query.await('UPDATE phone_messages SET mid = id WHERE mid IS NULL')
 
-    local acol = MySQL.single.await([[
-        SELECT COUNT(*) AS n FROM information_schema.columns
-        WHERE table_schema = DATABASE()
-          AND table_name = 'phone_message_groups'
-          AND column_name = 'avatar'
-    ]])
-    if not acol or tonumber(acol.n) == 0 then
-        MySQL.query.await('ALTER TABLE phone_message_groups ADD COLUMN avatar VARCHAR(512) NULL')
-    end
+    util.ensureColumns('phone_message_groups', { avatar = 'avatar VARCHAR(512) NULL' })
 
     MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_pending_messages (

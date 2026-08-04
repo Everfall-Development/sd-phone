@@ -26,6 +26,10 @@ local ok, fail, digits, trim = util.ok, util.fail, util.digits, util.trim
 -- App whitelists; every handler resolves its payload `app` against one of these.
 ---@type table<string, boolean> Apps served by the generic register/login/logout/me callbacks.
 local DIRECT_APPS    = { photogram = true, cherry = true, vibez = true, ryde = true }
+---@type table<string, boolean> Apps offering the in-app account switcher. Squawk owns its own
+---register/login because it writes a profile row beside the account, so adding it to DIRECT_APPS
+---would let the generic register mint an account with no profile; switching only moves a session.
+local SWITCH_APPS    = { photogram = true, cherry = true, vibez = true, ryde = true, birdy = true }
 ---@type table<string, boolean> Every account app the engine knows (reset + vault callbacks).
 local ALL_APPS       = { photogram = true, cherry = true, vibez = true, birdy = true, mail = true, ryde = true }
 
@@ -98,6 +102,35 @@ local function validEmail(raw)
     return e, nil
 end
 
+---@type table Accounts limits (configs/accounts.lua).
+local ACCT_CFG = config.Accounts or {}
+
+---How many accounts one character may create in an app; 0 means unlimited.
+---@param app string account app key
+---@return integer limit
+local function accountLimit(app)
+    local per = type(ACCT_CFG.PerApp) == 'table' and ACCT_CFG.PerApp[app] or nil
+    local n = tonumber(per) or tonumber(ACCT_CFG.MaxPerApp) or 1
+    return n < 0 and 0 or math.floor(n)
+end
+
+---@type fun(app: string): integer Public alias, so an app that owns its own registration (Mail)
+---caps itself from configs/accounts.lua instead of carrying a second number of its own.
+actions.accountLimit = accountLimit
+
+---The refusal to hand back when `cid` has already created as many accounts in `app` as the
+---config allows; nil while there is room. 0 configured means unlimited.
+---@param app string account app key
+---@param count integer accounts this character has created in the app
+---@return string|nil refusal
+function actions.accountCapMessage(app, count)
+    local limit = accountLimit(app)
+    if limit <= 0 or count < limit then return nil end
+    return limit == 1
+        and 'You already have an account for this app'
+        or ('You can have at most %d accounts for this app'):format(limit)
+end
+
 ---Validates an optional recovery phone: nil when blank, otherwise 7-15 digits.
 ---@param raw any client-supplied phone number
 ---@return string|nil phone, string|nil err
@@ -109,16 +142,28 @@ local function validPhone(raw)
 end
 
 ---Creates an account for an already-whitelisted app: validates username/password, optional
----recovery contacts (at least one required, each unique per app), and display name.
+---recovery contacts (at least one required, each unique per app), and display name. Pass the
+---caller's citizenid so a recovery number they do not own is refused; every client-reachable
+---path has one, and the guard lives here rather than in a caller so no route can skip it.
 ---@param app string account app key (already validated)
 ---@param payload table|nil client-supplied { username, password, name?, email?, phone? }
+---@param cid string|nil caller citizenid; when given, the recovery phone must be theirs
 ---@return table envelope on success data = { account }
-function actions.createAccount(app, payload)
+function actions.createAccount(app, payload, cid)
     payload = payload or {}
     local username, ue = validUsername(app, payload.username); if not username then return fail(ue) end
     local password, pe = validPassword(payload.password); if not password then return fail(pe) end
     local email, ee = validEmail(payload.email); if ee then return fail(ee) end
     local phone, he = validPhone(payload.phone); if he then return fail(he) end
+
+    -- Recovery codes go to this number, so one the caller does not own is useless to them and
+    -- lets a character sidestep the per-app contact-uniqueness cap below.
+    if phone and cid then
+        local mine = digits(settings.getPhoneNumber(cid))
+        if mine ~= '' and phone ~= mine then
+            return fail('Use your own phone number so you can recover the account')
+        end
+    end
     if not email and not phone then
         return fail('Add an email or phone number so you can recover the account')
     end
@@ -128,14 +173,14 @@ function actions.createAccount(app, payload)
 
     if store.getAccount(app, username) then return fail('That username is taken') end
 
-    if email and #store.findAccountsByContact(app, email, nil) > 0 then
-        return fail('That email is already in use')
-    end
-    if phone and #store.findAccountsByContact(app, nil, phone) > 0 then
-        return fail('That phone number is already in use')
+    -- Accounts may share a recovery email and number; what caps a character is how many they
+    -- have created here. Usernames stay unique per app, so the accounts remain distinguishable.
+    if cid then
+        local capped = actions.accountCapMessage(app, store.countAccountsFor(app, cid))
+        if capped then return fail(capped) end
     end
 
-    local id = store.insertAccount(app, username, displayName, store.hashPassword(password), email, phone)
+    local id = store.insertAccount(app, username, displayName, store.hashPassword(password), email, phone, cid)
     if not id then return fail('Failed to create the account') end
     return ok({ account = store.getAccountById(id) })
 end
@@ -165,18 +210,7 @@ function actions.register(source, payload)
         return fail('Too many sign-up attempts. Try again shortly')
     end
 
-    -- Recovery codes are delivered to this number, so a number the caller does not own is
-    -- useless to them. It is also what let one character mint unlimited handles: the per-app
-    -- contact-uniqueness check below only bites once the number has to be their own.
-    local phone = digits(payload.phone)
-    if phone ~= '' then
-        local mine = digits(settings.getPhoneNumber(cid))
-        if mine ~= '' and phone ~= mine then
-            return fail('Use your own phone number so you can recover the account')
-        end
-    end
-
-    local res = actions.createAccount(app, payload)
+    local res = actions.createAccount(app, payload, cid)
     if not res.success then return res end
     store.setSession(app, cid, res.data.account.id)
     return ok({ me = publicAccount(res.data.account) })
@@ -222,6 +256,60 @@ function actions.logout(source, payload)
     return ok()
 end
 
+---The caller's saved logins for one app, as switch targets: username + display name, and which
+---one is signed in. Passwords never leave the server.
+---@param source number player server id
+---@param payload table|nil client-supplied { app }
+---@return table envelope on success data = { accounts, active }
+function actions.switchable(source, payload)
+    local app = payload and payload.app
+    if not SWITCH_APPS[app] then return fail('Unknown app') end
+    local cid = player.getIdentifier(source); if not cid then return fail('Player not found') end
+
+    local current = store.getSessionAccount(app, cid)
+    local out = {}
+    for _, row in ipairs(store.listVaultEntries(cid)) do
+        if row.app == app then
+            local acc = store.getAccount(app, row.username)
+            if acc then
+                out[#out + 1] = { username = acc.username, name = acc.displayName, email = acc.email }
+            end
+        end
+    end
+    return ok({ accounts = out, active = current and current.username or nil })
+end
+
+---Signs the caller into another of their own saved accounts without retyping the password. The
+---vault is a convenience, not an authority: its stored password is verified against the account,
+---so a stale entry fails rather than granting access.
+---@param source number player server id
+---@param payload table|nil client-supplied { app, username }
+---@return table envelope on success data = { me }
+function actions.switchAccount(source, payload)
+    payload = payload or {}
+    local app = payload.app
+    if not SWITCH_APPS[app] then return fail('Unknown app') end
+    local cid = player.getIdentifier(source); if not cid then return fail('Player not found') end
+    if not util.cooldown(cid, 'accounts:switch', 500) then return fail('Slow down') end
+
+    local username = trim(payload.username):lower()
+    if username == '' then return fail('Pick an account') end
+
+    local saved
+    for _, row in ipairs(store.listVaultEntries(cid)) do
+        if row.app == app and row.username:lower() == username then saved = row break end
+    end
+    if not saved then return fail('No saved password for that account') end
+
+    local acc = store.getAccount(app, saved.username)
+    if not acc or not actions.verifyPassword(acc, saved.password) then
+        return fail('Saved password no longer works. Sign in again')
+    end
+
+    store.setSession(app, cid, acc.id)
+    return ok({ me = publicAccount(acc) })
+end
+
 ---Returns the caller's current session account in public shape; loggedIn = false when there is
 ---no session or no identity.
 ---@param source number player server id
@@ -258,31 +346,51 @@ local REQUEST_WINDOW = 600
 ---@return string key
 local function resetKey(app, accountId) return app .. ':' .. accountId end
 
----Resolves a recovery identity (the email or phone number on file) to the single matching
----account and its delivery channel; ambiguity or no match returns an error.
+---Resolves a recovery identity (a username, or the email or phone number on file) to the single
+---matching account and its delivery channel; ambiguity or no match returns an error.
 ---@param app string account app key
 ---@param raw string trimmed client-supplied identity
----@return table|nil acc, string|nil channel ('email'|'sms'), string|nil err
+---@return table|nil acc matched account
+---@return string|nil channel 'email' or 'sms'
+---@return string|nil err
 local function resolveRecovery(app, raw)
-    if raw == '' then return nil, nil, 'Enter the email or phone number on the account' end
+    if raw == '' then return nil, nil, 'Enter the username, email or phone number on the account' end
+
+    -- A username names exactly one account, so it is the only identity that still resolves once
+    -- several accounts share a recovery contact. Identity and delivery are separate here: the
+    -- name picks the account, its stored contact decides where the code goes. Mail usernames are
+    -- addresses, which is why an address identifies the mailbox rather than being the
+    -- destination - a code sent to the mailbox you are locked out of is no use.
+    local named = raw:lower()
+    if app == 'mail' and not named:find('@', 1, true) then named = named .. '@' .. MAIL_DOMAIN end
+    local byName = store.getAccount(app, named)
+    if byName then
+        local canEmail = app ~= 'mail' and byName.email and byName.email ~= ''
+        local canSms   = byName.phone and byName.phone ~= ''
+        if canEmail then return byName, 'email', nil end
+        if canSms   then return byName, 'sms',   nil end
+        return nil, nil, 'That account has no email or phone number to send a code to'
+    end
 
     local email, phone, channel
     if raw:find('@', 1, true) or raw:match('%a') then
         if app == 'mail' then
-            return nil, nil, 'Use the phone number linked to the account'
+            return nil, nil, 'No Mail account uses that address'
         end
         local e = raw:lower()
         if not e:find('@', 1, true) then e = e .. '@' .. MAIL_DOMAIN end
         email, channel = e, 'email'
     else
         local p = digits(raw)
-        if #p < 7 or #p > 15 then return nil, nil, 'Enter the email or phone number on the account' end
+        if #p < 7 or #p > 15 then return nil, nil, 'Enter the username, email or phone number on the account' end
         phone, channel = p, 'sms'
     end
 
     local matches = store.findAccountsByContact(app, email, phone)
     if #matches == 0 then return nil, nil, 'No account uses that contact' end
-    if #matches > 1 then return nil, nil, 'More than one account uses that contact. Ask an admin for help' end
+    if #matches > 1 then
+        return nil, nil, 'More than one account uses that contact. Enter the account username instead'
+    end
     return matches[1], channel, nil
 end
 
@@ -484,15 +592,48 @@ function actions.myNumber(source)
     return ok({ number = settings.getPhoneNumber(cid) })
 end
 
----Returns the first mail account this character is signed into; nil when signed out of Mail.
+---Every mail address this character is signed into, for the recovery-email quick fill. `email` is
+---the first and is kept so an older UI build still fills something.
 ---@param source number player server id
----@return table envelope data = { email? }
+---@return table envelope data = { email?, emails }
 function actions.myEmail(source)
     local cid = player.getIdentifier(source)
-    if not cid then return ok({}) end
-    local accounts = mailStore.listAccountsForCitizen(cid)
-    local first = accounts[1]
-    return ok({ email = first and first.email or nil })
+    if not cid then return ok({ emails = {} }) end
+    local emails = {}
+    for _, acc in ipairs(mailStore.listAccountsForCitizen(cid)) do
+        if acc.email and acc.email ~= '' then emails[#emails + 1] = acc.email end
+    end
+    return ok({ email = emails[1], emails = emails })
+end
+
+---Signs the caller out of one app, moving them to another of their own saved accounts when they
+---have one rather than dropping them at the sign-in screen. Returns the account they landed on,
+---or nil when there was nowhere to go and the session was cleared.
+---@param source number player server id
+---@param payload table|nil client-supplied { app }
+---@return table envelope data = { switchedTo?, me? }
+function actions.signOutOrSwitch(source, payload)
+    local app = payload and payload.app
+    if not SWITCH_APPS[app] then return fail('Unknown app') end
+    local cid = player.getIdentifier(source); if not cid then return fail('Player not found') end
+
+    local current = store.getSessionAccount(app, cid)
+
+    -- The vault is a convenience, not an authority: each saved password is verified against the
+    -- account before it is used, exactly as switchAccount does, so a stale entry is skipped
+    -- rather than granting access.
+    for _, row in ipairs(store.listVaultEntries(cid)) do
+        if row.app == app and (not current or row.username:lower() ~= current.username:lower()) then
+            local acc = store.getAccount(app, row.username)
+            if acc and actions.verifyPassword(acc, row.password) then
+                store.setSession(app, cid, acc.id)
+                return ok({ switchedTo = acc.username, me = publicAccount(acc) })
+            end
+        end
+    end
+
+    store.clearSession(app, cid)
+    return ok({ switchedTo = nil })
 end
 
 ---Resolves an export-supplied (app, username) pair to a full account row, nil for an unknown

@@ -462,6 +462,7 @@ export interface JailQuote {
     finedAlready:  boolean;
     jailAvailable: boolean;
     maxReduction:  number;
+    maxFineReduction: number;
     maxFine:       number;
 }
 

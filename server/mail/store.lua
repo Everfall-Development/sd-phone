@@ -168,7 +168,13 @@ function store.ensureSchema()
 
     -- Signing out only drops the session, so the concurrent-session cap cannot bound how many
     -- accounts one character has minted. This column is what a lifetime cap counts.
-    util.ensureColumns('phone_mail_accounts', { created_by_cid = 'created_by_cid VARCHAR(64) NULL' })
+    util.ensureColumns('phone_mail_accounts', {
+        display_name       = "display_name VARCHAR(64) NOT NULL DEFAULT ''",
+        messages           = 'messages JSON NULL',
+        logged_in_citizens = 'logged_in_citizens JSON NULL',
+        created_by_cid     = 'created_by_cid VARCHAR(64) NULL',
+        created_at         = 'created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
+    })
     util.ensureIndex('phone_mail_accounts', 'idx_phone_mail_accounts_creator', '(created_by_cid)')
 
     -- Index over logged_in_citizens: JSON_SEARCH cannot use one, so every badge snapshot scanned

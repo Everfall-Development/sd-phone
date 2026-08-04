@@ -1,5 +1,10 @@
 export type VehicleStatus = 'stored' | 'out' | 'impound';
 
+export interface ValetInfo {
+    enabled: boolean;
+    price:   number;
+}
+
 export interface Vehicle {
     id:       string;
     model:    string;

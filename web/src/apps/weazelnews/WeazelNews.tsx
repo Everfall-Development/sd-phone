@@ -12,7 +12,8 @@ import { ManageDashboard } from './ManageDashboard';
 import {
     CATEGORIES, type Article as ArticleT, type Category, formatViews, WEAZEL_RED,
 } from './data';
-import { weazelFeed, weazelView } from './weazelnewsApi';
+import { useNuiEvent } from '@/hooks/useNuiEvent';
+import { weazelFeed, weazelView, weazelWatch } from './weazelnewsApi';
 
 const SB_H = 54;
 type Filter = 'All' | Category;
@@ -39,6 +40,13 @@ export function WeazelNews({ onClose: _onClose }: { onClose: () => void }) {
     }, []);
 
     useEffect(() => { void refresh(); }, [refresh]);
+
+    useEffect(() => {
+        void weazelWatch(true);
+        return () => { void weazelWatch(false); };
+    }, []);
+
+    useNuiEvent('sd-phone:weazelnews:feed', useCallback(() => { void refresh(); }, [refresh]));
 
     const featured = useMemo(
         () => articles.find(a => a.featured) ?? articles[0] ?? null,

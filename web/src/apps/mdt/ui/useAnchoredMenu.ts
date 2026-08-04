@@ -69,7 +69,9 @@ export function useAnchoredMenu({ anchor, onClose, align = 'end', matchWidth = f
     useEffect(() => {
         function onDown(e: PointerEvent) {
             const host = hostRef.current;
-            if (host && e.target instanceof Node && host.contains(e.target)) return;
+            if (!(e.target instanceof Node)) { onClose(); return; }
+            if (host && host.contains(e.target)) return;
+            if (anchor && anchor.contains(e.target)) return;
             onClose();
         }
         function onKey(e: KeyboardEvent) {
@@ -88,7 +90,7 @@ export function useAnchoredMenu({ anchor, onClose, align = 'end', matchWidth = f
             window.removeEventListener('keydown', onKey, true);
             window.removeEventListener('scroll', onScroll, true);
         };
-    }, [onClose]);
+    }, [onClose, anchor]);
 
     return { hostRef, style };
 }

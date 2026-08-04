@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState  } from 'react';
 
 import { device } from '@device';
 import { AdminPanel } from '@/admin/AdminPanel';
@@ -10,11 +10,14 @@ import { SignRequestLayer, type SignRequestData } from '@/apps/documents/SignReq
 import { ControlCenter, ControlCenterHotzone } from '@/shell/ControlCenter';
 import { MusicProvider, useMusic } from '@/apps/music/MusicContext';
 import { ryDevDataHidden, ryDevToggleData } from '@/apps/ryde/data';
-import { asAppId, isPreviewApp, preloadAllApps, type AppId } from '@/shell/appRegistry';
+import { asAppId, isPreviewApp, preloadAllApps, preloadApp, setPreloadPaused, type AppId } from '@/shell/appRegistry';
 import { AppSwitcher } from '@/shell/AppSwitcher';
+import { HOME_HOLD_MS, HOME_HOLD_SLOP, holdAction, swipeAction, tapAction, type HomeAction } from '@/shell/homeGesture';
 import { AppDeck, FullscreenStage, type DeckAppCtx } from '@/shell/AppDeck';
 import { Homescreen }  from '@/shell/Homescreen';
 import { useBadgeStore } from '@/stores/badgeStore';
+import { DEFAULT_PREF, prefFor, useNotifPrefsStore } from '@/stores/notifPrefsStore';
+import { useInstalledAppsStore } from '@/stores/installedAppsStore';
 import { useBatteryStore } from '@/stores/batteryStore';
 import { useWidgetData } from '@/stores/widgetDataStore';
 import { useSessionStore } from '@/stores/sessionStore';
@@ -173,6 +176,7 @@ function AppContent() {
     const { theme, darkTheme, wallpaperLock, wallpaperHome, setTheme, setWallpaper, statusLightOverride, statusBarAutoLight, hideHomeIndicator, airplaneMode, hour24, setHour24, setSecurity } = useTheme('theme', 'darkTheme', 'wallpaperLock', 'wallpaperHome', 'setTheme', 'setWallpaper', 'statusLightOverride', 'statusBarAutoLight', 'hideHomeIndicator', 'airplaneMode', 'hour24', 'setHour24', 'setSecurity');
     const locale = useLocaleStore(s => s.locale);
     useEffect(() => { useLocaleStore.getState().hydrate(); }, []);
+    useEffect(() => { void useNotifPrefsStore.getState().hydrate(); }, []);
 
     const customApps = useCustomApps();
     const customDefs = useMemo(() => customApps.map(customToAppDef), [customApps]);
@@ -225,6 +229,17 @@ function AppContent() {
     const [appsReady,       setAppsReady]       = useState(!isFiveM);
     const [frameColor,      setFrameColor]      = useState<string>(DEFAULT_FRAME_COLOR);
     const downloadingIds = useDownloadingIds();
+
+    // Settings reads the installed set through a store rather than a prop: apps mount through a
+    // shared context that only carries onClose, so threading one down would mean special-casing.
+    useEffect(() => {
+        const all = [...(view?.apps ?? []), ...customDefs.filter(c => !(view?.apps ?? []).some(a => a.id === c.id))];
+        useInstalledAppsStore.getState().setApps(
+            all.filter(a => !device.excludedApps.includes(a.id)
+                && (a.base || installedApps.has(a.id) || downloadingIds.includes(a.id))),
+        );
+    }, [view, customDefs, installedApps, downloadingIds]);
+
     const downloadQueue = useRef<string[]>([]);
     const downloadTimer = useRef<number | undefined>(undefined);
 
@@ -310,6 +325,8 @@ function AppContent() {
         useThemeStore.getState().resetProfileVisuals();
         useThemeStore.getState().hydrate();
         useLocaleStore.getState().hydrate();
+        useNotifPrefsStore.getState().reset();
+        void useNotifPrefsStore.getState().hydrate();
         resetContacts();
         setNotifs([]);
         setLockNotifs([]);
@@ -370,6 +387,7 @@ function AppContent() {
     useNuiEvent('sd-phone:client:characterLoaded', useCallback(() => {
         useThemeStore.getState().hydrate();
         useLocaleStore.getState().hydrate();
+        void useNotifPrefsStore.getState().hydrate();
     }, []));
 
     useNuiEvent('sd-phone:open', useCallback((data) => {
@@ -502,6 +520,7 @@ function AppContent() {
     // its foreground key (replays the open animation on the retained instance) and,
     // if it is preview-eligible, promotes it into the retained keep-alive deck.
     const foreground = useCallback((id: AppId, origin: { x: number; y: number }, expand = false) => {
+        void preloadApp(id);
         setIsClosing(false);
         setLaunchOrigin(origin);
         setLaunchExpand(expand);
@@ -851,6 +870,8 @@ function AppContent() {
     useNuiEvent('sd-phone:notification', useCallback((data) => {
         const target = data.appId ?? data.app;
         if (data.quietInApp && target && target === currentAppRef.current) return;
+        const pref = target ? prefFor(target) : DEFAULT_PREF;
+        if (!pref.enabled) return;
         const item: NotificationItem = {
             ...data,
             id: data.id ?? `n-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -865,8 +886,13 @@ function AppContent() {
             if (peekTimer.current) window.clearTimeout(peekTimer.current);
             peekTimer.current = window.setTimeout(() => { if (!callOngoingRef.current) setPeek('out'); }, 4200);
         }
-        const tones = useThemeStore.getState();
-        playOnce(resolveTone('notification', tones.notificationTone, tones.customNotificationTones).url, tones.ringtoneVol / 100);
+        if (pref.sounds) {
+            const tones = useThemeStore.getState();
+            playOnce(
+                resolveTone('notification', pref.tone ?? tones.notificationTone, tones.customNotificationTones).url,
+                tones.ringtoneVol / 100,
+            );
+        }
         // A pocket buzz belongs to the OTHER phone: transient banner + tone above, and the
         // item parks on THAT phone's banked lockscreen stack for its next open - never this
         // phone's live stack or badges.
@@ -1117,6 +1143,12 @@ function AppContent() {
         const t = window.setTimeout(preloadAllApps, 1500);
         return () => window.clearTimeout(t);
     }, [view]);
+
+    useEffect(() => {
+        setPreloadPaused(true);
+        const t = window.setTimeout(() => setPreloadPaused(false), 600);
+        return () => window.clearTimeout(t);
+    }, [currentApp]);
 
     useEffect(() => {
         if (isFiveM) return;
@@ -1473,6 +1505,7 @@ function AppContent() {
                                 : undefined
                         }
                         closing={isClosing}
+                        passive={!locked && !showSetup}
                     />
                 )}
 
@@ -1554,36 +1587,57 @@ interface SwipeHomeZoneProps {
 }
 
 function SwipeHomeZone({ hasOpenApp, onGoHome, onShowSwitcher }: SwipeHomeZoneProps) {
-    const startY = useRef(0);
-    const startT = useRef(0);
-    const fired  = useRef(false);
+    const startY    = useRef(0);
+    const fired     = useRef(false);
+    const holdTimer = useRef<number | null>(null);
+
+    const clearHold = useCallback(() => {
+        if (holdTimer.current) {
+            window.clearTimeout(holdTimer.current);
+            holdTimer.current = null;
+        }
+    }, []);
+    useEffect(() => clearHold, [clearHold]);
+
+    const run = useCallback((action: HomeAction) => {
+        if (action === 'switcher' && onShowSwitcher) onShowSwitcher();
+        else if (action !== 'none') onGoHome();
+    }, [onGoHome, onShowSwitcher]);
 
     return (
         <div
-            className="absolute inset-x-0 bottom-0 z-50"
+            className="peer absolute inset-x-0 bottom-0 z-50"
             style={{ height: 44, touchAction: 'none' }}
             onPointerDown={e => {
                 startY.current = e.clientY;
-                startT.current = Date.now();
                 fired.current  = false;
                 (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-            }}
-            onPointerMove={e => {
-                if (fired.current) return;
-                const dy = startY.current - e.clientY;
-                if (dy < 55) return;
-
-                fired.current = true;
-                const elapsed = Date.now() - startT.current;
-
-                if (hasOpenApp && elapsed < 200) {
-                    onGoHome();
-                } else if (onShowSwitcher) {
-                    onShowSwitcher();
-                } else {
-                    onGoHome();
+                clearHold();
+                if (holdAction(hasOpenApp, !!onShowSwitcher) === 'switcher') {
+                    holdTimer.current = window.setTimeout(() => {
+                        holdTimer.current = null;
+                        fired.current     = true;
+                        run('switcher');
+                    }, HOME_HOLD_MS);
                 }
             }}
+            onPointerMove={e => {
+                const dy = startY.current - e.clientY;
+                if (Math.abs(dy) > HOME_HOLD_SLOP) clearHold();
+                if (fired.current) return;
+
+                const action = swipeAction(dy, hasOpenApp, !!onShowSwitcher);
+                if (action === 'none') return;
+                fired.current = true;
+                run(action);
+            }}
+            onPointerUp={() => {
+                clearHold();
+                if (fired.current) return;
+                fired.current = true;
+                run(tapAction(hasOpenApp));
+            }}
+            onPointerCancel={() => { clearHold(); fired.current = true; }}
         />
     );
 }

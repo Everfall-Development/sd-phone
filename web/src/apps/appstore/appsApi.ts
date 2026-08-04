@@ -45,6 +45,17 @@ export type WidgetAlign = 'left' | 'center' | 'right';
 /** Light or dark surface, for widgets whose material is not derived from their content. */
 export type WidgetTheme = 'dark' | 'light' | 'glass';
 
+/**
+ * One widget inside a stack. Carries only what varies per card; the slot's size, page and cell
+ * belong to the placement, because every card in a stack shares one footprint.
+ */
+export interface WidgetCard {
+    kind:   string;
+    align?: WidgetAlign;
+    theme?: WidgetTheme;
+    picks?: string[];
+}
+
 /** One placed widget. `uid` is per-instance so two Clocks can sit on the same page. */
 export interface WidgetPlacement {
     uid:  string;
@@ -63,6 +74,12 @@ export interface WidgetPlacement {
      * widgets that do not offer a picker, both keep working untouched.
      */
     picks?: string[];
+    /**
+     * Extra widgets sharing this slot, swiped through as a stack. The placement's own kind is
+     * card 0, so a layout saved before stacks existed is already a one-card stack and needs no
+     * migration.
+     */
+    stack?: WidgetCard[];
 }
 
 /**

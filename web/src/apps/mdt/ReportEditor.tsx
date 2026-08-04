@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FileText, FolderOpen, Trash2, UserPlus, X } from 'lucide-react';
+import { Banknote, FileText, FolderOpen, Gavel, Trash2, UserPlus, X } from 'lucide-react';
 import type { PillTone } from '@/ui/Pill';
 
 import { t } from '@/i18n';
@@ -16,6 +16,7 @@ import { Pill } from '@/ui/Pill';
 import { Scroller } from '@/ui/Scroller';
 import { SearchBar } from '@/ui/SearchBar';
 
+import { BookingDialog } from './BookingDialog';
 import { catalogIndex, ChargePicker, inputTotals, sentenceLabel } from './ChargePicker';
 import { EMS_INVOLVED_ROLES, EMS_REPORT_TYPES } from './data';
 import type {
@@ -112,7 +113,7 @@ export function ReportEditor({ reportRef, onSaved, onDeleted, onClose }: {
     onDeleted: () => void;
     onClose:   () => void;
 }) {
-    const { open, department } = useMdtSession();
+    const { open, department, can } = useMdtSession();
     const isMedical = department?.type === 'ems';
 
     const { data: report, loading, refetch } = useAsyncData(
@@ -126,6 +127,7 @@ export function ReportEditor({ reportRef, onSaved, onDeleted, onClose }: {
     ));
     const [picking, setPicking] = useState(false);
     const [confirm, setConfirm] = useState(false);
+    const [booking, setBooking] = useState<'jail' | 'fine' | null>(null);
     const [error, setError] = useState('');
     const [saving, setSaving] = useState(false);
 
@@ -240,6 +242,10 @@ export function ReportEditor({ reportRef, onSaved, onDeleted, onClose }: {
 
     const totals = chargeTotals(report.charges);
 
+    const bookable = can('jail.book')
+        && report.charges.length > 0
+        && report.involved.some(person => person.role === 'suspect');
+
     return (
         <Scroller key="read" className={`h-full ${mdtPanePad} ${enter}`}>
             <div className="flex flex-wrap items-start gap-3">
@@ -258,6 +264,27 @@ export function ReportEditor({ reportRef, onSaved, onDeleted, onClose }: {
                     </div>
                 </div>
                 <span className="flex shrink-0 items-center gap-3">
+                    {bookable && (
+                        <>
+                            <MdtButton
+                                variant="filled"
+                                size="sm"
+                                className="min-w-[62px]"
+                                icon={<Gavel className="h-[14px] w-[14px]" strokeWidth={2.4} />}
+                                onClick={() => setBooking('jail')}
+                            >
+                                {t('mdt.jail', 'Jail')}
+                            </MdtButton>
+                            <MdtButton
+                                size="sm"
+                                className="min-w-[62px]"
+                                icon={<Banknote className="h-[14px] w-[14px]" strokeWidth={2.4} />}
+                                onClick={() => setBooking('fine')}
+                            >
+                                {t('mdt.fine', 'Fine')}
+                            </MdtButton>
+                        </>
+                    )}
                     {report.canEdit && (
                         <MdtButton variant="filled" size="sm" onClick={() => edit(draftFrom(report))}>
                             {t('common.edit', 'Edit')}
@@ -392,6 +419,15 @@ export function ReportEditor({ reportRef, onSaved, onDeleted, onClose }: {
                     confirmLabel={t('common.delete', 'Delete')}
                     onCancel={() => setConfirm(false)}
                     onConfirm={() => void remove()}
+                />
+            )}
+
+            {booking && (
+                <BookingDialog
+                    fromReport={report.ref}
+                    mode={booking}
+                    onClose={() => setBooking(null)}
+                    onBooked={() => setBooking(null)}
                 />
             )}
         </Scroller>

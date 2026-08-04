@@ -750,7 +750,7 @@ function devSaveReport(draft: ReportDraft): ReportDetail {
 
     const existing = draft.ref ? DEV_REPORTS.find(r => r.ref === draft.ref) : undefined;
     const next: ReportDetail = {
-        evidence: [],
+        evidence: draft.evidence ?? [],
         ref: existing?.ref ?? nextRef('R'),
         title: draft.title,
         type: draft.type,
@@ -816,7 +816,7 @@ export async function mdtSaveCase(draft: CaseDraft): Promise<CaseDetail | null> 
         const stamp = Math.floor(Date.now() / 1000);
         const existing = draft.ref ? DEV_CASES.find(c => c.ref === draft.ref) : undefined;
         const next: CaseDetail = {
-            evidence: [],
+            evidence: draft.evidence ?? [],
             ref: existing?.ref ?? nextRef('C'),
             title: draft.title,
             summary: draft.summary,
@@ -1049,6 +1049,7 @@ export async function mdtJailQuote(reportRef: string, citizenid: string): Promis
             finedAlready: booked?.fined ?? false,
             jailAvailable: true,
             maxReduction: 12,
+            maxFineReduction: Math.min(2500, totals.fine),
             maxFine: 25000,
         };
     }
@@ -1061,6 +1062,7 @@ export interface BookingRequest {
     jail:             boolean;
     fine:             boolean;
     reductionMonths?: number;
+    reductionFine?:   number;
 }
 
 export async function mdtBook(req: BookingRequest): Promise<ArrestRow | null> {
@@ -1078,7 +1080,7 @@ export async function mdtBook(req: BookingRequest): Promise<ArrestRow | null> {
             callsign: DEV_BOOTSTRAP.me.callsign,
             charges: charges.map(c => line(c.code, c.count)),
             months: req.jail ? Math.max(0, totals.months - (req.reductionMonths ?? 0)) : 0,
-            fine: req.fine ? totals.fine : 0,
+            fine: req.fine ? Math.max(0, totals.fine - (req.reductionFine ?? 0)) : 0,
             jailed: req.jail,
             fined: req.fine,
             createdAt: Math.floor(Date.now() / 1000),

@@ -1,6 +1,16 @@
 ---@type fun(nuiAction: string, serverEvent: string) NUI->server pass-through registrar (client.nui).
 local proxyCallback = require 'client.nui'
 
+---@type table Photogram config (configs.photogram): the Live block.
+local PHOTOGRAM_CFG = require 'configs.photogram'
+---@type boolean Whether players may broadcast; the app hides Go Live when off.
+local LIVE_ENABLED  = type(PHOTOGRAM_CFG.Live) == 'table' and PHOTOGRAM_CFG.Live.Enabled == true
+
+---React -> Lua: whether the Go Live action should be offered at all. Read-only.
+RegisterNUICallback('sd-phone:photogram:liveEnabled', function(_, cb)
+    cb({ success = true, enabled = LIVE_ENABLED })
+end)
+
 ---@type string[] Every pure-proxy Photogram action: NUI 'sd-phone:photogram:<name>' forwards
 ---to server 'sd-phone:server:photogram:<name>' with no client-side logic in between.
 local ACTIONS = {

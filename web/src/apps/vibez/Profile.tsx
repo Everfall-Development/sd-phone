@@ -13,11 +13,12 @@ const SB_H = 54;
 
 type Grid = 'posts' | 'liked' | 'saved';
 
-export function Profile({ handle, onBack, onOpenPost, onSignOut, refreshKey }: {
+export function Profile({ handle, onBack, onOpenPost, onSignOut, onSwitchAccount, refreshKey }: {
     handle?:    string;
     onBack?:    () => void;
     onOpenPost: (posts: VPost[], index: number) => void;
     onSignOut?: () => void;
+    onSwitchAccount?: () => void;
     refreshKey: number;
 }) {
     const [pwOpen,   setPwOpen]   = useState(false);
@@ -171,6 +172,15 @@ export function Profile({ handle, onBack, onOpenPost, onSignOut, refreshKey }: {
                         >
                             {t('vibez.changePassword', 'Change Password')}
                         </button>
+                        {onSwitchAccount && (
+                            <button
+                                type="button"
+                                onClick={onSwitchAccount}
+                                className="mt-2 w-full rounded-md border border-white/20 py-2.5 text-[14px] font-semibold text-white/90 active:opacity-70"
+                            >
+                                {t('accounts.switchAccount', 'Switch account')}
+                            </button>
+                        )}
                         <button
                             type="button"
                             onClick={onSignOut}

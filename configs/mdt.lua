@@ -205,8 +205,19 @@ return {
     Jail = {
         MaxFine            = 25000, -- hard ceiling on a single citation
         MaxReductionMonths = 12,    -- most an officer may cut from a sentence
+        MaxFineReduction   = 2500,  -- most an officer may cut from a citation
         MaxMonths          = 240,   -- hard ceiling on a single sentence
-        Resource           = 'auto', -- 'auto' | 'qbx_prison' | 'qb-prison' | 'xt-prison'
+        -- Prison system. 'auto' probes, in order: qbx_prison, qb-prison, xt-prison,
+        -- pickle_prisons, tk_jail, esx_tk_jail, qb-policejob, ps-policejob, esx_jail,
+        -- esx-qalle-jail, rcore_prison.
+        Resource           = 'auto',
+        -- What the prison counts a sentence in. 'auto' trusts the adapter, which is right for
+        -- every script above. Override only if yours was reconfigured: getting this wrong is the
+        -- difference between a six month sentence and a six second one.
+        TimeUnit           = 'auto', -- 'auto' | 'months' | 'minutes' | 'seconds'
+        -- Real seconds one MDT month is worth, used only for prisons that count in seconds or
+        -- minutes. Ignored by month-based prisons, which take the sentence as-is.
+        SecondsPerMonth    = 60,
         JailAccount        = 'bank', -- account a citation is debited from
     },
 

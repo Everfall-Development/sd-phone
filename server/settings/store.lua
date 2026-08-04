@@ -114,9 +114,16 @@ function store.ensureSchema()
             citizenid VARCHAR(64) NOT NULL,
             app       VARCHAR(32) NOT NULL,
             enabled   TINYINT(1)  NOT NULL DEFAULT 1,
+            sounds    TINYINT(1)  NOT NULL DEFAULT 1,
+            tone      VARCHAR(32) NULL,
             PRIMARY KEY (citizenid, app)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
+
+    util.ensureColumns('phone_notif_prefs', {
+        sounds = 'sounds TINYINT(1) NOT NULL DEFAULT 1',
+        tone   = 'tone VARCHAR(32) NULL',
+    })
 
     -- setPhoneNumber has always written bare digits; only rows imported from another phone
     -- resource can still carry separators. Normalising them once lets the number lookups compare
@@ -152,33 +159,89 @@ function store.getNotifPref(citizenid, app)
     local row = MySQL.single.await(
         'SELECT enabled FROM phone_notif_prefs WHERE citizenid = ? AND app = ?', { citizenid, a })
     if not row then return true end
-    return row.enabled == true or tonumber(row.enabled) == 1
+    return isTruthy(row.enabled)
+end
+
+---Every stored notification override for a player, keyed by app slug. Apps left at their
+---defaults have no row and are simply absent. Read-only.
+---@param citizenid string framework per-character id
+---@return table<string, { enabled: boolean, sounds: boolean, tone: string|nil }>
+function store.getNotifPrefs(citizenid)
+    if not citizenid or citizenid == '' then return {} end
+    local rows = MySQL.query.await(
+        'SELECT app, enabled, sounds, tone FROM phone_notif_prefs WHERE citizenid = ?', { citizenid }) or {}
+
+    local out = {}
+    for i = 1, #rows do
+        local r = rows[i]
+        out[r.app] = {
+            enabled = isTruthy(r.enabled),
+            sounds  = isTruthy(r.sounds),
+            tone    = (type(r.tone) == 'string' and r.tone ~= '') and r.tone or nil,
+        }
+    end
+    return out
 end
 
 ---@type integer Cap on stored notification overrides per character. Only a muted app keeps a row,
 ---so this sits far above the phone's whole app list, custom apps included.
 local MAX_NOTIF_PREFS = 64
 
----Persists a player's notification preference for an app; no-op for an unusable app id. Enabled
----is what getNotifPref falls back to, so re-enabling drops the row instead of storing the
----default - the app id is client-supplied and would otherwise be an uncapped primary key.
+---Persists a player's notification preferences for an app; no-op for an unusable app id. A row is
+---kept only while something differs from the defaults getNotifPrefs falls back to, so an app
+---returned to enabled + sounds + default tone drops its row instead of storing the default - the
+---app id is client-supplied and would otherwise be an uncapped primary key. Omitted fields keep
+---whatever is already stored.
 ---@param citizenid string framework per-character id
 ---@param app string app slug
----@param on boolean whether notifications are enabled
-function store.setNotifPref(citizenid, app, on)
+---@param patch { enabled: boolean|nil, sounds: boolean|nil, tone: string|nil }
+function store.setNotifPref(citizenid, app, patch)
     local a = sanitizeApp(app)
     if not citizenid or citizenid == '' or not a then return end
-    if on == true then
-        MySQL.update.await('DELETE FROM phone_notif_prefs WHERE citizenid = ? AND app = ?', { citizenid, a })
+    patch = type(patch) == 'table' and patch or {}
+
+    local row = MySQL.single.await(
+        'SELECT enabled, sounds, tone FROM phone_notif_prefs WHERE citizenid = ? AND app = ?',
+        { citizenid, a })
+
+    ---A patched flag wins, else what is stored, else the default. Written out rather than folded
+    ---into and/or, which silently drops a patched `false`.
+    ---@param patched any
+    ---@param stored any
+    ---@return boolean
+    local function flag(patched, stored)
+        if patched ~= nil then return patched == true end
+        if stored ~= nil then return isTruthy(stored) end
+        return true
+    end
+
+    local enabled = flag(patch.enabled, row and row.enabled)
+    local sounds  = flag(patch.sounds,  row and row.sounds)
+
+    local tone
+    if patch.tone == nil then
+        tone = row and row.tone or nil
+    elseif type(patch.tone) == 'string' and patch.tone ~= '' then
+        tone = sanitizeTone(patch.tone)
+    end
+
+    if enabled and sounds and not tone then
+        if row then
+            MySQL.update.await('DELETE FROM phone_notif_prefs WHERE citizenid = ? AND app = ?', { citizenid, a })
+        end
         return
     end
-    local countRow = MySQL.single.await(
-        'SELECT COUNT(*) AS n FROM phone_notif_prefs WHERE citizenid = ?', { citizenid })
-    if countRow and tonumber(countRow.n) >= MAX_NOTIF_PREFS then return end
+
+    if not row then
+        local countRow = MySQL.single.await(
+            'SELECT COUNT(*) AS n FROM phone_notif_prefs WHERE citizenid = ?', { citizenid })
+        if countRow and tonumber(countRow.n) >= MAX_NOTIF_PREFS then return end
+    end
+
     MySQL.update.await([[
-        INSERT INTO phone_notif_prefs (citizenid, app, enabled) VALUES (?, ?, 0)
-        ON DUPLICATE KEY UPDATE enabled = VALUES(enabled)
-    ]], { citizenid, a })
+        INSERT INTO phone_notif_prefs (citizenid, app, enabled, sounds, tone) VALUES (?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), sounds = VALUES(sounds), tone = VALUES(tone)
+    ]], { citizenid, a, enabled and 1 or 0, sounds and 1 or 0, tone })
 end
 
 ---Trims a string and clamps it to `n` chars; nil / non-string / empty becomes nil.

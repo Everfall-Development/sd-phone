@@ -7,6 +7,8 @@ proxyCallback('sd-phone:accounts:register',     'sd-phone:server:accounts:regist
 proxyCallback('sd-phone:accounts:login',        'sd-phone:server:accounts:login')
 proxyCallback('sd-phone:accounts:logout',       'sd-phone:server:accounts:logout')
 proxyCallback('sd-phone:accounts:me',           'sd-phone:server:accounts:me')
+proxyCallback('sd-phone:accounts:switchable',   'sd-phone:server:accounts:switchable')
+proxyCallback('sd-phone:accounts:switch',       'sd-phone:server:accounts:switch')
 proxyCallback('sd-phone:accounts:requestReset', 'sd-phone:server:accounts:requestReset')
 proxyCallback('sd-phone:accounts:confirmReset', 'sd-phone:server:accounts:confirmReset')
 proxyCallback('sd-phone:accounts:changePassword', 'sd-phone:server:accounts:changePassword')

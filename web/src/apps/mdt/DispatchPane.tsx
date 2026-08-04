@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { MapPin, RadioTower, Siren } from 'lucide-react';
+import { MapPin, RadioTower, Siren, X } from 'lucide-react';
 
 import { t } from '@/i18n';
 import { relTimeCompact } from '@/lib/time';
@@ -213,6 +213,14 @@ export function DispatchPane() {
                     </span>
                     <span className="flex-1" />
                     <span className={mdtRowMeta}>{relTimeCompact(current.createdAt * 1000)}</span>
+                    <button
+                        type="button"
+                        onClick={() => select(null)}
+                        aria-label={t('mdt.closeCall', 'Back to dispatch board')}
+                        className="-mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ios-gray transition-colors hover:text-black active:opacity-50 dark:hover:text-white"
+                    >
+                        <X className="h-[17px] w-[17px]" strokeWidth={2.5} />
+                    </button>
                 </div>
                 <h2 className="mt-1 text-[21px] font-bold leading-tight tracking-tight text-black dark:text-white">
                     {current.type}
@@ -221,6 +229,7 @@ export function DispatchPane() {
                     {can('dispatch.attach') && (
                         <MdtButton
                             variant="filled"
+                            className="min-w-[88px]"
                             disabled={busy}
                             onClick={() => { void toggleAttach(current.id, !attached); }}
                         >
@@ -299,6 +308,12 @@ export function DispatchPane() {
                             selectedUnit={focusUnit}
                             onSelectCall={id => select(id)}
                             onSelectUnit={cid => setFocusUnit(cid === focusUnit ? null : cid)}
+                            myCallsign={myCallsign}
+                            canAttach={can('dispatch.attach')}
+                            busy={busy}
+                            onAttach={(callId, on) => { void toggleAttach(callId, on); }}
+                            onWaypointCall={callId => { void waypointToCall(callId); }}
+                            onWaypointUnit={cid => { void waypointToUnit(cid); }}
                         />
                     ) : (
                         <MdtColumn

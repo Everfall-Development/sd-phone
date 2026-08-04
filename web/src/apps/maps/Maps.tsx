@@ -341,7 +341,7 @@ export function Maps({ onClose }: { onClose: () => void }) {
                 {toast && (
                     <div className="pointer-events-none absolute bottom-8 inset-x-0 z-10 flex justify-center">
                         <div
-                            className={`flex max-w-[85%] items-center gap-2 rounded-full bg-black/85 px-4 py-2.5 shadow-lg backdrop-blur ${
+                            className={`flex max-w-[85%] items-center gap-2 rounded-full bg-black/85 px-4 py-2.5 shadow-lg ${
                                 toast.leaving ? 'animate-slide-out-down' : 'animate-slide-up-fade'
                             }`}
                         >

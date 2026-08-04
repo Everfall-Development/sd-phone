@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Check } from 'lucide-react';
 
 import { t } from '@/i18n';
@@ -11,18 +12,24 @@ import { sentenceLabel } from './ChargePicker';
 import type { ArrestRow } from './data';
 import { mdtBook, mdtJailQuote, mdtReport } from './mdtApi';
 import { ReportLinker } from './ReportEditor';
+import { useMdtRoot } from './mdtRoot';
 import { mdtSectionHeader } from './mdtTheme';
 import { MdtSelect } from './ui/MdtSelect';
 
-export function BookingDialog({ onClose, onBooked }: {
-    onClose:  () => void;
-    onBooked: (arrest: ArrestRow) => void;
+export function BookingDialog({ onClose, onBooked, fromReport, fromCitizen, mode }: {
+    onClose:      () => void;
+    onBooked:     (arrest: ArrestRow) => void;
+    fromReport?:  string;
+    fromCitizen?: string;
+    mode?:        'jail' | 'fine';
 }) {
-    const [reportRef, setReportRef] = useState<string | null>(null);
-    const [citizenid, setCitizenid] = useState('');
-    const [jail, setJail] = useState(true);
-    const [fine, setFine] = useState(true);
+    const host = useMdtRoot();
+    const [reportRef, setReportRef] = useState<string | null>(fromReport ?? null);
+    const [citizenid, setCitizenid] = useState(fromCitizen ?? '');
+    const [jail, setJail] = useState(mode !== 'fine');
+    const [fine, setFine] = useState(mode !== 'jail');
     const [reduction, setReduction] = useState(0);
+    const [fineCut, setFineCut] = useState(0);
     const [exiting, setExiting] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
@@ -48,7 +55,7 @@ export function BookingDialog({ onClose, onBooked }: {
         [reportRef, citizenid],
     );
 
-    useEffect(() => { setReduction(0); setError(''); }, [reportRef, citizenid]);
+    useEffect(() => { setReduction(0); setFineCut(0); setError(''); }, [reportRef, citizenid]);
 
     function dismiss(after: () => void) {
         if (exiting) return;
@@ -56,8 +63,12 @@ export function BookingDialog({ onClose, onBooked }: {
         window.setTimeout(after, 180);
     }
 
+    function atRoot(node: ReactNode) {
+        return host ? createPortal(node, host) : node;
+    }
+
     if (!reportRef) {
-        return (
+        return atRoot(
             <ReportLinker
                 title={t('mdt.bookFromReport', 'Book from a report')}
                 onClose={onClose}
@@ -68,7 +79,7 @@ export function BookingDialog({ onClose, onBooked }: {
 
     if (!quote) {
         const noSuspects = report !== null && suspects.length === 0;
-        return (
+        return atRoot(
             <DialogShell
                 exiting={exiting}
                 title={noSuspects
@@ -106,6 +117,8 @@ export function BookingDialog({ onClose, onBooked }: {
     const canFine = fineBlocked === '';
     const maxReduction = Math.min(quote.maxReduction, quote.months);
     const sentence = Math.max(0, quote.months - reduction);
+    const maxFineCut = Math.min(quote.maxFineReduction ?? 0, quote.fine);
+    const charged = Math.max(0, quote.fine - fineCut);
 
     async function book() {
         if (saving || !reportRef) return;
@@ -113,9 +126,10 @@ export function BookingDialog({ onClose, onBooked }: {
         const arrest = await mdtBook({
             reportRef,
             citizenid,
-            jail:            jail && canJail,
-            fine:            fine && canFine,
+            jail:            mode ? mode === 'jail' && canJail : jail && canJail,
+            fine:            mode ? mode === 'fine' && canFine : fine && canFine,
             reductionMonths: reduction,
+            reductionFine:   fineCut,
         });
         setSaving(false);
         if (!arrest) {
@@ -125,16 +139,33 @@ export function BookingDialog({ onClose, onBooked }: {
         dismiss(() => onBooked(arrest));
     }
 
-    return (
+    const title = mode === 'jail'
+        ? t('mdt.jailSuspect', 'Jail suspect')
+        : mode === 'fine'
+            ? t('mdt.fineSuspect', 'Issue fine')
+            : t('mdt.bookSuspect', 'Book suspect');
+
+    const confirmLabel = saving
+        ? t('mdt.booking', 'Booking')
+        : mode === 'jail'
+            ? t('mdt.sendToJail', 'Send to jail')
+            : mode === 'fine'
+                ? t('mdt.issueFine', 'Issue fine')
+                : t('mdt.confirmBooking', 'Book');
+
+    const blocked = mode === 'jail' ? jailBlocked : mode === 'fine' ? fineBlocked : '';
+    const ready = mode === 'jail' ? canJail : mode === 'fine' ? canFine : ((jail && canJail) || (fine && canFine));
+
+    return atRoot(
         <DialogShell
             exiting={exiting}
-            title={t('mdt.bookSuspect', 'Book suspect')}
+            title={title}
             message={t('mdt.bookSuspectSub', 'Every figure comes from the charges filed on {ref}.', { ref: reportRef })}
             cancel={{ label: t('common.cancel', 'Cancel'), onClick: () => dismiss(onClose) }}
             confirm={{
-                label:    saving ? t('mdt.booking', 'Booking') : t('mdt.confirmBooking', 'Book'),
+                label:    confirmLabel,
                 onClick:  () => void book(),
-                disabled: saving || !((jail && canJail) || (fine && canFine)),
+                disabled: saving || !ready,
                 busy:     saving,
             }}
         >
@@ -150,11 +181,15 @@ export function BookingDialog({ onClose, onBooked }: {
                 )}
 
                 <div className="flex gap-2">
-                    <Figure label={t('mdt.sentence', 'Sentence')} value={sentenceLabel(sentence)} />
-                    <Figure label={t('mdt.fine', 'Fine')} value={formatMoney(quote.fine, { whole: true })} />
+                    {mode !== 'fine' && (
+                        <Figure label={t('mdt.sentence', 'Sentence')} value={sentenceLabel(sentence)} />
+                    )}
+                    {mode !== 'jail' && (
+                        <Figure label={t('mdt.fine', 'Fine')} value={formatMoney(charged, { whole: true })} />
+                    )}
                 </div>
 
-                {maxReduction > 0 && (
+                {mode !== 'fine' && maxReduction > 0 && (
                     <div className="mt-3">
                         <div className="flex items-baseline justify-between">
                             <span className={mdtSectionHeader}>{t('mdt.reduction', 'Reduction')}</span>
@@ -173,23 +208,45 @@ export function BookingDialog({ onClose, onBooked }: {
                     </div>
                 )}
 
-                <div className="mt-3 overflow-hidden rounded-[10px] bg-black/[0.05] dark:bg-white/[0.08]">
-                    <CheckRow
-                        label={t('mdt.sendToJail', 'Send to jail')}
-                        detail={canJail ? sentenceLabel(sentence) : jailBlocked}
-                        checked={jail && canJail}
-                        disabled={!canJail}
-                        onToggle={() => setJail(v => !v)}
-                    />
-                    <CheckRow
-                        label={t('mdt.issueFine', 'Issue fine')}
-                        detail={canFine ? formatMoney(quote.fine, { whole: true }) : fineBlocked}
-                        checked={fine && canFine}
-                        disabled={!canFine}
-                        onToggle={() => setFine(v => !v)}
-                    />
-                </div>
+                {mode !== 'jail' && maxFineCut > 0 && (
+                    <div className="mt-3">
+                        <div className="flex items-baseline justify-between">
+                            <span className={mdtSectionHeader}>{t('mdt.fineReduction', 'Fine reduction')}</span>
+                            <span className="text-[12.5px] font-medium tabular-nums text-ios-gray">
+                                {t('mdt.minusMoney', '-{amount}', { amount: formatMoney(fineCut, { whole: true }) })}
+                            </span>
+                        </div>
+                        <Slider
+                            value={fineCut}
+                            min={0}
+                            max={maxFineCut}
+                            step={25}
+                            onChange={setFineCut}
+                            ariaLabel={t('mdt.fineReduction', 'Fine reduction')}
+                        />
+                    </div>
+                )}
 
+                {!mode && (
+                    <div className="mt-3 overflow-hidden rounded-[10px] bg-black/[0.05] dark:bg-white/[0.08]">
+                        <CheckRow
+                            label={t('mdt.sendToJail', 'Send to jail')}
+                            detail={canJail ? sentenceLabel(sentence) : jailBlocked}
+                            checked={jail && canJail}
+                            disabled={!canJail}
+                            onToggle={() => setJail(v => !v)}
+                        />
+                        <CheckRow
+                            label={t('mdt.issueFine', 'Issue fine')}
+                            detail={canFine ? formatMoney(charged, { whole: true }) : fineBlocked}
+                            checked={fine && canFine}
+                            disabled={!canFine}
+                            onToggle={() => setFine(v => !v)}
+                        />
+                    </div>
+                )}
+
+                {blocked && <div className="mt-3 text-[13.5px] leading-snug text-ios-orange">{blocked}</div>}
                 {error && <div className="mt-3 text-[13.5px] leading-snug text-ios-red">{error}</div>}
             </div>
         </DialogShell>

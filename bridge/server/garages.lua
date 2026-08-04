@@ -24,7 +24,9 @@ local BASE = framework.name == 'esx'
 
 -- Profile fields: garage/state columns are tried in order, first present wins; `stored`/`impound`
 -- are the state values meaning parked / impounded; `impoundCol` names a separate truthy flag;
--- storedFallback=false opts out of statusOf's generic 1-means-stored fallback. Storage per system:
+-- storedFallback=false opts out of statusOf's generic 1-means-stored fallback. `outState` is the
+-- state value written to mean "out"; `outGarage` is set only on systems that mark out in the
+-- GARAGE column. Storage per system:
 --   ef_garages                                      : player_vehicles
 --       garage=`garage`, state 0 impounded / 1 garaged / 2 seized, mileage stored in kilometres
 --   qb-garages / qbx_garages / jg-advancedgarages : player_vehicles
@@ -37,6 +39,10 @@ local BASE = framework.name == 'esx'
 --   esx_garage (+ ESX variants)                    : owned_vehicles
 --       owner=`owner`, props=`vehicle` JSON (model hash, fuelLevel, engineHealth,
 --       bodyHealth), stored=`stored`/`state`, garage=`parking`/`garage`
+--   qs-advancedgarages                             : owned_vehicles (esx) / player_vehicles (qb)
+--       garage=`garage` ('OUT' while the car is out), state=`stored` (esx) or
+--       `state` (qb), impound=`impound_data` (JSON blob, '' when free),
+--       type=`type` ('vehicle'|'boat'|'plane')
 ---@type table Permissive fallback column profile for systems without an exact entry.
 local DEFAULT_PROFILE = {
     garage     = { 'garage', 'parking', 'garage_id', 'garagename' },
@@ -44,16 +50,18 @@ local DEFAULT_PROFILE = {
     stored     = { [1] = true },
     impound    = { [2] = true },
     impoundCol = 'impound',
+    outState   = 0,
 }
 ---@type table<string, table> Exact column profiles, keyed by garage resource name.
 local PROFILES = {
     ['ef_garages']         = efGarages.profile,
+    ['qs-advancedgarages'] = { garage = { 'garage' },             state = { 'stored', 'state' }, impoundCol = 'impound_data', outGarage = 'OUT' },
     ['qb-garages']         = { garage = { 'garage' },             state = { 'state' } },
     ['qbx_garages']        = { garage = { 'garage' },             state = { 'state' } },
     ['jg-advancedgarages'] = { garage = { 'garage_id', 'garage' },state = { 'in_garage' }, impoundCol = 'impound' },
     ['lunar_garage']       = { garage = { 'garage', 'parking' },  state = { 'state', 'stored' } },
     ['nc_garage']          = { garage = { 'garage', 'parking' },  state = { 'state', 'stored' } },
-    ['op_garages']         = { garage = { 'vehicleGarage', 'garage', 'parking' }, state = { 'state', 'stored' }, stored = { [0] = true }, storedFallback = false, impoundCol = 'isTowedOut' },
+    ['op_garages']         = { garage = { 'vehicleGarage', 'garage', 'parking' }, state = { 'state', 'stored' }, stored = { [0] = true }, storedFallback = false, impoundCol = 'isTowedOut', outState = 1 },
     ['okokGarage']         = { garage = { 'parking', 'garage' },  state = { 'state', 'stored' } },
     ['codem-garage']       = { garage = { 'parking', 'garage' },  state = { 'state', 'stored' } },
     ['cd_garage']          = { garage = { 'garage_id', 'garage' },state = { 'in_garage', 'state' } },
@@ -103,6 +111,17 @@ local function decodeProps(row)
         end
     end
     return nil
+end
+
+---The vehicle's model: the `vehicle` column when it holds a plain name, else the saved-properties
+---model key, else the row's stored hash.
+---@param row table vehicle DB row
+---@param props table|nil decoded vehicle-properties JSON
+---@return string|number|nil model spawn name or hash
+local function modelOf(row, props)
+    local raw = row.vehicle
+    if type(raw) == 'string' and raw:sub(1, 1) ~= '{' then return raw end
+    return (props and (props.model or props.modelName)) or row.hash or nil
 end
 
 ---Clamp a condition value to a rounded 0-100 integer percentage. Values above 100 are assumed to
@@ -201,6 +220,19 @@ local function spawnedPlates()
     return set
 end
 
+---Display status for a row: statusOf's stored/out, refined to impound when the row is
+---impound-flagged or its plate is nowhere in the world.
+---@param row table vehicle DB row
+---@param spawned table<string, boolean> plate set from spawnedPlates()
+---@return string status 'stored' | 'out' | 'impound'
+local function displayStatus(row, spawned)
+    local status, impound = statusOf(row)
+    if status ~= 'out' then return status end
+    local p = normPlate(row.plate)
+    if impound or not (p and spawned[p]) then return 'impound' end
+    return 'out'
+end
+
 ---True when ef_vehicles mileage tracking is running. Checked at call time.
 ---@return boolean
 local function mileageActive()
@@ -235,13 +267,36 @@ local function mileageFor(plate)
 end
 
 -- Garage waypoint resolution: systems with a runtime export (qbx_garages, qb-garages,
--- jg-advancedgarages, cd_garage, op_garages) are read directly; the rest fall back to the manual
--- coordinate map in configs.garages -> Locations.
+-- jg-advancedgarages, cd_garage, op_garages) are read directly, qs-advancedgarages from its config
+-- file; the rest fall back to the manual coordinate map in configs.garages -> Locations.
 
 ---@type table|nil Last loaded garage collection (nil is a valid cached answer).
 local gcolCache
 ---@type integer os.time the collection was loaded (0 = never).
 local gcolAt = 0
+---@type table|nil Parsed qs-advancedgarages garage table, held until that resource restarts.
+local qsCache
+---@type boolean Whether the qs-advancedgarages config has been parsed since the last restart.
+local qsParsed = false
+
+---qs-advancedgarages' garage table, parsed once from the `config/config.lua` it ships
+---unencrypted and evaluated in a sandbox.
+---@return table|nil garages keyed by garage name, nil when unreadable
+local function qsGarages()
+    if qsParsed then return qsCache end
+    qsParsed = true
+
+    local raw = LoadResourceFile('qs-advancedgarages', 'config/config.lua')
+    if type(raw) ~= 'string' then return nil end
+
+    local env = setmetatable({ Config = {}, Locales = {} }, { __index = _G })
+    local chunk = load(raw, '@qs-advancedgarages/config/config.lua', 't', env)
+    if not chunk then return nil end
+
+    local ok = pcall(chunk)
+    qsCache = ok and type(env.Config) == 'table' and env.Config.Garages or nil
+    return qsCache
+end
 
 ---Pull the active system's full garage collection. Nil for op_garages (per-garage export lookups)
 ---and for unsupported systems. Memoised on the same short TTL as the plate set: it crosses a
@@ -257,6 +312,7 @@ local function loadGarageCollection()
         if ACTIVE == 'qb-garages'         then return exports['qb-garages']:getAllGarages() end
         if ACTIVE == 'jg-advancedgarages' then return exports['jg-advancedgarages']:getAllGarages() end
         if ACTIVE == 'cd_garage'          then return exports['cd_garage']:GetConfig() end
+        if ACTIVE == 'qs-advancedgarages' then return qsGarages() end
         return nil
     end)
     gcolCache, gcolAt = ok and data or nil, now
@@ -267,7 +323,10 @@ end
 -- than hand out references into the old instance.
 if ACTIVE then
     local function dropCollection(name)
-        if name == ACTIVE then gcolCache, gcolAt = nil, 0 end
+        if name == ACTIVE then
+            gcolCache, gcolAt = nil, 0
+            qsCache, qsParsed = nil, false
+        end
     end
     AddEventHandler('onResourceStart', dropCollection)
     AddEventHandler('onResourceStop', dropCollection)
@@ -292,7 +351,11 @@ local function systemCoords(gcol, row, garageId)
             return g and (g.CenterOfZone or g.AccessPoint)
         end
         if not gcol then return nil end
-        if ACTIVE == 'qbx_garages' then
+        if ACTIVE == 'qs-advancedgarages' then
+            local g = garageId and gcol[garageId]
+            local c = g and g.coords
+            return c and (c.menuCoords or c.spawnCoords)
+        elseif ACTIVE == 'qbx_garages' then
             local g  = gcol[garageId]
             local ap = g and g.accessPoints and g.accessPoints[1]
             return ap and ap.coords
@@ -352,7 +415,20 @@ local function impoundCoords(gcol, row, garageId)
             return g and g.Coords
         end
         if not gcol then return nil end
-        if ACTIVE == 'qbx_garages' then
+        if ACTIVE == 'qs-advancedgarages' then
+            local own = garageId and gcol[garageId]
+            local oc  = own and own.isImpound and own.coords
+            if oc then return oc.menuCoords or oc.spawnCoords end
+            local fallback
+            for _, g in pairs(gcol) do
+                local c = g.isImpound and g.coords and (g.coords.menuCoords or g.coords.spawnCoords)
+                if c then
+                    if g.type == nil or g.type == 'vehicle' then return c end
+                    fallback = fallback or c
+                end
+            end
+            return fallback
+        elseif ACTIVE == 'qbx_garages' then
             local own = garageId and gcol[garageId]
             local ap  = own and own.type == 'depot' and own.accessPoints and own.accessPoints[1]
             if ap then return ap.coords end
@@ -428,20 +504,15 @@ function garages.list(source)
     for i = 1, #rows do
         local row   = rows[i]
         local props = decodeProps(row)
-        local status, impound = statusOf(row)
-        if status == 'out' then
-            local p = normPlate(row.plate)
-            if impound or not (p and spawned[p]) then status = 'impound' end
-        end
+        local status = displayStatus(row, spawned)
 
         local garageName = pick(row, PROFILE.garage)
-        if type(garageName) ~= 'string' or garageName == '' then garageName = nil end
+        if type(garageName) ~= 'string' or garageName == '' or garageName:upper() == 'OUT' then
+            garageName = nil
+        end
         local garageLabel = ACTIVE == 'ef_garages' and efGarages.getLabel(gcol, garageName) or garageName
 
-        local rawModel = row.vehicle
-        if type(rawModel) ~= 'string' or rawModel:sub(1, 1) == '{' then
-            rawModel = (props and (props.model or props.modelName)) or row.hash or nil
-        end
+        local rawModel = modelOf(row, props)
 
         local plate = trim(row.plate) or ''
         local veh = {
@@ -477,6 +548,96 @@ function garages.list(source)
     end
 
     return out
+end
+
+---Name of the first of the candidate columns actually present on a row, for building an UPDATE.
+---@param row table DB row
+---@param names string[] candidate column names in preference order
+---@return string|nil name
+local function pickName(row, names)
+    for i = 1, #names do
+        if row[names[i]] ~= nil then return names[i] end
+    end
+    return nil
+end
+
+---One of the caller's own vehicles by plate, with the same status the app list shows. Ownership
+---resolves from the caller's identifier.
+---@param source number caller server id
+---@param plate string
+---@return table|nil vehicle { row, status, model, props, plate }
+function garages.vehicleFor(source, plate)
+    if not G.Enabled then return nil end
+
+    local id   = player.getIdentifier(source)
+    local want = normPlate(plate)
+    if not id or not want or want == '' then return nil end
+
+    local ok, rows = pcall(function()
+        return MySQL.query.await(('SELECT * FROM `%s` WHERE `%s` = ?'):format(BASE.table, BASE.idCol), { id })
+    end)
+    if not ok or type(rows) ~= 'table' then return nil end
+
+    local spawned = spawnedPlates()
+    for i = 1, #rows do
+        local row = rows[i]
+        if normPlate(row.plate) == want then
+            local props = decodeProps(row)
+            return {
+                row    = row,
+                status = displayStatus(row, spawned),
+                model  = modelOf(row, props),
+                props  = props,
+                plate  = trim(row.plate) or '',
+            }
+        end
+    end
+    return nil
+end
+
+---Mark one of the caller's vehicles as out of its garage: the profile's state column to its
+---`outState`, plus the garage column on systems carrying `outGarage`. The one write in this bridge.
+---@param source number caller server id
+---@param plate string
+---@param netId number|nil network id of the spawned entity, for systems that track it
+---@return boolean committed
+function garages.takeOut(source, plate, netId)
+    local veh = garages.vehicleFor(source, plate)
+    if not veh or veh.status ~= 'stored' then return false end
+
+    local row       = veh.row
+    local stateCol  = pickName(row, PROFILE.state)
+    local garageCol = PROFILE.outGarage and pickName(row, PROFILE.garage) or nil
+    if not stateCol and not garageCol then return false end
+
+    local sets, args = {}, {}
+    if stateCol then
+        sets[#sets + 1] = ('`%s` = ?'):format(stateCol)
+        args[#args + 1] = PROFILE.outState
+    end
+    if garageCol then
+        sets[#sets + 1] = ('`%s` = ?'):format(garageCol)
+        args[#args + 1] = PROFILE.outGarage
+    end
+    args[#args + 1] = row.plate
+
+    local ok, affected = pcall(function()
+        return MySQL.update.await(
+            ('UPDATE `%s` SET %s WHERE `plate` = ?'):format(BASE.table, table.concat(sets, ', ')), args)
+    end)
+    if not ok or (tonumber(affected) or 0) < 1 then return false end
+
+    if netId then
+        pcall(function()
+            if ACTIVE == 'jg-advancedgarages' then
+                TriggerEvent('jg-advancedgarages:server:register-vehicle-outside', veh.plate, netId)
+            elseif ACTIVE == 'qs-advancedgarages' then
+                exports['qs-advancedgarages']:setVehicleToPersistent(netId)
+            end
+        end)
+    end
+
+    return true
 end
 
 return garages

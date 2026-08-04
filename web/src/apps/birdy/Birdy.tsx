@@ -7,11 +7,12 @@ import { useAppAuth } from '@/hooks/useAppAuth';
 import { useIosPush } from '@/hooks/useIosPush';
 import { useDidEnter } from '@/hooks/useDidEnter';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
-import { useSessionState } from '@/hooks/useSessionState';
+import { clearSessionState, useSessionState } from '@/hooks/useSessionState';
 import { useDeckActive } from '@/shell/deckActive';
+import { AccountSwitcher } from '@/shared/AccountSwitcher';
 import { AppAuth } from '@/shared/AppAuth';
 import { AlertDialog } from '@/ui/AlertDialog';
-import { MAIL_DOMAIN, accountsConfirmReset, accountsRequestReset, accountsSavePassword, accountsSuggestCode } from '@/core/accountsApi';
+import { MAIL_DOMAIN, accountsConfirmReset, accountsRequestReset, accountsSavePassword, accountsSignOut, accountsSuggestCode, accountsSwitch } from '@/core/accountsApi';
 import { toggleReactionLocal } from '@/shared/chat/messagesApi';
 import type { MessageDraft } from '@/shared/chat/ChatView';
 import {
@@ -32,7 +33,7 @@ type Tab = 'home' | 'search' | 'notifications' | 'messages';
 
 export function Birdy({ onClose }: { onClose: () => void }) {
     const [me,          setMe]          = useState<BirdyAuthor>(CURRENT_USER);
-    const { authed, setAuthed, authChecked, justAuthed, setJustAuthed, myNumber, myEmail, savedLogin } = useAppAuth('birdy',
+    const { authed, setAuthed, authChecked, justAuthed, setJustAuthed, myNumber, myEmails, savedLogin, savedAccounts, refreshAccounts } = useAppAuth('birdy',
         () => apiMe().then(s => { if (s.me) setMe(s.me); return s.loggedIn; }));
     // null = not fetched yet (the feed shows skeletons instead of a false "no posts" flash).
     const [posts,       setPosts]       = useState<BirdyPost[] | null>(null);
@@ -47,6 +48,8 @@ export function Birdy({ onClose }: { onClose: () => void }) {
     const [profileOpen,    setProfileOpen]    = useSessionState('birdy:profileOpen', false);
     const [profileTarget,  setProfileTarget]  = useSessionState<string | null>('birdy:profileTarget', null);
     const [editingProfile, setEditingProfile] = useState(false);
+    const [switching,      setSwitching]      = useState(false);
+    const [adding,         setAdding]         = useState(false);
     const [profile,        setProfile]        = useState<BirdyProfile | null>(null);
     const [sendError,      setSendError]      = useState<string | null>(null);
 
@@ -240,6 +243,17 @@ export function Birdy({ onClose }: { onClose: () => void }) {
         void sendMessage(openConvoId, { kind: 'money', body: `$${amount}`, amount });
     }
 
+    function switchedAccount() {
+        clearSessionState('birdy:');
+        refreshAccounts();
+        setProfileOpen(false); setProfileTarget(null); setProfile(null);
+        setOpenPostId(null); setOpenConvoId(null); setOpenConvo(null);
+        setPosts(null); setConvos([]); setNotifCount(0); setTab('home'); setFeed('all');
+        setComposing(false); setEditingProfile(false);
+        void apiMe().then(s => { if (s.me) setMe(s.me); });
+        refreshFeed();
+    }
+
     function selectTab(t: Tab) {
         setTab(t);
         setOpenPostId(null);
@@ -304,8 +318,7 @@ export function Birdy({ onClose }: { onClose: () => void }) {
     if (!authChecked) {
         return <div className="absolute inset-0 z-10" style={{ background: BG }} />;
     }
-    if (!authed) {
-        return (
+    const authScreen = (
             <AppAuth
                 appName="Birdy"
                 tagline={t('squawk.tagline', 'Where the city starts conversations.')}
@@ -316,8 +329,12 @@ export function Birdy({ onClose }: { onClose: () => void }) {
                     welcomeText: 'dark',
                 }}
                 myNumber={myNumber}
-                myEmail={myEmail}
-                savedLogin={savedLogin}
+                myEmails={myEmails}
+                savedAccounts={savedAccounts}
+                onPickAccount={u => accountsSwitch('birdy', u)}
+                savedLogin={adding ? null : savedLogin}
+                onDismiss={adding ? () => setAdding(false) : undefined}
+                modal={adding}
                 fields={[
                     { key: 'username', label: t('squawk.username', 'Username') },
                     { key: 'name',     label: t('squawk.name', 'Name') },
@@ -334,14 +351,20 @@ export function Birdy({ onClose }: { onClose: () => void }) {
                     const r = await apiLogin({ username: vals.username ?? '', password: vals.password ?? '' });
                     return { ok: r.ok, message: r.message };
                 }}
-                onAuthed={() => { setAuthed(true); setJustAuthed(true); void apiMe().then(s => { if (s.me) setMe(s.me); }); }}
+                onAuthed={() => {
+                    setAuthed(true);
+                    setJustAuthed(true);
+                    if (adding) { setAdding(false); switchedAccount(); }
+                    else void apiMe().then(s => { if (s.me) setMe(s.me); });
+                }}
                 onRequestReset={(id) => accountsRequestReset('birdy', id)}
                 onConfirmReset={(id, code, pw) => accountsConfirmReset('birdy', id, code, pw)}
                 onSuggestCode={(id) => accountsSuggestCode('birdy', id)}
                 onSaveCredentials={(vals) => accountsSavePassword('birdy', vals)}
             />
-        );
-    }
+    );
+
+    if (!authed) return authScreen;
 
     return (
         <div className={`absolute inset-0 z-10 flex flex-col text-black ${justAuthed ? 'animate-swipe-in-left' : ''}`} style={{ background: BG }}>
@@ -429,8 +452,25 @@ export function Birdy({ onClose }: { onClose: () => void }) {
                     profile={profile}
                     onCancel={() => setEditingProfile(false)}
                     onSaved={p => { setProfile(p); setMe({ name: p.name, handle: p.handle, verified: p.verified }); setEditingProfile(false); }}
-                    onSignOut={() => { setEditingProfile(false); setProfileOpen(false); setAuthed(false); }}
-                    onDeleted={() => { setEditingProfile(false); setProfileOpen(false); setAuthed(false); }}
+                    onSignOut={() => {
+                        setEditingProfile(false);
+                        setProfileOpen(false);
+                        void accountsSignOut('birdy').then(r => {
+                            if (r.switchedTo) switchedAccount();
+                            else { clearSessionState('birdy:'); refreshAccounts(); setAuthed(false); }
+                        });
+                    }}
+                    onSwitchAccount={() => { setEditingProfile(false); setSwitching(true); }}
+                    onDeleted={() => { setEditingProfile(false); setProfileOpen(false); clearSessionState('birdy:'); setAuthed(false); }}
+                />
+            )}
+
+            {switching && (
+                <AccountSwitcher
+                    app="birdy"
+                    onClose={() => setSwitching(false)}
+                    onSwitched={switchedAccount}
+                    onAdd={() => setAdding(true)}
                 />
             )}
 
@@ -451,6 +491,8 @@ export function Birdy({ onClose }: { onClose: () => void }) {
                 aria-label={t('squawk.closeBirdy', 'Close Squawk')}
                 className="absolute inset-x-0 bottom-0 z-[5] h-5 cursor-default"
             />
+
+            {adding && <div className="absolute inset-0 z-[70]">{authScreen}</div>}
         </div>
     );
 }

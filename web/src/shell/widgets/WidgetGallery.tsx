@@ -20,13 +20,15 @@ const STAGE_PAD = 16;
 const STAGE_H = widgetPx('lg', PREVIEW_SCALE).height + STAGE_PAD * 2;
 
 export function WidgetGallery({
-    onAdd, onClose, wallpaper,
+    onAdd, onClose, wallpaper, lockSize,
 }: {
     onAdd: (kind: string, size: WidgetSize, align: WidgetAlign, theme: WidgetTheme) => boolean;
     onClose: () => void;
     wallpaper: string;
+    lockSize?: WidgetSize;
 }) {
-    const catalog = useWidgetCatalog();
+    const all = useWidgetCatalog();
+    const catalog = lockSize ? all.filter(d => d.sizes.includes(lockSize)) : all;
     const [pick, setPick] = useState<Record<string, WidgetSize>>({});
     const [alignPick, setAlignPick] = useState<Record<string, WidgetAlign>>({});
     const [themePick, setThemePick] = useState<Record<string, WidgetTheme>>({});
@@ -53,7 +55,7 @@ export function WidgetGallery({
 
                 {catalog.map(def => {
                     const picked = pick[def.kind];
-                    const size = picked && def.sizes.includes(picked) ? picked : def.sizes[0];
+                    const size = lockSize ?? (picked && def.sizes.includes(picked) ? picked : def.sizes[0]);
                     const { width: fullW,    height: fullH }    = widgetPx(size);
                     const { width: previewW, height: previewH } = widgetPx(size, PREVIEW_SCALE);
                     const align = alignPick[def.kind] ?? 'left';
@@ -65,7 +67,7 @@ export function WidgetGallery({
                         <div key={def.kind} className="mb-6">
                             <div className="mb-2 flex items-baseline justify-between">
                                 <span className="text-[17px] font-semibold text-black dark:text-white">{def.label()}</span>
-                                {def.sizes.length > 1 && (
+                                {!lockSize && def.sizes.length > 1 && (
                                     <SegmentedControl
                                         fit
                                         value={size}

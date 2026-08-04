@@ -1,6 +1,12 @@
 import type { ReactNode } from 'react';
 
-import { parseLines, type MarkId, type RichSpan } from './mdtRich';
+import { parseLines, type HeadingLevel, type MarkId, type RichSpan } from './mdtRich';
+
+const HEADING: Record<HeadingLevel, { Tag: 'h1' | 'h2' | 'h3'; className: string }> = {
+    1: { Tag: 'h1', className: 'mb-1 mt-3 text-[1.3em] font-bold leading-tight first:mt-0' },
+    2: { Tag: 'h2', className: 'mb-1 mt-3 text-[1.15em] font-bold leading-tight first:mt-0' },
+    3: { Tag: 'h3', className: 'mb-0.5 mt-2.5 text-[1.02em] font-semibold leading-tight first:mt-0' },
+};
 
 const WRAPPER: Record<MarkId, (kids: ReactNode[], key: string) => ReactNode> = {
     b:    (k, key) => <strong key={key} className="font-semibold">{k}</strong>,
@@ -40,6 +46,11 @@ export function MdtRichText({ text, className = '' }: { text: string; className?
     lines.forEach((line, i) => {
         if (line.bullet) { bullets.push({ spans: line.spans, at: i }); return; }
         flush(i);
+        if (line.heading) {
+            const { Tag, className } = HEADING[line.heading];
+            blocks.push(<Tag key={`h${i}`} className={className}>{render(line.spans, `h${i}`)}</Tag>);
+            return;
+        }
         if (line.spans.length === 0) { blocks.push(<div key={`s${i}`} className="h-3" />); return; }
         blocks.push(<p key={`p${i}`}>{render(line.spans, `p${i}`)}</p>);
     });

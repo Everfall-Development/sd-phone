@@ -1,5 +1,5 @@
-import { lazy } from 'react';
-import type { ComponentType, LazyExoticComponent, ReactNode } from 'react';
+import { lazy, useState } from 'react';
+import type { ComponentProps, ComponentType, LazyExoticComponent, ReactNode } from 'react';
 
 import { device } from '@device';
 import type { AppDef } from '@/core/types';
@@ -19,19 +19,33 @@ interface AppRenderCtx {
 interface AppEntry {
     load:       () => Promise<unknown>;
     Component?: LazyExoticComponent<ComponentType<AppComponentProps>>;
+    Resolved?:  ComponentType<AppComponentProps>;
     render?:    (ctx: AppRenderCtx) => ReactNode;
 }
 
-function entry(load: () => Promise<{ default: ComponentType<AppComponentProps> }>): AppEntry {
+function entry(load: () => Promise<{ default: ComponentType<AppComponentProps>; warm?: () => void }>): AppEntry {
     return { Component: lazy(load), load };
 }
 
 const AppStoreLazy = lazy(() => import('@/apps/appstore/AppStore').then(m => ({ default: m.AppStore })));
 const CameraLazy   = lazy(() => import('@/apps/camera/Camera').then(m => ({ default: m.Camera })));
 
+let appStoreReady: typeof AppStoreLazy | ComponentType<ComponentProps<typeof AppStoreLazy>> = AppStoreLazy;
+let cameraReady:   typeof CameraLazy   | ComponentType<ComponentProps<typeof CameraLazy>>   = CameraLazy;
+
+function AppStoreMount(props: ComponentProps<typeof AppStoreLazy>) {
+    const [C] = useState(() => appStoreReady);
+    return <C {...props} />;
+}
+
+function CameraMount(props: ComponentProps<typeof CameraLazy>) {
+    const [C] = useState(() => cameraReady);
+    return <C {...props} />;
+}
+
 const APP_REGISTRY = {
     photos:      entry(() => import('@/apps/photos/Photos').then(m => ({ default: m.Photos }))),
-    bank:        entry(() => import('@/apps/banking/Banking').then(m => ({ default: m.Banking }))),
+    bank:        entry(() => import('@/apps/banking/Banking').then(m => ({ default: m.Banking, warm: m.warmBanking }))),
     settings:    entry(() => import('@/apps/settings/Settings').then(m => ({ default: m.Settings }))),
     clock:       entry(() => import('@/apps/clock/Clock').then(m => ({ default: m.Clock }))),
     messages:    entry(() => import('@/apps/messages/Messages').then(m => ({ default: m.Messages }))),
@@ -79,9 +93,9 @@ const APP_REGISTRY = {
     emsmdt:      entry(() => import('@/apps/mdt/Mdt').then(m => ({ default: m.EmsMdt }))),
     dojmdt:      entry(() => import('@/apps/mdt/Mdt').then(m => ({ default: m.DojMdt }))),
     appstore: {
-        load: () => import('@/apps/appstore/AppStore'),
+        load: () => import('@/apps/appstore/AppStore').then(m => { appStoreReady = m.AppStore; return m; }),
         render: (ctx) => (
-            <AppStoreLazy
+            <AppStoreMount
                 onClose={ctx.onClose}
                 apps={ctx.allApps}
                 installed={ctx.installedApps}
@@ -91,8 +105,8 @@ const APP_REGISTRY = {
         ),
     },
     camera: {
-        load: () => import('@/apps/camera/Camera'),
-        render: (ctx) => <CameraLazy onClose={ctx.onClose} onLandscapeChange={ctx.onLandscapeChange} onOpenApp={ctx.onOpenApp} />,
+        load: () => import('@/apps/camera/Camera').then(m => { cameraReady = m.Camera; return m; }),
+        render: (ctx) => <CameraMount onClose={ctx.onClose} onLandscapeChange={ctx.onLandscapeChange} onOpenApp={ctx.onOpenApp} />,
     },
 } satisfies Record<string, AppEntry>;
 
@@ -142,15 +156,47 @@ export function asAppId(id: string | null | undefined): AppId | null {
     return null;
 }
 
+const loadedApps = new Set<string>();
+
+export function isAppLoaded(id: AppId): boolean {
+    return !(id in APP_REGISTRY) || loadedApps.has(id);
+}
+
+export function preloadApp(id: AppId): Promise<void> {
+    if (isAppLoaded(id)) return Promise.resolve();
+    const e = getAppEntry(id);
+    return e.load().then(m => {
+        const mod = m as { default?: ComponentType<AppComponentProps>; warm?: () => void } | undefined;
+        if (mod?.default) e.Resolved = mod.default;
+        loadedApps.add(id);
+        if (typeof mod?.warm === 'function') mod.warm();
+    }, () => { loadedApps.add(id); });
+}
+
+let preloadPaused = false;
+let preloadBusy   = false;
+let preloadResume: (() => void) | null = null;
+
+export function setPreloadPaused(paused: boolean): void {
+    if (preloadPaused === paused) return;
+    preloadPaused = paused;
+    if (!paused) preloadResume?.();
+}
+
 export function preloadAllApps(): void {
-    const queue = APP_IDS.map(id => getAppEntry(id).load);
-    const pump = () => {
-        const next = queue.shift();
-        if (!next) return;
-        void next().finally(() => {
-            if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(pump, { timeout: 2000 });
-            else window.setTimeout(pump, 150);
-        });
+    const queue = APP_IDS.slice();
+    const schedule = () => {
+        if (preloadPaused || preloadBusy) return;
+        if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(() => pump(), { timeout: 200 });
+        else window.setTimeout(pump, 100);
     };
-    pump();
+    const pump = () => {
+        if (preloadPaused || preloadBusy) return;
+        const id = queue.shift();
+        if (!id) { preloadResume = null; return; }
+        preloadBusy = true;
+        void preloadApp(id).finally(() => { preloadBusy = false; schedule(); });
+    };
+    preloadResume = schedule;
+    schedule();
 }

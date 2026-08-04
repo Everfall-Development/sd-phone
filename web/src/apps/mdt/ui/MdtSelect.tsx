@@ -71,8 +71,14 @@ export function MdtSelect<T extends string = string>({
 
     useEffect(() => {
         if (!open) return;
-        rowsRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
-    }, [open, active]);
+        const box = hostRef.current;
+        const row = rowsRef.current?.querySelector<HTMLElement>('[data-active="true"]');
+        if (!box || !row) return;
+        const top = row.offsetTop;
+        const bottom = top + row.offsetHeight;
+        if (top < box.scrollTop) box.scrollTop = top;
+        else if (bottom > box.scrollTop + box.clientHeight) box.scrollTop = bottom - box.clientHeight;
+    }, [open, active, hostRef]);
 
     function commit(index: number) {
         const option = options[index];

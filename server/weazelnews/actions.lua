@@ -2,6 +2,8 @@
 local config = require 'configs.config'
 ---@type table Weazel News persistence layer (server.weazelnews.store): article + ticker row CRUD.
 local store  = require 'server.weazelnews.store'
+---@type table Watcher registries (server.watchers): the phones with Weazel News open.
+local watchers = require('server.watchers').of('weazelnews')
 ---@type table Player bridge (bridge.server.player): citizenid/name lookups from a server id.
 local player = require 'bridge.server.player'
 ---@type table Job bridge (bridge.server.job): framework job membership/grade/boss checks.
@@ -14,6 +16,13 @@ local WZ = config.WeazelNews
 ---{ success, message?, data? } envelope. The feed is public; publishing is staff-only. Byline,
 ---author citizenid and timestamps are stamped server-side and every input is clamped.
 local actions = {}
+
+---Nudges every other open phone to refetch. The newsroom publishes rarely and both feeds are
+---small, so a refetch is cheaper to reason about than patching two lists in place.
+---@param exceptSrc integer|nil author to skip, who already has the change
+local function nudge(exceptSrc)
+    watchers.push('sd-phone:weazelnews:feed', { type = 'changed' }, exceptSrc)
+end
 
 ---@type table<string, boolean> Whitelist set of allowed article categories (WZ.Categories);
 ---mirrors the web Category union.
@@ -258,6 +267,7 @@ function actions.save(src, payload)
     if row.featured == 1 then store.clearFeatured(id) end
 
     local saved = store.articleById(id)
+    nudge(src)
     return { success = true, data = { article = saved and pubArticle(saved) or nil } }
 end
 
@@ -270,6 +280,7 @@ function actions.delete(src, id)
     id = articleId(id)
     if not id then return { success = false, message = 'Bad article id' } end
     store.deleteArticle(id)
+    nudge(src)
     return { success = true, data = { id = tostring(id) } }
 end
 
@@ -302,6 +313,7 @@ function actions.setBreaking(src, payload)
 
     local lines = clampTickerLines(payload.lines)
     store.replaceBreaking(lines, os.time())
+    nudge(src)
     return { success = true, data = { ticker = lines } }
 end
 
@@ -325,6 +337,7 @@ function actions.publish(article)
 
     local id = store.insertArticle(row)
     if row.featured == 1 then store.clearFeatured(id) end
+    nudge(nil)
     return id
 end
 
@@ -335,6 +348,7 @@ end
 function actions.replaceTicker(lines)
     if type(lines) ~= 'table' then return false end
     store.replaceBreaking(clampTickerLines(lines), os.time())
+    nudge(nil)
     return true
 end
 

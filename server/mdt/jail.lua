@@ -34,6 +34,9 @@ local MAX_FINE = math.max(0, math.floor(tonumber(J.MaxFine) or 25000))
 ---@type integer Most an officer may cut from a sentence at booking.
 local MAX_REDUCTION = math.max(0, math.floor(tonumber(J.MaxReductionMonths) or 0))
 
+---@type integer Most an officer may cut from a citation at booking.
+local MAX_FINE_REDUCTION = math.max(0, math.floor(tonumber(J.MaxFineReduction) or 0))
+
 ---@type integer Hard ceiling on a single sentence.
 local MAX_MONTHS = math.max(1, math.floor(tonumber(J.MaxMonths) or 240))
 
@@ -233,6 +236,7 @@ jail.quote = access.gated('jail.view', function(_, payload, me)
         finedAlready  = fined,
         jailAvailable = prison.available(),
         maxReduction  = math.min(MAX_REDUCTION, months),
+        maxFineReduction = math.min(MAX_FINE_REDUCTION, fine),
         maxFine       = MAX_FINE,
     })
 end)
@@ -252,8 +256,13 @@ jail.book = access.audited('jail.book', function(_, payload, me)
     if reduction > months then reduction = months end
     local sentence = months - reduction
 
+    local fineCut = util.wholeAmount(payload.reductionFine)
+    if fineCut > MAX_FINE_REDUCTION then fineCut = MAX_FINE_REDUCTION end
+    if fineCut > fine then fineCut = fine end
+    local charged = fine - fineCut
+
     local wantJail = payload.jail == true and sentence > 0
-    local wantFine = payload.fine == true and fine > 0
+    local wantFine = payload.fine == true and charged > 0
     if payload.jail == true and not prison.available() then
         return util.fail('There is no jail system on this server')
     end
@@ -276,7 +285,7 @@ jail.book = access.audited('jail.book', function(_, payload, me)
     if wantFine then
         held = tonumber(money.get(target, ACCOUNT)) or 0
         cash = ACCOUNT == 'cash' and 0 or (tonumber(money.get(target, 'cash')) or 0)
-        if held + cash < fine then return util.fail('The suspect cannot cover that fine') end
+        if held + cash < charged then return util.fail('The suspect cannot cover that fine') end
     end
 
     if not claim(reportRef, citizenid, wantJail, wantFine) then
@@ -295,8 +304,8 @@ jail.book = access.audited('jail.book', function(_, payload, me)
     local debited = false
     if wantFine then
         local reason = 'MDT citation ' .. reportRef
-        local fromAccount = math.min(held, fine)
-        local rest = fine - fromAccount
+        local fromAccount = math.min(held, charged)
+        local rest = charged - fromAccount
 
         debited = fromAccount <= 0 or money.remove(target, ACCOUNT, fromAccount, reason) == true
         if debited and rest > 0 then
@@ -335,7 +344,7 @@ jail.book = access.audited('jail.book', function(_, payload, me)
     ]], {
         ref, report.id, reportRef, citizenid, suspect.name,
         me.citizenid, me.name, me.callsign, json.encode(charges),
-        sentenced and sentence or 0, debited and fine or 0,
+        sentenced and sentence or 0, debited and charged or 0,
         sentenced and 1 or 0, debited and 1 or 0, os.time(),
     })
     stampArrest(reportRef, citizenid, ref)
@@ -351,7 +360,7 @@ jail.book = access.audited('jail.book', function(_, payload, me)
             citizenid = citizenid,
             reportRef = reportRef,
             months    = sentenced and sentence or 0,
-            fine      = debited and fine or 0,
+            fine      = debited and charged or 0,
         },
     }
 end)

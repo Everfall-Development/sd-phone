@@ -17,5 +17,10 @@ docs/superpowers/
 # Local-only Lua test harness for the lb-phone importer (not shipped).
 tests/
 
+# Unit tests are written and run locally, never shipped in source. CI keeps its `npm run test`
+# step so a checkout that does carry tests still runs them; vitest passes when it finds none.
+*.test.ts
+*.test.tsx
+
 # Local-only migration test helper (never shipped).
 server/devswap.lua

@@ -68,6 +68,14 @@ function store.ensureSchema()
     util.ensureCollation('phone_app_sessions')
     util.ensureCollation('phone_passwords')
 
+    -- An account is identified by its contacts alone, which cannot say who owns it: an account
+    -- with only an email is unattributable, and an email need not be the holder's, so counting a
+    -- quota by contact would let a stranger consume it. The creator is stamped instead.
+    util.ensureColumns('phone_app_accounts', {
+        created_by = 'created_by VARCHAR(64) NULL',
+    })
+    util.ensureIndex('phone_app_accounts', 'idx_app_accounts_creator', '(app, created_by)')
+
     -- Referential integrity, added on boot so existing installs migrate with no manual SQL.
     -- Each is a no-op once present; orphaned children are cleared first (they point at a
     -- parent that is already gone) and a type or collation mismatch is skipped, never fatal.
@@ -134,11 +142,25 @@ end
 ---@param email string|nil linked recovery email
 ---@param phone string|nil linked recovery phone (digits)
 ---@return number|nil insertId
-function store.insertAccount(app, username, displayName, passwordHash, email, phone)
+---@param createdBy string|nil creator citizenid, stamped so the per-app cap can count them
+function store.insertAccount(app, username, displayName, passwordHash, email, phone, createdBy)
     return MySQL.insert.await([[
-        INSERT INTO phone_app_accounts (app, username, display_name, password_hash, email, phone)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ]], { app, username, displayName, passwordHash, email, phone })
+        INSERT INTO phone_app_accounts (app, username, display_name, password_hash, email, phone, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ]], { app, username, displayName, passwordHash, email, phone, createdBy })
+end
+
+---How many accounts a character has created in one app. Rows from before the column existed
+---carry no creator and are not counted, so they neither block nor consume a quota.
+---@param app string account app key
+---@param citizenid string framework per-character id
+---@return integer count
+function store.countAccountsFor(app, citizenid)
+    if not citizenid or citizenid == '' then return 0 end
+    local row = MySQL.single.await(
+        'SELECT COUNT(*) AS n FROM phone_app_accounts WHERE app = ? AND created_by = ?',
+        { app, citizenid })
+    return tonumber(row and row.n) or 0
 end
 
 ---Replaces an account's stored hash.
@@ -263,12 +285,22 @@ function store.migrateLegacy()
         FROM phone_birdy_profiles p
         WHERE p.handle <> '' AND p.password <> ''
     ]])
+    -- The NOT EXISTS is load-bearing, not belt-and-braces: the session key is
+    -- (app, citizenid, account_id), so a character who already signed into a second Squawk
+    -- account would collect a SECOND session row here rather than being ignored, and
+    -- getSessionAccount would then pick between them arbitrarily.
     MySQL.query.await([[
         INSERT IGNORE INTO phone_app_sessions (app, citizenid, account_id)
         SELECT 'birdy', p.citizenid, a.id
         FROM phone_birdy_profiles p
         JOIN phone_app_accounts a ON a.app = 'birdy' AND a.username = p.handle COLLATE utf8mb4_unicode_ci
         WHERE p.logged_in = 1
+          AND NOT EXISTS (
+              -- Wrapped in a derived table: a bare subquery over the INSERT's own target is
+              -- rejected outright by MySQL.
+              SELECT 1 FROM (SELECT citizenid FROM phone_app_sessions WHERE app = 'birdy') s
+              WHERE s.citizenid = p.citizenid
+          )
     ]])
     MySQL.query.await([[
         INSERT IGNORE INTO phone_app_accounts (app, username, display_name, password_hash, email)

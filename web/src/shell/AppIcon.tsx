@@ -8,6 +8,7 @@ import { AppIconSVG } from './AppIconSVG';
 import { AppGlyph } from './AppGlyphs';
 import { AppBadge } from './AppBadge';
 import { launchOriginFrom } from './launchOrigin';
+import { asAppId, preloadApp } from './appRegistry';
 import { CircularProgress } from '@/ui/CircularProgress';
 
 // The icon artwork IS the grid cell: `grid.icon` is documented as the tile edge length, and the
@@ -46,10 +47,18 @@ export function AppIcon({ app, label = true, onOpen, badge }: AppIconProps) {
         onOpen(app, launchOriginFrom(btnRef.current));
     }
 
+    function handlePointerDown() {
+        if (downloading) return;
+        const id = asAppId(app.id);
+        if (!id) return;
+        void preloadApp(id);
+    }
+
     return (
         <button
             ref={btnRef}
             type="button"
+            onPointerDown={handlePointerDown}
             onClick={handleClick}
             className="group flex w-full flex-col items-center gap-[7px]"
         >

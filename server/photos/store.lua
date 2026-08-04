@@ -38,15 +38,11 @@ function store.ensureSchema()
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
 
-    local hasFav = MySQL.scalar.await([[
-        SELECT COUNT(*) FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = 'phone_photos'
-          AND COLUMN_NAME = 'favorite'
-    ]])
-    if (hasFav or 0) == 0 then
-        MySQL.query.await('ALTER TABLE phone_photos ADD COLUMN favorite TINYINT(1) NOT NULL DEFAULT 0')
-    end
+    util.ensureColumns('phone_photos', {
+        url        = "url VARCHAR(512) NOT NULL DEFAULT ''",
+        favorite   = 'favorite TINYINT(1) NOT NULL DEFAULT 0',
+        created_at = 'created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
+    })
 
     MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_photo_albums (
@@ -58,6 +54,11 @@ function store.ensureSchema()
             INDEX idx_phone_albums_owner (citizenid, created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
+
+    util.ensureColumns('phone_photo_albums', {
+        name       = "name VARCHAR(64) NOT NULL DEFAULT ''",
+        created_at = 'created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
+    })
 
     MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_photo_album_items (
