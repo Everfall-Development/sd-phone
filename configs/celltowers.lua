@@ -1,3 +1,11 @@
+local TOWER_RANGE = {
+    Small = 750.0,
+    Medium = 1000.0,
+    Large = 1250.0,
+    XLarge = 1750.0,
+    Regional = 2000.0
+}
+
 -- Cell towers - degradable cellular service by location. Enabled off leaves every phone on full
 -- service, with StatusBar.SignalBars still drawing its static bar count.
 return {
@@ -23,32 +31,39 @@ return {
     -- texts only Raton Canyon
     -- no service Mount Gordo, the eastern desert and open ocean
     Towers = {
-        { tower = vec3(-884.82, -2395.9, 69.43), range = 1250.0 }, -- LSIA
-        { tower = vec3(758.62, 1273.95, 446.47),  range = 1750.0 }, -- Mt. Haan Radio Station
-        { tower = vec3(1869.57, 3713.55, 126.82),   range = 1750.0 }, -- Sandy Shores and the Alamo Sea
-        { tower = vec3(802.69, -2996.08, 42.44), range = 750.0 }, -- LS Jetsam Terminal
-        { tower = vec3(-2249.38, 282.31, 207.36), range = 750.0 }, -- Kortz Center
-        { tower = vec3(450.74, 5566.45, 807.53), range = 1250.0 }, -- Mt. Chiliad
-        { tower = vector3(-368.3, 6104.88, 53.18), range = 500.0 }, -- Paleto FD
-        { tower = vector3(-142.45, 6286.6, 49.12), range = 500.0 }, -- Paleto Cluckin' Bell HQ
-        { tower = vector3(2792.64, 5995.81, 373.95), range = 1250.0 }, -- Mt. Gordo
-        { tower = vector3(-3151.73, 1388.97, 39.05), range = 1000.0 }, -- SASP Chumash
-        { tower = vec3(753.24, 2581.49, 152.51), range = 1000.0 }, -- Rebel Radio Station
-        { tower = vector3(-150.18, -150.1, 114.86), range = 750.0 }, -- Burton Plaza Rooftop
-        { tower = vector3(-1166.96, -575.51, 58.51), range = 750.0 }, -- Richards Majestic South
-        { tower = vector3(547.9, -2219.96, 69.26), range = 750.0 }, -- SA State Gas, Cryress Flats
-        { tower = vector3(551.91, -28.23, 96.01), range = 750.0 }, -- SASP Vinewood
-        { tower = vector3(-769.87, 255.41, 149.3), range = 750.0 }, -- Schlongberg Sachs W. Vinewood
-        { tower = vector3(-1525.79, -597.1, 68.6), range = 750.0 }, -- Bay City & Maraton Ave
-        { tower = vector3(-688.28, -1397.79, 24.3), range = 750.0 }, -- Marina
-        { tower = vector3(819.24, -1414.35, 83.78), range = 1250.0 }, -- Popular and Capital
-        { tower = vector3(2971.92, 3489.1, 88.38), range = 500.0 }, -- Chianski Passage
-        { tower = vector3(3459.16, 3659.61, 53.1), range = 750.0 }, -- Humane Labs SW 
-        { tower = vector3(2324.6, 2951.88, 48.02), range = 1250.0 }, -- Senora Frwy / Senora Way
-        { tower = vector3(2814.96, 4724.0, 52.64), range = 500.0 }, -- Senora SASP Station
-        { tower = vector3(-2344.14, 2953.95, 53.95), range = 1000.0 }, -- Zancudo South
-        { tower = vector3(998.57, 3581.12, 34.82), range = 1250.0 }, -- Joshua Road West
-        { tower = vector3(-1005.15, 4852.37, 275.2), range = 750.0 }, -- Nudist Colony
+        { tower = vec3(-884.82, -2395.9, 69.43), range = TOWER_RANGE.XLarge }, -- LSIA
+        { tower = vec3(758.62, 1273.95, 446.47),  range = TOWER_RANGE.Regional }, -- Mt. Haan Radio Station
+        { tower = vec3(1869.57, 3713.55, 126.82),   range = TOWER_RANGE.Regional }, -- Sandy Shores and the Alamo Sea
+        { tower = vec3(802.69, -2996.08, 42.44), range = TOWER_RANGE.Large }, -- LS Jetsam Terminal
+        { tower = vec3(-2249.38, 282.31, 207.36), range = TOWER_RANGE.XLarge }, -- Kortz Center
+        { tower = vec3(450.74, 5566.45, 807.53), range = TOWER_RANGE.XLarge }, -- Mt. Chiliad
+        { tower = vector3(-368.3, 6104.88, 53.18), range = TOWER_RANGE.Small }, -- Paleto FD
+        { tower = vector3(-142.45, 6286.6, 49.12), range = TOWER_RANGE.Small }, -- Paleto Cluckin' Bell HQ
+        { tower = vector3(2792.64, 5995.81, 373.95), range = TOWER_RANGE.XLarge }, -- Mt. Gordo
+        { tower = vector3(-3151.73, 1388.97, 39.05), range = TOWER_RANGE.XLarge }, -- SASP Chumash
+        { tower = vec3(753.24, 2581.49, 152.51), range = TOWER_RANGE.Large }, -- Rebel Radio Station
+        { tower = vector3(-150.18, -150.1, 114.86), range = TOWER_RANGE.Medium }, -- Burton Plaza Rooftop
+        { tower = vector3(-1166.96, -575.51, 58.51), range = TOWER_RANGE.Medium }, -- Richards Majestic South
+        { tower = vector3(547.9, -2219.96, 69.26), range = TOWER_RANGE.Medium }, -- SA State Gas, Cryress Flats
+        { tower = vector3(551.91, -28.23, 96.01), range = TOWER_RANGE.Medium }, -- SASP Vinewood
+        { tower = vector3(-769.87, 255.41, 149.3), range = TOWER_RANGE.Medium }, -- Schlongberg Sachs W. Vinewood
+        { tower = vector3(-1525.79, -597.1, 68.6), range = TOWER_RANGE.Medium }, -- Bay City & Maraton Ave
+        { tower = vector3(-688.28, -1397.79, 24.3), range = TOWER_RANGE.Medium }, -- Marina
+        { tower = vector3(819.24, -1414.35, 83.78), range = TOWER_RANGE.XLarge }, -- Popular and Capital
+        { tower = vector3(2971.92, 3489.1, 88.38), range = TOWER_RANGE.Small }, -- Chianski Passage
+        { tower = vector3(3459.16, 3659.61, 53.1), range = TOWER_RANGE.Medium }, -- Humane Labs SW 
+        { tower = vector3(2324.6, 2951.88, 48.02), range = TOWER_RANGE.XLarge }, -- Senora Frwy / Senora Way
+        { tower = vector3(2814.96, 4724.0, 52.64), range = TOWER_RANGE.Small }, -- Senora SASP Station
+        { tower = vector3(-2344.14, 2953.95, 53.95), range = TOWER_RANGE.Large }, -- Zancudo South
+        { tower = vector3(-2636.93, 3280.51, 33.48), range = TOWER_RANGE.XLarge }, -- Zancudo West
+        { tower = vector3(998.57, 3581.12, 34.82), range = TOWER_RANGE.XLarge }, -- Joshua Road West
+        { tower = vector3(-1005.15, 4852.37, 275.2), range = TOWER_RANGE.Large }, -- Nudist Colony
+        { tower = vector3(-338.06, -579.06, 49.14), range = TOWER_RANGE.Small }, -- Daily Globe Building NW
+        { tower = vector3(305.73, -284.94, 70.0), range = TOWER_RANGE.Small }, -- Fleeca at Hawick / Meteor
+        { tower = vector3(-343.38, -1367.4, 32.51), range = TOWER_RANGE.Small }, -- Alta / Carson
+        { tower = vector3(1240.96, -1089.76, 45.71), range = TOWER_RANGE.Small }, -- El Rancho / Palomino Frwy
+        { tower = vector3(-418.58, -2804.51, 16.43), range = TOWER_RANGE.Large }, -- Post Op, Elysian Island
+        { tower = vector3(2532.1, -319.68, 114.42), range = TOWER_RANGE.Medium }, -- NOOSE Flag
     },
     -- Map blips for the masts. This is a setup and debugging aid rather than something to run on
     -- a live server: drawing the coverage circles is how you see where masts overlap and where
