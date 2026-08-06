@@ -15,7 +15,7 @@ local ok, fail, trim, isTruthy = util.ok, util.fail, util.trim, util.truthy
 local actions = {}
 
 ---@type table<string, boolean> Document kinds accepted by every writer; anything else is refused.
-local KINDS = { text = true, image = true, file = true }
+local KINDS = { text = true, image = true, file = true, form = true }
 
 ---A fresh 12-char document/folder id (fits the VARCHAR(16) primary keys).
 ---@return string
@@ -430,6 +430,7 @@ function actions.duplicate(src, payload)
     local id = type(payload.id) == 'string' and payload.id or ''
     local row = store.getDoc(cid, id)
     if not row then return fail('Document not found') end
+    if row.kind == 'form' then return fail('Official documents cannot be duplicated') end
 
     if store.countDocs(cid) >= cfg.MaxDocuments then
         return fail(('You can store at most %d documents'):format(cfg.MaxDocuments))
@@ -511,7 +512,8 @@ function actions.createForCid(cid, opts, sourceLabel)
         if #url > 1024 then return nil, 'Image URL is too long' end
     else
         content = type(opts.content) == 'string' and opts.content or ''
-        if #content > cfg.MaxTextLength then return nil, 'Content is too long' end
+        local maximumContentLength = kind == 'form' and cfg.MaxFormLength or cfg.MaxTextLength
+        if #content > maximumContentLength then return nil, 'Content is too long' end
         size = #content
         if content == '' then content = kind == 'file' and nil or '' end
         local rawUrl = trim(opts.url)
@@ -526,8 +528,8 @@ function actions.createForCid(cid, opts, sourceLabel)
     local folderId, ferr = resolveFolderName(cid, opts.folder)
     if ferr then return nil, ferr end
 
-    local locked    = opts.locked == true and 1 or 0
-    local signable  = opts.signable ~= false
+    local locked    = kind == 'form' and 1 or opts.locked == true and 1 or 0
+    local signable  = kind ~= 'form' and opts.signable ~= false
     local deletable = opts.deletable ~= false
     local source = type(sourceLabel) == 'string' and sourceLabel ~= '' and sourceLabel or nil
     local id, ts = newId(), os.time()
@@ -859,6 +861,7 @@ function actions.deliverShare(targetSrc, payload)
     if #name > cfg.MaxNameLength then name = name:sub(1, cfg.MaxNameLength) end
 
     local kind = (type(payload.kind) == 'string' and KINDS[payload.kind]) and payload.kind or 'text'
+    if kind == 'form' then return false end
 
     local content, url, size = nil, nil, tonumber(payload.size) or 0
     if kind == 'image' then

@@ -1,4 +1,4 @@
-import { BadgeCheck, ChevronRight, File as FileIcon, FileText, Folder, Image as ImageIcon, Lock, MoreHorizontal } from 'lucide-react';
+import { BadgeCheck, ChevronRight, File as FileIcon, FileSignature, FileText, Folder, Image as ImageIcon, Lock, MoreHorizontal } from 'lucide-react';
 
 import { t } from '@/i18n';
 import { ListRow } from '@/ui/ListGroup';
@@ -69,7 +69,13 @@ function KindIcon({ doc }: { doc: DocFile }) {
             />
         );
     }
-    const Icon = doc.kind === 'image' ? ImageIcon : doc.kind === 'file' ? FileIcon : FileText;
+    const Icon = doc.kind === 'image'
+        ? ImageIcon
+        : doc.kind === 'file'
+            ? FileIcon
+            : doc.kind === 'form'
+                ? FileSignature
+                : FileText;
     return <Icon className="h-[32px] w-[32px] text-ios-gray" strokeWidth={1.8} />;
 }
 

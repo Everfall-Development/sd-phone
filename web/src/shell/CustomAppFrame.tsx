@@ -44,7 +44,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 function buildSettings(): Record<string, unknown> {
     const s = useThemeStore.getState();
     return {
-        display:      { theme: s.theme, brightness: s.brightness },
+        display:      { theme: s.theme, brightness: s.brightness, chatTextScale: s.chatTextScale },
         theme:        s.theme,
         locale:       getLocale(),
         language:     getLocale(),
@@ -57,12 +57,13 @@ function buildSettings(): Record<string, unknown> {
     };
 }
 
-interface PopupBtn { title?: string; text?: string; label?: string; color?: string; callbackId?: number }
+interface PopupBtn { title?: string; text?: string; label?: string; color?: string; callbackId?: number; bold?: boolean }
 interface PopupInput { type?: string; placeholder?: string; value?: string }
 interface PopupData {
     title?:       string;
     description?: string;
     message?:     string;
+    opaque?:      boolean;
     input?:       PopupInput;
     inputs?:      PopupInput[];
     buttons?:     PopupBtn[];
@@ -82,7 +83,7 @@ const SWATCHES = [
 
 export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }) {
     const def = useCustomAppsStore(s => s.apps.find(a => a.id === appId));
-    const { theme, airplaneMode, hour24, brightness } = useTheme('theme', 'airplaneMode', 'hour24', 'brightness');
+    const { theme, airplaneMode, hour24, brightness, chatTextScale } = useTheme('theme', 'airplaneMode', 'hour24', 'brightness', 'chatTextScale');
     const active = useDeckActive();
 
     const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -357,7 +358,7 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
         try {
             iframe.contentWindow?.postMessage({ type: 'settingsUpdated', settings: buildSettings() }, '*');
         } catch { /* cross-origin */ }
-    }, [theme, airplaneMode, hour24, brightness]);
+    }, [theme, airplaneMode, hour24, brightness, chatTextScale]);
 
     useNuiEvent('customApps:message', useCallback((data) => {
         if (!data || (data.id !== appId && data.id !== 'any')) return;
@@ -543,21 +544,25 @@ function PopupCard({ data, onButton, onDismiss, onInput }: {
 }) {
     const buttons = data.buttons ?? [];
     const horizontal = buttons.length <= 2;
+    const isOpaque = data.opaque === true;
 
     return portalToPhoneScreen(
         <div
             className="absolute inset-0 z-[70] flex items-center justify-center backdrop-blur-md"
-            style={{ background: 'rgba(0,0,0,0.28)', animation: 'ios-sheet-backdrop-in 0.18s ease-out' }}
+            style={{
+                background: isOpaque ? 'rgba(0,0,0,0.48)' : 'rgba(0,0,0,0.28)',
+                animation: 'ios-sheet-backdrop-in 0.18s ease-out',
+            }}
             onPointerDown={e => { if (e.target === e.currentTarget) onDismiss(); }}
         >
             <div
-                className="flex w-[300px] flex-col overflow-hidden rounded-[18px] bg-elevated/80 text-center text-black backdrop-blur-2xl dark:bg-elevated/90 dark:text-white"
+                className={`flex w-[300px] flex-col overflow-hidden rounded-[18px] text-center text-black backdrop-blur-2xl dark:text-white ${isOpaque ? 'bg-[#f2f2f2] dark:bg-[#252527]' : 'bg-[#f2f2f2cc] dark:bg-[#252527e6]'}`}
                 style={{ animation: 'ios-alert-in 0.22s cubic-bezier(0.32,0.72,0,1)' }}
             >
                 <div className="px-5 pb-4 pt-5">
                     {data.title && <div className="text-[19px] font-semibold leading-snug">{data.title}</div>}
                     {(data.description ?? data.message) && (
-                        <div className="mt-1.5 text-[14px] leading-snug text-black/80 dark:text-white/85">{data.description ?? data.message}</div>
+                        <div className={`mt-1.5 text-[14px] leading-snug ${isOpaque ? 'text-black dark:text-white' : 'text-black/80 dark:text-white/85'}`}>{data.description ?? data.message}</div>
                     )}
                     {data.input && (
                         <input
@@ -589,7 +594,7 @@ function PopupCard({ data, onButton, onDismiss, onInput }: {
                             key={i}
                             type="button"
                             onClick={() => onButton(b.callbackId ?? i)}
-                            className={`flex-1 px-4 py-[13px] text-[18px] active:bg-black/10 dark:active:bg-white/10 ${horizontal && i > 0 ? 'border-l border-black/[0.13] dark:border-white/[0.13]' : ''} ${!horizontal && i > 0 ? 'border-t border-black/[0.13] dark:border-white/[0.13]' : ''}`}
+                            className={`flex-1 px-4 py-[13px] text-[18px] active:bg-black/10 dark:active:bg-white/10 ${b.bold ? 'font-semibold' : ''} ${horizontal && i > 0 ? 'border-l border-black/[0.13] dark:border-white/[0.13]' : ''} ${!horizontal && i > 0 ? 'border-t border-black/[0.13] dark:border-white/[0.13]' : ''}`}
                             style={{ color: b.color ?? undefined }}
                         >
                             {b.title ?? b.text ?? b.label ?? ''}

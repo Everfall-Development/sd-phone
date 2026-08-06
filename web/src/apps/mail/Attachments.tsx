@@ -292,10 +292,12 @@ export function NotePickerSheet({ max, onPickMany, onClose }: {
     );
 }
 
+type AttachableDocument = DocFile & { kind: 'text' | 'image' | 'file' };
+
 export function DocPickerSheet({ excludeIds, max, onPickMany, onClose }: {
     excludeIds: Set<string>;
     max:        number;
-    onPickMany: (docs: DocFile[]) => void;
+    onPickMany: (docs: AttachableDocument[]) => void;
     onClose:    () => void;
 }) {
     const [docs,     setDocs]     = useState<DocFile[] | null>(null);
@@ -303,7 +305,9 @@ export function DocPickerSheet({ excludeIds, max, onPickMany, onClose }: {
     useEffect(() => { void apiList().then(l => setDocs(l?.docs ?? [])); }, []);
 
     // Locked documents cannot be shared on (mirrors AirShare); the server enforces it too.
-    const candidates = (docs ?? []).filter(d => !d.locked && !excludeIds.has(d.id));
+    const candidates = (docs ?? []).filter((document): document is AttachableDocument => (
+        document.kind !== 'form' && !document.locked && !excludeIds.has(document.id)
+    ));
 
     function toggle(id: string) {
         setSelected(prev => {

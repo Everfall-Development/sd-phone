@@ -5,6 +5,7 @@ return {
     MaxDocuments    = 200,    -- documents a player may keep at once
     MaxFolders      = 60,     -- folders a player may create
     MaxTextLength   = 25000,  -- characters of text stored per document
+    MaxFormLength   = 1750000, -- characters in a server-issued formal document snapshot
     MaxNameLength   = 60,     -- max length of a document or folder name
     MaxFolderDepth  = 5,      -- deepest nesting allowed in the folder tree
     AllowShare      = true,    -- whether AirShare to a nearby phone is offered

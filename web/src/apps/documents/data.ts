@@ -1,6 +1,6 @@
 import { formatListDate } from '@/lib/time';
 
-type DocKind = 'text' | 'image' | 'file';
+type DocKind = 'text' | 'image' | 'file' | 'form';
 
 export interface DocFolder {
     id:       string;

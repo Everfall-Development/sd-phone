@@ -10,6 +10,7 @@ import { MediaPickerSheet } from '@/shared/MediaPickerSheet';
 import { apiGetSignature, apiSetSignature, apiSignDoc } from './documentsApi';
 import { SIGNATURE_STYLES, SignaturePad, renderTypedSignature, type SignaturePadHandle } from './SignaturePad';
 import { MAX_TEXT_LENGTH, formatDocDate, type DocFile, type DocSignature } from './data';
+import { FormalDocument } from './FormalDocument';
 
 interface Props {
     doc:       DocFile;
@@ -29,6 +30,7 @@ export function TextEditor({ doc, backLabel, onBack, onSave, onSigned, animateIn
     const [blocks, setBlocks] = useState<EditBlock[]>(() => parseEditBlocks(doc.content ?? ''));
     const signed   = doc.signed === true;
     const readOnly = doc.locked || signed;
+    const isFormalDocument = doc.kind === 'form';
     const [signOpen, setSignOpen] = useState(false);
     const [picking,  setPicking]  = useState(false);
 
@@ -124,7 +126,12 @@ export function TextEditor({ doc, backLabel, onBack, onSave, onSigned, animateIn
                 </button>
                 <span className="min-w-0 flex-1 truncate text-center text-[17px] font-semibold">{doc.name}</span>
                 <span className="flex min-w-[68px] shrink-0 items-center justify-end pr-1.5">
-                    {signed ? (
+                    {isFormalDocument ? (
+                        <span className="flex items-center gap-1.5 rounded-full bg-ios-blue/15 px-3 py-[5px] text-[14px] font-medium text-ios-blue">
+                            <BadgeCheck className="h-[16px] w-[16px]" strokeWidth={2.2} />
+                            {t('documents.official', 'Official')}
+                        </span>
+                    ) : signed ? (
                         <span className="flex items-center gap-1.5 rounded-full bg-ios-blue/15 px-3 py-[5px] text-[14px] font-medium text-ios-blue">
                             <BadgeCheck className="h-[16px] w-[16px]" strokeWidth={2.2} />
                             {t('documents.signed', 'Signed')}
@@ -140,7 +147,7 @@ export function TextEditor({ doc, backLabel, onBack, onSave, onSigned, animateIn
 
             <div className="flex-1 overflow-y-auto no-scrollbar px-4">
                 {readOnly ? (
-                    <RichBody content={body} />
+                    isFormalDocument ? <FormalDocument content={body} /> : <RichBody content={body} />
                 ) : (
                     <div
                         className="mt-4 flex min-h-[320px] flex-col gap-3 pb-4"
@@ -168,14 +175,14 @@ export function TextEditor({ doc, backLabel, onBack, onSave, onSigned, animateIn
                     </div>
                 )}
 
-                {(doc.signatures?.length ?? 0) > 0 && (
+                {!isFormalDocument && (doc.signatures?.length ?? 0) > 0 && (
                     <div className="mb-4 mt-2 flex flex-col gap-2.5">
                         {doc.signatures!.map(sig => <SignatureBlock key={sig.id} sig={sig} />)}
                     </div>
                 )}
             </div>
 
-            <div className="flex shrink-0 items-center justify-between px-4 pb-12 pt-2">
+            {!isFormalDocument && <div className="flex shrink-0 items-center justify-between px-4 pb-12 pt-2">
                 <span className="text-[14px] text-ios-gray tabular-nums">
                     {t('documents.charCount', '{n} of {max} characters', { n: body.length, max: MAX_TEXT_LENGTH })}
                 </span>
@@ -201,7 +208,7 @@ export function TextEditor({ doc, backLabel, onBack, onSave, onSigned, animateIn
                         </button>
                     )}
                 </div>
-            </div>
+            </div>}
 
             {signOpen && (
                 <SignSheet

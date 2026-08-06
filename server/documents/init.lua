@@ -73,7 +73,11 @@ local function announce(cid, doc, opts, resource)
     })
     local src = player.getSourceByIdentifier(cid)
     if src then
-        TriggerClientEvent('sd-phone:client:documents:added', src, { doc = doc })
+        local listDocument = {}
+        for key, value in pairs(doc) do
+            if key ~= 'content' then listDocument[key] = value end
+        end
+        TriggerClientEvent('sd-phone:client:documents:added', src, { doc = listDocument })
     end
     if not (type(opts) == 'table' and opts.notify == false) then
         notifications.notifyCid(cid, {
@@ -86,7 +90,7 @@ end
 ---Creates a document for a player from another resource. Validates every field and applies the
 ---same caps as the app; on success the owner's open phone is pushed the new document live.
 ---@param source number acting player's server id
----@param opts table { name: string, kind?: 'text'|'image'|'file', content?: string, url?: string, folder?: string, locked?: boolean, signable?: boolean, deletable?: boolean, notify?: boolean }
+---@param opts table { name: string, kind?: 'text'|'image'|'file'|'form', content?: string, url?: string, folder?: string, locked?: boolean, signable?: boolean, deletable?: boolean, notify?: boolean }
 ---@return string|nil docId new document id, nil on failure
 ---@return string? err refusal message when docId is nil
 exports('createDocument', function(source, opts)
@@ -104,7 +108,7 @@ end)
 ---Creates a document addressed by phone number instead of server id. The number is resolved to
 ---its owner; when that owner is online their open phone is pushed the new document live.
 ---@param number string|number phone number in any formatting
----@param opts table { name: string, kind?: 'text'|'image'|'file', content?: string, url?: string, folder?: string, locked?: boolean, signable?: boolean, deletable?: boolean, notify?: boolean }
+---@param opts table { name: string, kind?: 'text'|'image'|'file'|'form', content?: string, url?: string, folder?: string, locked?: boolean, signable?: boolean, deletable?: boolean, notify?: boolean }
 ---@return string|nil docId new document id, nil on failure
 ---@return string? err refusal message when docId is nil
 exports('createDocumentForNumber', function(number, opts)

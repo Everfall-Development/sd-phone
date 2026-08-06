@@ -166,7 +166,10 @@ export function Documents({ onClose: _onClose }: { onClose: () => void }) {
             onClick: () => setRenaming({ kind: 'doc', id: moreDoc.id, name: moreDoc.name }),
         }]),
         ...(moreDoc.locked ? [] : [{ label: t('documents.move', 'Move'), onClick: () => setMoving(moreDoc) }]),
-        { label: t('documents.duplicate', 'Duplicate'), onClick: () => void doDuplicate(moreDoc) },
+        ...(moreDoc.kind === 'form' ? [] : [{
+            label: t('documents.duplicate', 'Duplicate'),
+            onClick: () => void doDuplicate(moreDoc),
+        }]),
         ...(ALLOW_SHARE && !moreDoc.locked ? [{ label: t('documents.share', 'Share'), onClick: () => setSharing(moreDoc) }] : []),
         ...(ALLOW_SHARE && !moreDoc.locked && moreDoc.kind === 'text' && moreDoc.signedByMe === true && moreDoc.signable !== false
             ? [{ label: t('documents.requestSignature', 'Request Signature'), onClick: () => setSigRequesting(moreDoc) }]
