@@ -427,7 +427,7 @@ function IssueWarrant({ onIssued, onClose }: {
     }
 
     return (
-        <div className="absolute inset-0 z-30 flex flex-col bg-[#d4d4d4] dark:bg-base">
+        <div className="absolute inset-0 z-30 flex flex-col bg-base">
             <div className="flex shrink-0 items-center gap-3 px-6 pb-1 pt-5">
                 <h1 className="min-w-0 flex-1 truncate text-[26px] font-bold tracking-ios-display text-black dark:text-white">
                     {t('mdt.issueWarrantTitle', 'Issue a warrant')}

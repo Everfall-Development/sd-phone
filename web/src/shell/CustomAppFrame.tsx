@@ -386,7 +386,7 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
     const src = resolveCustomUi(def.ui);
 
     return (
-        <div className="absolute inset-0 overflow-hidden bg-white dark:bg-base">
+        <div className="absolute inset-0 overflow-hidden bg-base">
             {src ? (
                 <>
                     <iframe
@@ -399,7 +399,7 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
                         style={{ colorScheme: theme === 'dark' ? 'dark' : 'light', opacity: ready ? 1 : 0 }}
                     />
                     <div
-                        className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white transition-opacity duration-200 dark:bg-base"
+                        className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 bg-elevated transition-opacity duration-200 dark:bg-base"
                         style={{ opacity: ready ? 0 : 1 }}
                     >
                         <div className="overflow-hidden" style={{ width: 72, height: 72, borderRadius: '22.5%' }}>
@@ -411,7 +411,7 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
                     </div>
                 </>
             ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-[#d4d4d4] dark:bg-base">
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-base">
                     <div className="overflow-hidden" style={{ width: 96, height: 96, borderRadius: '22.5%' }}>
                         <div style={{ width: 60, height: 60, transform: 'scale(1.6)', transformOrigin: '0 0' }}>
                             <AppIconSVG icon={`custom:${def.id}`} />
@@ -432,13 +432,13 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
             )}
 
             {ctxMenu && (
-                <Sheet fit="content" onClose={() => settleCtx(undefined)} title={ctxMenu.title} className="bg-[#ececec] dark:bg-base">
+                <Sheet fit="content" onClose={() => settleCtx(undefined)} title={ctxMenu.title} className="bg-base">
                     {({ close }) => (
                         <div className="px-4 pb-2">
                             {ctxMenu.description && (
                                 <p className="px-1 pb-2 text-center text-[14px] text-ios-gray">{ctxMenu.description}</p>
                             )}
-                            <div className="overflow-hidden rounded-[12px] bg-[#e5e5e5] dark:bg-surface">
+                            <div className="overflow-hidden rounded-[12px] bg-surface">
                                 {(ctxMenu.buttons ?? []).map((b, i, arr) => (
                                     <button
                                         key={i}
@@ -468,7 +468,7 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
             )}
 
             {emojiOpen && (
-                <Sheet fit="content" onClose={() => settleEmoji(null)} title={t('common.emoji', 'Emoji')} forceDark={theme === 'dark'} className="bg-[#ececec] dark:bg-surface">
+                <Sheet fit="content" onClose={() => settleEmoji(null)} title={t('common.emoji', 'Emoji')} forceDark={theme === 'dark'} className="bg-surface">
                     {({ close }) => (
                         <div className="px-1 pb-1">
                             <EmojiPanel isDark={theme === 'dark'} onSelect={e => { const r = emojiResolve.current; emojiResolve.current = null; if (r) r(e); close(); }} />
@@ -503,7 +503,7 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
             )}
 
             {colorReq && (
-                <Sheet fit="content" onClose={() => settleColor(null)} title={t('customApps.pickColor', 'Pick a Color')} className="bg-[#ececec] dark:bg-base">
+                <Sheet fit="content" onClose={() => settleColor(null)} title={t('customApps.pickColor', 'Pick a Color')} className="bg-base">
                     {({ close }) => (
                         <div className="px-5 pb-3">
                             <div className="grid grid-cols-7 gap-3 pb-4">
@@ -518,7 +518,7 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
                                     />
                                 ))}
                             </div>
-                            <label className="flex items-center justify-between rounded-[12px] bg-[#e5e5e5] px-4 py-3 dark:bg-surface">
+                            <label className="flex items-center justify-between rounded-[12px] bg-surface px-4 py-3">
                                 <span className="text-[16px] text-black dark:text-white">{t('customApps.customColor', 'Custom')}</span>
                                 <input
                                     type="color"
@@ -551,7 +551,7 @@ function PopupCard({ data, onButton, onDismiss, onInput }: {
             onPointerDown={e => { if (e.target === e.currentTarget) onDismiss(); }}
         >
             <div
-                className="flex w-[300px] flex-col overflow-hidden rounded-[18px] bg-[#f2f2f2cc] text-center text-black backdrop-blur-2xl dark:bg-[#252527e6] dark:text-white"
+                className="flex w-[300px] flex-col overflow-hidden rounded-[18px] bg-elevated/80 text-center text-black backdrop-blur-2xl dark:bg-elevated/90 dark:text-white"
                 style={{ animation: 'ios-alert-in 0.22s cubic-bezier(0.32,0.72,0,1)' }}
             >
                 <div className="px-5 pb-4 pt-5">

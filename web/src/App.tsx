@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState  } from 'react';
+import type { CSSProperties } from 'react';
 
 import { device } from '@device';
+import { isCustomPaletteId, rampFor, rampVars } from '@/apps/settings/appearance/paletteRamp';
+import { accentVars } from '@/apps/settings/appearance/accentRamp';
 import { AdminPanel } from '@/admin/AdminPanel';
 import { PayphoneUI } from '@/payphone/PayphoneUI';
 import { CallLayer } from '@/apps/phone/CallLayer';
@@ -40,6 +43,7 @@ import { usePhoneReset } from '@/core/phoneReset';
 import { resetAuth } from '@/stores/authStore';
 import { setMailDomain } from '@/core/accountsApi';
 import { setNumberFormat } from '@/lib/phone';
+import { shiftWheelDelta, verticalScrollerFor } from '@/lib/wheel';
 import { voiceHub, setLocalTalking } from '@/media/nearbyVoice';
 import { useMusicLibrary } from '@/stores/musicLibraryStore';
 import { DEFAULT_FRAME_COLOR } from '@/shell/frameColors';
@@ -173,7 +177,16 @@ function AppContent() {
     // Tone/volume fields are deliberately NOT subscribed here — they're only
     // read inside event callbacks (via useThemeStore.getState()), so slider
     // drags in Control Center don't re-render the whole tree from the root.
-    const { theme, darkTheme, wallpaperLock, wallpaperHome, setTheme, setWallpaper, statusLightOverride, statusBarAutoLight, hideHomeIndicator, airplaneMode, hour24, setHour24, setSecurity } = useTheme('theme', 'darkTheme', 'wallpaperLock', 'wallpaperHome', 'setTheme', 'setWallpaper', 'statusLightOverride', 'statusBarAutoLight', 'hideHomeIndicator', 'airplaneMode', 'hour24', 'setHour24', 'setSecurity');
+    const { theme, darkTheme, lightTheme, accent, customPalettes, wallpaperLock, wallpaperHome, setTheme, setWallpaper, statusLightOverride, statusBarAutoLight, hideHomeIndicator, airplaneMode, hour24, setHour24, setSecurity } = useTheme('theme', 'darkTheme', 'lightTheme', 'accent', 'wallpaperLock', 'wallpaperHome', 'setTheme', 'setWallpaper', 'statusLightOverride', 'statusBarAutoLight', 'hideHomeIndicator', 'airplaneMode', 'hour24', 'setHour24', 'setSecurity', 'customPalettes');
+    const activeThemeId = theme === 'dark' ? darkTheme : lightTheme;
+    const themeVars = useMemo(() => {
+        const vars: Record<string, string> = accentVars(theme === 'dark' ? 'dark' : 'light', accent);
+        if (isCustomPaletteId(activeThemeId)) {
+            const palette = customPalettes.find(p => p.id === activeThemeId);
+            if (palette) Object.assign(vars, rampVars(rampFor(palette.mode, palette)));
+        }
+        return vars as CSSProperties;
+    }, [activeThemeId, customPalettes, accent, theme]);
     const locale = useLocaleStore(s => s.locale);
     useEffect(() => { useLocaleStore.getState().hydrate(); }, []);
     useEffect(() => { void useNotifPrefsStore.getState().hydrate(); }, []);
@@ -271,7 +284,11 @@ function AppContent() {
     // Server-side twin of the localStorage flag (phone_settings.setup_done): survives a cleared
     // FiveM cache / another PC. null = this profile's hydrate hasn't answered yet.
     const serverSetupDone = useThemeStore(s => s.setupDone);
-    const setupCompleted = setup.completed || serverSetupDone === true;
+    // In game the server row decides, and the localStorage flag is only the dev fallback where
+    // there is no server to ask. ORing the two let the client cache outvote the server, so
+    // nothing server-side could ever un-complete setup: a wiped phone and a fresh device both
+    // kept reading "done" from a flag the wipe never touched.
+    const setupCompleted = isFiveM ? serverSetupDone === true : setup.completed;
     // Theme and wallpaper are NOT re-applied from the saved setup on launch. Both
     // persist server-side (phone_settings) and hydrate via settings:get on mount;
     // re-applying the localStorage setup value every launch clobbered the player's
@@ -1232,6 +1249,22 @@ function AppContent() {
         return () => window.removeEventListener('keydown', blockSpace, true);
     }, []);
 
+    // Shift is sprint, and the browser turns shift+wheel into horizontal scrolling, so a running
+    // player cannot scroll a list. Redirect it back to the vertical scroller under the cursor,
+    // unless something horizontal is there, where sideways scrolling is the point.
+    useEffect(() => {
+        function shiftScroll(e: WheelEvent) {
+            const delta = shiftWheelDelta(e);
+            if (!delta) return;
+            const scroller = verticalScrollerFor(e.target instanceof Element ? e.target : null, document.body);
+            if (!scroller) return;
+            e.preventDefault();
+            scroller.scrollBy({ top: delta, behavior: 'smooth' });
+        }
+        window.addEventListener('wheel', shiftScroll, { capture: true, passive: false });
+        return () => window.removeEventListener('wheel', shiftScroll, true);
+    }, []);
+
     const resetNonce = usePhoneReset(s => s.nonce);
     useEffect(() => {
         if (!resetNonce) return;
@@ -1280,7 +1313,7 @@ function AppContent() {
     // active app drops to the deck's hidden pool and every app suspends to ~0 CPU.
     const deckActiveId = (!view || locked) ? null : currentApp;
     const deckLayer = (
-        <div key="deck-root" className={theme === 'dark' ? 'dark' : undefined} data-dark-theme={darkTheme}>
+        <div key="deck-root" className={theme === 'dark' ? 'dark' : undefined} data-dark-theme={darkTheme} data-light-theme={lightTheme} style={themeVars}>
             <AppDeck
                 deckIds={deckIds}
                 activeId={deckActiveId}
@@ -1302,7 +1335,7 @@ function AppContent() {
         return (
             <>
                 {deckLayer}
-                <div key="shell-closed" className={theme === 'dark' ? 'dark' : undefined} data-dark-theme={darkTheme}>
+                <div key="shell-closed" className={theme === 'dark' ? 'dark' : undefined} data-dark-theme={darkTheme} data-light-theme={lightTheme} style={themeVars}>
                 {peek && (
                     <PhoneShell peek={peek} frameColor={peekColor ?? frameColor} radioIsland={radioIsland} alarmIsland={{ ringing: !!ringingAlarm, since: ringingSince }}>
                         <div className="wallpaper absolute inset-0" style={{ backgroundImage: `url(${peekWall})` }} />
@@ -1363,7 +1396,7 @@ function AppContent() {
     return (
         <>
         {deckLayer}
-        <div key={showSetup ? 'setup' : locale} className={theme === 'dark' ? 'dark' : undefined} data-dark-theme={darkTheme}>
+        <div key={showSetup ? 'setup' : locale} className={theme === 'dark' ? 'dark' : undefined} data-dark-theme={darkTheme} data-light-theme={lightTheme} style={themeVars}>
             {import.meta.env.DEV && device.setup && (
                 <button
                     type="button"
@@ -1569,7 +1602,7 @@ function AppContent() {
                 )}
 
                 {finishingSetup && (
-                    <div className="animate-finish-veil pointer-events-none absolute inset-0 z-[250] bg-white dark:bg-base" />
+                    <div className="animate-finish-veil pointer-events-none absolute inset-0 z-[250] bg-base" />
                 )}
             </PhoneShell>
         </div>

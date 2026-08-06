@@ -90,7 +90,7 @@ export function ThemeStage({ wallpaper, badge, hint, pinned = false, onTogglePin
     }, []);
 
     return (
-        <div className={pinned ? 'sticky top-0 z-20 bg-[#d4d4d4] dark:bg-base' : ''}>
+        <div className={pinned ? 'sticky top-0 z-20 bg-base' : ''}>
             <div className="mx-4">
                 <div
                     className="relative overflow-hidden rounded-[14px]"

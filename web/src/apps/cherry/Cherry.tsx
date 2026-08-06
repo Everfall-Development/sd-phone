@@ -12,7 +12,9 @@ import { useAppAuth } from '@/hooks/useAppAuth';
 import { AppAuth } from '@/shared/AppAuth';
 import { AccountSwitcher } from '@/shared/AccountSwitcher';
 import { AlertDialog } from '@/ui/AlertDialog';
-import { MAIL_DOMAIN, accountsConfirmReset, accountsForgetPassword, accountsLogin, accountsLogout, accountsMe, accountsRegister, accountsRequestReset, accountsSavePassword, accountsSignOut, accountsSuggestCode, accountsSwitch } from '@/core/accountsApi';
+import { MAIL_DOMAIN, accountsConfirmReset, accountsLogin, accountsLogout, accountsMe, accountsRegister, accountsRequestReset, accountsSavePassword, accountsSuggestCode, accountsSwitch } from '@/core/accountsApi';
+import { signOutAllForApp } from '@/shared/signOutAll';
+import { logOutOrSwitch, switchTargetLabel } from '@/shared/logOutOrSwitch';
 import { appendThreadMessage, patchThreadMessage, toggleReactionLocal } from '@/shared/chat/messagesApi';
 import type { Message, Reaction } from '@/shared/chat/data';
 import type { MessageDraft } from '@/shared/chat/ChatView';
@@ -268,6 +270,7 @@ export function Cherry({ onClose: _onClose }: { onClose: () => void }) {
     }
     const authScreen = (
             <AppAuth
+                appId="cherry"
                 appName="Cherry"
                 tagline={t('cherry.tagline', 'Find your person in Los Santos.')}
                 icon="cherry"
@@ -358,18 +361,23 @@ export function Cherry({ onClose: _onClose }: { onClose: () => void }) {
                             <EditProfile
                                 profile={profile}
                                 onChange={setProfile}
+                                switchTo={switchTargetLabel(savedAccounts[0])}
                                 onSignOut={() => {
-                                    void accountsSignOut('cherry').then(r => {
-                                        if (r.switchedTo) afterAccountChange();
+                                    void logOutOrSwitch('cherry').then(switched => {
+                                        if (switched) afterAccountChange();
                                         else { clearSessionState('cherry:'); refreshAccounts(); setAuthed(false); }
                                     });
+                                }}
+                                onSignOutAll={() => {
+                                    void signOutAllForApp('cherry').then(() => { refreshAccounts(); setAuthed(false); });
                                 }}
                                 onSwitchAccount={() => setSwitching(true)}
                                 onDeleteAccount={() => {
                                     void (async () => {
                                         await cherryDeleteAccount();
-                                        await accountsForgetPassword('cherry');
                                         await accountsLogout('cherry');
+                                        clearSessionState('cherry:');
+                                        refreshAccounts();
                                         setAuthed(false);
                                     })();
                                 }}

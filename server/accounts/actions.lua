@@ -250,10 +250,82 @@ end
 ---@return table envelope
 function actions.logout(source, payload)
     local app = payload and payload.app
-    if not DIRECT_APPS[app] then return fail('Unknown app') end
+    -- SWITCH_APPS rather than DIRECT_APPS: Squawk registers itself, but it still needs a plain
+    -- logout, or the switcher is its only way out of an account.
+    if not SWITCH_APPS[app] then return fail('Unknown app') end
     local cid = player.getIdentifier(source)
-    if cid then store.clearSession(app, cid) end
-    return ok()
+    if not cid then return ok({ switchedTo = nil }) end
+
+    -- Ends this account's session only. Any other account the player is signed into stays that
+    -- way, and the next most recently used one becomes active, so they land on it rather than
+    -- at the sign-in screen.
+    local current = store.getSessionAccount(app, cid)
+    if not current then return ok({ switchedTo = nil }) end
+    store.clearAccountSession(app, cid, current.id)
+
+    local next_ = store.getSessionAccount(app, cid)
+    return ok({ switchedTo = next_ and next_.username or nil, me = next_ and publicAccount(next_) or nil })
+end
+
+---Signs `cid` out of every account in one app, or out of every account app at once when `app` is
+---nil. Ends sessions only: vault entries are left alone, so Settings > Passwords still offers a
+---one-tap way back in.
+---@param cid string framework per-character id
+---@param app? string account app key; nil clears every app the engine knows
+---@return integer signedOut accounts the caller was signed out of
+function actions.signOutEverywhere(cid, app)
+    local signedOut = 0
+
+    -- Mail predates the engine and keeps its sessions in its own table, so it is never covered by
+    -- the shared session clears below.
+    if app == nil or app == 'mail' then
+        for _, acc in ipairs(mailStore.listAccountsForCitizen(cid)) do
+            if mailStore.removeSession(acc.email, cid) then signedOut = signedOut + 1 end
+        end
+    end
+
+    if app == nil then
+        signedOut = signedOut + store.clearAllSessions(cid)
+    elseif app ~= 'mail' then
+        signedOut = signedOut + store.clearSession(app, cid)
+    end
+
+    return signedOut
+end
+
+---How many accounts the caller has in `app` against the configured cap, plus the refusal to show
+---when they are at it. Read-only; the create paths enforce the same cap themselves.
+---@param source number player server id
+---@param payload table|nil client-supplied { app }
+---@return table envelope on success data = { limit, count, canCreate, message? }
+function actions.capacity(source, payload)
+    local app = payload and payload.app
+    if not ALL_APPS[app] then return fail('Unknown app') end
+    local cid = player.getIdentifier(source); if not cid then return fail('Player not found') end
+
+    -- Mail predates the engine, so its mailboxes are counted off its own created_by_cid rather
+    -- than the engine's account table, exactly as its own create path does.
+    local key = tostring(app)
+    local count = key == 'mail'
+        and mailStore.countAccountsCreatedBy(cid)
+        or store.countAccountsFor(key, cid)
+
+    local capped = actions.accountCapMessage(key, count)
+    return ok({ limit = accountLimit(key), count = count, canCreate = capped == nil, message = capped })
+end
+
+---Signs the caller out of one app's accounts, or out of every account app when no app is given.
+---@param source number player server id
+---@param payload table|nil client-supplied { app? }
+---@return table envelope on success data = { signedOut }
+function actions.signOutAll(source, payload)
+    payload = type(payload) == 'table' and payload or {}
+    local app = payload.app
+    if app ~= nil and not ALL_APPS[app] then return fail('Unknown app') end
+    local cid = player.getIdentifier(source); if not cid then return fail('Player not found') end
+    if not util.cooldown(cid, 'accounts:signOutAll', 1000) then return fail('Slow down') end
+
+    return ok({ signedOut = actions.signOutEverywhere(cid, app) })
 end
 
 ---The caller's saved logins for one app, as switch targets: username + display name, and which
@@ -266,17 +338,40 @@ function actions.switchable(source, payload)
     if not SWITCH_APPS[app] then return fail('Unknown app') end
     local cid = player.getIdentifier(source); if not cid then return fail('Player not found') end
 
-    local current = store.getSessionAccount(app, cid)
+    -- Live sessions, not vault entries: the switcher moves between accounts the player is
+    -- actually signed into, so signing out of one drops it from the list until they add it back.
+    local signedIn = store.listSessionAccounts(app, cid)
+    local out = {}
+    for i = 1, #signedIn do
+        out[i] = { username = signedIn[i].username, name = signedIn[i].displayName, email = signedIn[i].email }
+    end
+    return ok({ accounts = out, active = signedIn[1] and signedIn[1].username or nil })
+end
+
+---Accounts the caller could sign into for `app`: saved-password entries they do NOT already hold
+---a session for. The sign-in screen's picker, and the complement of `switchable`, which lists the
+---sessions they already have.
+---@param source number player server id
+---@param payload table|nil client-supplied { app }
+---@return table envelope on success data = { accounts }
+function actions.signInOptions(source, payload)
+    local app = payload and payload.app
+    if not SWITCH_APPS[app] then return fail('Unknown app') end
+    local cid = player.getIdentifier(source); if not cid then return fail('Player not found') end
+
+    local held = {}
+    for _, acc in ipairs(store.listSessionAccounts(app, cid)) do held[acc.username:lower()] = true end
+
     local out = {}
     for _, row in ipairs(store.listVaultEntries(cid)) do
-        if row.app == app then
+        if row.app == app and not held[row.username:lower()] then
             local acc = store.getAccount(app, row.username)
             if acc then
                 out[#out + 1] = { username = acc.username, name = acc.displayName, email = acc.email }
             end
         end
     end
-    return ok({ accounts = out, active = current and current.username or nil })
+    return ok({ accounts = out })
 end
 
 ---Signs the caller into another of their own saved accounts without retyping the password. The
@@ -295,6 +390,16 @@ function actions.switchAccount(source, payload)
     local username = trim(payload.username):lower()
     if username == '' then return fail('Pick an account') end
 
+    -- Already signed into it: switching is just making that session the active one, so no
+    -- password is involved. This is the path the switcher takes.
+    for _, held in ipairs(store.listSessionAccounts(app, cid)) do
+        if held.username:lower() == username then
+            store.setSession(app, cid, held.id)
+            return ok({ me = publicAccount(held) })
+        end
+    end
+
+    -- Not signed in: signing in again needs the saved password, verified against the account.
     local saved
     for _, row in ipairs(store.listVaultEntries(cid)) do
         if row.app == app and row.username:lower() == username then saved = row break end
@@ -604,36 +709,6 @@ function actions.myEmail(source)
         if acc.email and acc.email ~= '' then emails[#emails + 1] = acc.email end
     end
     return ok({ email = emails[1], emails = emails })
-end
-
----Signs the caller out of one app, moving them to another of their own saved accounts when they
----have one rather than dropping them at the sign-in screen. Returns the account they landed on,
----or nil when there was nowhere to go and the session was cleared.
----@param source number player server id
----@param payload table|nil client-supplied { app }
----@return table envelope data = { switchedTo?, me? }
-function actions.signOutOrSwitch(source, payload)
-    local app = payload and payload.app
-    if not SWITCH_APPS[app] then return fail('Unknown app') end
-    local cid = player.getIdentifier(source); if not cid then return fail('Player not found') end
-
-    local current = store.getSessionAccount(app, cid)
-
-    -- The vault is a convenience, not an authority: each saved password is verified against the
-    -- account before it is used, exactly as switchAccount does, so a stale entry is skipped
-    -- rather than granting access.
-    for _, row in ipairs(store.listVaultEntries(cid)) do
-        if row.app == app and (not current or row.username:lower() ~= current.username:lower()) then
-            local acc = store.getAccount(app, row.username)
-            if acc and actions.verifyPassword(acc, row.password) then
-                store.setSession(app, cid, acc.id)
-                return ok({ switchedTo = acc.username, me = publicAccount(acc) })
-            end
-        end
-    end
-
-    store.clearSession(app, cid)
-    return ok({ switchedTo = nil })
 end
 
 ---Resolves an export-supplied (app, username) pair to a full account row, nil for an unknown

@@ -52,15 +52,64 @@ local ENABLED = MDT.Enabled == true
 ---@type integer Seconds between expiry sweeps of the in-memory call board.
 local SWEEP_SECONDS = math.max(5, math.floor(tonumber((MDT.Dispatch or {}).SweepSeconds) or 15))
 
--- Boot thread: creates the MDT tables and seeds the penal code.
+---@type string Companion resource the terminals live on. They are laid out for a tablet and never
+---appear on a phone, so with it absent there is no device that could open one.
+local TABLET = 'sd-tablet'
+
+---@type integer How long to wait for sd-tablet at boot (ms). It starts AFTER sd-phone, so its
+---state while this file loads says nothing at all; a later start is caught by onResourceStart.
+local TABLET_WAIT_MS = 30000
+
+---@type boolean Whether a terminal can actually be opened: switched on AND a tablet to open it on.
+local available = false
+---@type boolean Guards the bring-up against the boot thread and onResourceStart racing.
+local starting  = false
+
+---Whether sd-tablet is running right now.
+---@return boolean
+local function tabletStarted()
+    return GetResourceState(TABLET) == 'started'
+end
+
+---Creates the MDT tables, seeds the penal code and opens the terminals for business. Idempotent.
+---@param late boolean whether sd-tablet turned up after the boot window closed
+local function bringUp(late)
+    if available or starting then return end
+    starting = true
+    local ok, err = pcall(store.ensureSchema)
+    starting = false
+    if not ok then
+        boot.schemaFailed('mdt', err)
+        return
+    end
+    available = true
+    if late then
+        print(('^2[sd-phone:mdt]^0 %s started, terminals are up'):format(TABLET))
+    else
+        boot.schemaReady()
+    end
+end
+
+-- Boot: wait for the tablet before building anything. A server running the phone alone creates no
+-- MDT tables, seeds no penal code and sweeps no call board, which is what makes the switch above
+-- safe to leave on by default.
 if ENABLED then
     CreateThread(function()
-        local ok, err = pcall(store.ensureSchema)
-        if not ok then
-            boot.schemaFailed('mdt', err)
-            return
+        local waited = 0
+        while not tabletStarted() and waited < TABLET_WAIT_MS do
+            Wait(500)
+            waited = waited + 500
         end
-        boot.schemaReady()
+        if tabletStarted() then
+            bringUp(false)
+        else
+            print(('^3[sd-phone:mdt]^0 MDT disabled, could not find %s'):format(TABLET))
+        end
+    end)
+
+    -- Started by hand long after boot, or after the wait above gave up on it.
+    AddEventHandler('onResourceStart', function(res)
+        if res == TABLET then bringUp(true) end
     end)
 end
 
@@ -195,7 +244,11 @@ local hinted = false
 local function refuse()
     if not hinted then
         hinted = true
-        print('^3[sd-phone:mdt]^0 a device opened the MDT, but it is off (configs/mdt.lua Enabled = false)')
+        if not ENABLED then
+            print('^3[sd-phone:mdt]^0 a device opened the MDT, but it is off (configs/mdt.lua Enabled = false)')
+        else
+            print(('^3[sd-phone:mdt]^0 a device opened the MDT, but %s is not running'):format(TABLET))
+        end
     end
     return util.fail(DISABLED)
 end
@@ -206,7 +259,11 @@ for i = 1, #ROUTES do
     if not ENABLED then
         register(action, refuse)
     elseif type(fn) == 'function' then
-        register(action, fn)
+        -- Checked per call, not at load: whether a tablet exists is not known until it starts.
+        register(action, function(src, payload)
+            if not available then return refuse() end
+            return fn(src, payload)
+        end)
     else
         print(('^1[sd-phone:mdt]^0 no handler for %s (expected %s on its module)'):format(action, name))
     end
@@ -217,8 +274,10 @@ if ENABLED then
     CreateThread(function()
         while true do
             Wait(SWEEP_SECONDS * 1000)
-            local ok, err = pcall(dispatch.sweep)
-            if not ok then print(('^1[sd-phone:mdt]^0 dispatch sweep failed: %s'):format(err)) end
+            if available then
+                local ok, err = pcall(dispatch.sweep)
+                if not ok then print(('^1[sd-phone:mdt]^0 dispatch sweep failed: %s'):format(err)) end
+            end
         end
     end)
 

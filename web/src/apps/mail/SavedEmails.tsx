@@ -26,7 +26,7 @@ export function SavedEmailsSheet({ emails, onPick, onClose }: {
     useLayoutEffect(updateMoreBelow, [emails.length]);
 
     return (
-        <Sheet onClose={onClose} fit="content" title={t('mail.savedEmails', 'Saved Emails')} className="bg-[#ececec] dark:bg-surface">
+        <Sheet onClose={onClose} fit="content" title={t('mail.savedEmails', 'Saved Emails')} className="bg-surface">
             {({ close }) => (
                 <div className="px-4 pb-2">
                     {emails.length === 0 ? (
@@ -59,7 +59,7 @@ export function SavedEmailsSheet({ emails, onPick, onClose }: {
                             </div>
                             <div
                                 aria-hidden
-                                className="pointer-events-none absolute inset-x-0 bottom-0 h-10 rounded-b-[12px] bg-gradient-to-t from-[#e5e5e5] to-transparent transition-opacity duration-200 dark:from-surface"
+                                className="pointer-events-none absolute inset-x-0 bottom-0 h-10 rounded-b-[12px] bg-gradient-to-t from-surface to-transparent transition-opacity duration-200 dark:from-surface"
                                 style={{ opacity: moreBelow ? 1 : 0 }}
                             />
                         </div>
@@ -83,7 +83,7 @@ export function SavedEmailsPage({ emails, onAdd, onRemove, onBack }: {
 
     return (
         <div
-            className="absolute inset-0 z-20 flex flex-col bg-[#d4d4d4] dark:bg-base text-black dark:text-white"
+            className="absolute inset-0 z-20 flex flex-col bg-base text-black dark:text-white"
             style={pageStyle}
         >
             <div className="h-[54px] shrink-0" aria-hidden />
@@ -119,7 +119,7 @@ export function SavedEmailsPage({ emails, onAdd, onRemove, onBack }: {
                         subtitle={t('mail.noSavedEmailsSubtitle', 'Addresses you save show up here and autofill when you compose.')}
                     />
                 ) : (
-                    <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                    <div className="overflow-hidden rounded-[10px] bg-surface">
                         {emails.map((email, i) => (
                             <div key={email}>
                                 <div className="flex items-center gap-4 px-4 py-[15px]">

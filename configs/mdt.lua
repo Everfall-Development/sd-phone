@@ -2,15 +2,17 @@
 -- the server enforces is declared here and nowhere else: the UI only ever hides
 -- controls, it never grants them.
 return {
-    -- Whether this server runs an MDT at all. OFF by default, because the terminal
-    -- is laid out for a tablet and most servers run the phone alone: leaving it on
-    -- would build a dozen tables, seed the penal code and tick a dispatch sweep for
-    -- a screen nobody can open.
+    -- Whether this server runs an MDT at all. ON by default, so a server that adds
+    -- sd-tablet has working terminals without a second config to find.
     --
-    -- Turn it on if you run sd-tablet, or if you want the terminal on the phone
-    -- itself (set `mdt` to `enabled = true` in configs/apps.lua as well for that).
-    -- The app catalog cannot decide this on its own: a companion device carries its
-    -- own catalog and this server never reads it.
+    -- Turn it OFF if you run the phone alone: the terminals are laid out for a
+    -- tablet, and leaving it on builds a dozen tables, seeds the penal code and
+    -- ticks a dispatch sweep for a screen nobody can open. The app catalog cannot
+    -- decide this on its own: a companion device carries its own catalog and this
+    -- server never reads it.
+    --
+    -- To run a terminal on the phone itself, set `mdt` to `enabled = true` in
+    -- configs/apps.lua as well.
     Enabled = true,
 
     -- Departments whose members reach the MDT. A player's ACTIVE framework job

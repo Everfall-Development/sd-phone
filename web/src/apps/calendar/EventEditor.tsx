@@ -29,8 +29,8 @@ export function EventEditor({ dayKey, dayDate, existing, onSave, onDelete, onClo
     const [color, setColor] = useState(existing?.color ?? EVENT_COLORS[0]);
     const [activeTime, setActiveTime] = useState<'start' | 'end' | null>(null);
 
-    const groupBackground = isDark ? 'rgb(var(--surface))' : '#e5e5e5';
-    const pageBackground = isDark ? 'rgb(var(--base))' : '#d4d4d4';
+    const groupBackground = 'rgb(var(--surface))';
+    const pageBackground = 'rgb(var(--base))';
     const divider = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
 
     function commit(): void {

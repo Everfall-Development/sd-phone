@@ -661,6 +661,7 @@ end)
 RegisterNUICallback('sd-phone:typing', function(data, cb)
     typingInPhone = data and data.typing and true or false
     typingNumeric = typingInPhone and data and data.numeric and true or false
+    pose.setTyping(typingInPhone)
     syncKeepInput()
     cb({ ok = true })
 end)

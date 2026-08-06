@@ -41,7 +41,7 @@ export function GroupsList({
     }, [orderedGroups, query]);
 
     return (
-        <div className="absolute inset-0 flex flex-col bg-[#d4d4d4] dark:bg-base text-black dark:text-white">
+        <div className="absolute inset-0 flex flex-col bg-base text-black dark:text-white">
 
             <div className="h-[54px] shrink-0" aria-hidden />
 
@@ -89,7 +89,7 @@ export function GroupsList({
                                 {query ? t('groups.resultsCount', 'Results — {count}', { count: filtered.length }) : t('groups.myGroupsCount', 'My Groups — {count}', { count: groups.length })}
                             </div>
 
-                            <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                            <div className="overflow-hidden rounded-[10px] bg-surface">
                                 {filtered.map((g, i) => (
                                     <div key={g.id}>
                                         <button
@@ -165,7 +165,7 @@ export function GroupsList({
                                 {t('groups.pendingCount', 'Pending — {count}', { count: invites.length })}
                             </div>
 
-                            <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                            <div className="overflow-hidden rounded-[10px] bg-surface">
                                 {invites.map((inv, i) => (
                                     <div key={inv.id}>
                                         <div className="flex items-start gap-3.5 px-4 py-4">

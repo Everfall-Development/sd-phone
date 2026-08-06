@@ -6,17 +6,18 @@ import { MediaPickerSheet } from '@/shared/MediaPickerSheet';
 import { AlertDialog } from '@/ui/AlertDialog';
 import { Toggle } from '@/ui/Toggle';
 import { apiDeleteAccount, apiUpdateProfile } from '../birdyApi';
-import { accountsForgetPassword } from '@/core/accountsApi';
 import { ChangePasswordPage } from '@/shared/ChangePasswordPage';
 import { BG, BLUE, type BirdyProfile } from '../data';
 
 const RED = '#ff3b30';
 
-export function EditProfile({ profile, onCancel, onSaved, onSignOut, onSwitchAccount, onDeleted }: {
+export function EditProfile({ profile, onCancel, onSaved, onSignOut, onSignOutAll, onSwitchAccount, onDeleted, switchTo }: {
     profile:         BirdyProfile;
     onCancel:        () => void;
     onSaved:         (p: BirdyProfile) => void;
     onSignOut:       () => void;
+    switchTo?:       string | null;
+    onSignOutAll:    () => void;
     onSwitchAccount: () => void;
     onDeleted:       () => void;
 }) {
@@ -28,6 +29,7 @@ export function EditProfile({ profile, onCancel, onSaved, onSignOut, onSwitchAcc
     const [picking,    setPicking]    = useState<'avatar' | 'banner' | null>(null);
     const [busy,       setBusy]       = useState(false);
     const [confirmSignOut, setConfirmSignOut] = useState(false);
+    const [confirmAll,     setConfirmAll]     = useState(false);
     const [confirmDel,     setConfirmDel]     = useState(false);
     const [closing,        setClosing]        = useState(false);
     const [pwOpen,         setPwOpen]         = useState(false);
@@ -52,7 +54,6 @@ export function EditProfile({ profile, onCancel, onSaved, onSignOut, onSwitchAcc
 
     async function remove() {
         await apiDeleteAccount();
-        await accountsForgetPassword('birdy');
         onDeleted();
     }
 
@@ -119,6 +120,7 @@ export function EditProfile({ profile, onCancel, onSaved, onSignOut, onSwitchAcc
                     <button type="button" onClick={() => setPwOpen(true)} className="w-full rounded-[12px] bg-white py-4 text-[18px] font-semibold active:opacity-70" style={{ color: BLUE }}>{t('squawk.changePassword', 'Change Password')}</button>
                     <button type="button" onClick={() => dismiss(onSwitchAccount)} className="w-full rounded-[12px] bg-white py-4 text-[18px] font-semibold active:opacity-70" style={{ color: BLUE }}>{t('accounts.switchAccount', 'Switch account')}</button>
                     <button type="button" onClick={() => setConfirmSignOut(true)} className="w-full rounded-[12px] bg-white py-4 text-[18px] font-semibold active:opacity-70" style={{ color: RED }}>{t('squawk.signOut', 'Sign Out')}</button>
+                    <button type="button" onClick={() => setConfirmAll(true)} className="w-full rounded-[12px] bg-white py-4 text-[18px] font-semibold active:opacity-70" style={{ color: RED }}>{t('accounts.signOutAll', 'Log Out of All Accounts')}</button>
                     <button type="button" onClick={() => setConfirmDel(true)} className="w-full rounded-[12px] bg-white py-4 text-[18px] font-semibold active:opacity-70" style={{ color: RED }}>{t('squawk.deleteAccount', 'Delete Account')}</button>
                 </div>
             </div>
@@ -126,10 +128,22 @@ export function EditProfile({ profile, onCancel, onSaved, onSignOut, onSwitchAcc
             {confirmSignOut && (
                 <AlertDialog
                     title={t('squawk.signOutTitle', 'Sign out of Squawk?')}
-                    message={t('squawk.signOutMessage', 'You can sign back in anytime.')}
+                    message={switchTo
+                        ? t('accounts.signOutSwitchMessage', "You'll be switched to {name}.", { name: switchTo })
+                        : t('squawk.signOutMessage', 'You can sign back in anytime.')}
                     confirmLabel={t('squawk.signOut', 'Sign Out')}
                     onCancel={() => setConfirmSignOut(false)}
                     onConfirm={signOut}
+                />
+            )}
+            {confirmAll && (
+                <AlertDialog
+                    title={t('accounts.signOutAllTitle', 'Log out of all accounts?')}
+                    message={t('accounts.signOutAllMessage', 'Every account you have in this app will be signed out. Saved passwords are kept.')}
+                    confirmLabel={t('accounts.signOutAllConfirm', 'Log Out')}
+                    destructive
+                    onCancel={() => setConfirmAll(false)}
+                    onConfirm={onSignOutAll}
                 />
             )}
             {confirmDel && (

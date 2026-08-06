@@ -68,9 +68,9 @@ export function Calendar({ onClose }: { onClose: () => void }) {
         });
     }
 
-    const dividerColor = isDark ? 'rgb(var(--control))' : '#c6c6c8';
-    const panelBackground = isDark ? 'rgb(var(--surface))' : '#e5e5e5';
-    const pageBackground = isDark ? 'rgb(var(--base))' : '#d4d4d4';
+    const dividerColor = 'rgb(var(--control))';
+    const panelBackground = 'rgb(var(--surface))';
+    const pageBackground = 'rgb(var(--base))';
 
     return (
         <div

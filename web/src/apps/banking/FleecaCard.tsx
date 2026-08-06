@@ -33,7 +33,7 @@ function Contactless({ size = 22 }: { size?: number }) {
 export function FleecaCard({ holder, last4, expiry }: { holder: string; last4: string; expiry: string }) {
     return (
         <div
-            className="relative w-full select-none overflow-hidden rounded-[20px] font-sf text-white"
+            className="relative mx-auto w-full max-w-[420px] select-none overflow-hidden rounded-[20px] font-sf text-white"
             style={{
                 aspectRatio: '1.586',
                 background: 'radial-gradient(125% 135% at 12% 8%, #1C8A60 0%, #0F6043 34%, #0A3F2D 68%, #062018 100%)',

@@ -52,6 +52,7 @@ function store.ensureSchema()
     MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_settings (
             citizenid          VARCHAR(64) NOT NULL,
+            device             VARCHAR(16) NOT NULL DEFAULT 'phone',
             phone_number       VARCHAR(20) NULL,
             active_group_id    VARCHAR(16) NULL,
             ringtone           VARCHAR(64) NULL,
@@ -81,21 +82,47 @@ function store.ensureSchema()
             setup_done         TINYINT(1)   NULL,
             theme              VARCHAR(8)   NULL,
             dark_theme         VARCHAR(16)  NULL,
+            light_theme        VARCHAR(16)  NULL,
+            accent             VARCHAR(16)  NULL,
+            palette_custom     LONGTEXT     NULL,
             icon_theme         VARCHAR(16)  NULL,
             icon_custom        LONGTEXT     NULL,
-            show_app_names     TINYINT(1)   NULL,
+            show_app_names     TINYINT(1)   NOT NULL DEFAULT 1,
             ringtone_volume    TINYINT UNSIGNED NULL,
             call_volume        TINYINT UNSIGNED NULL,
             locale             VARCHAR(8)   NULL,
             updated_at         TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP
                 ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (citizenid)
+            PRIMARY KEY (citizenid, device)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
 
     -- Columns added since v0.9.0 live in server/migrations.lua; everything above is the current
     -- shape, which every fresh install gets from the CREATE TABLE directly.
     migrations.apply('phone_settings')
+
+    -- Settings became per-device, so the key widened. Existing rows already carry device='phone'
+    -- from the column default, which is what makes this safe: every row a player had stays their
+    -- phone's, and a tablet mints its own row on first use. Keyed off the second PK column rather
+    -- than a version flag, so it is a no-op on every boot after the first.
+    local pkSecond = MySQL.scalar.await([[
+        SELECT COLUMN_NAME FROM information_schema.statistics
+        WHERE table_schema = DATABASE() AND table_name = 'phone_settings'
+          AND index_name = 'PRIMARY' AND SEQ_IN_INDEX = 2
+    ]])
+    if pkSecond ~= 'device' then
+        MySQL.query.await('ALTER TABLE phone_settings DROP PRIMARY KEY, ADD PRIMARY KEY (citizenid, device)')
+    end
+
+    local appNamesNullable = MySQL.scalar.await([[
+        SELECT IS_NULLABLE FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = 'phone_settings'
+          AND COLUMN_NAME = 'show_app_names'
+    ]])
+    if appNamesNullable == 'YES' then
+        MySQL.update.await('UPDATE phone_settings SET show_app_names = 1 WHERE show_app_names IS NULL')
+        MySQL.query.await('ALTER TABLE phone_settings MODIFY show_app_names TINYINT(1) NOT NULL DEFAULT 1')
+    end
 
     MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_custom_ringtones (
@@ -261,8 +288,8 @@ end
 function store.getCard(citizenid)
     if not citizenid or citizenid == '' then return {} end
     local row = MySQL.single.await(
-        'SELECT card_name, card_avatar, card_email, card_address FROM phone_settings WHERE citizenid = ?',
-        { citizenid }
+        'SELECT card_name, card_avatar, card_email, card_address FROM phone_settings WHERE citizenid = ? AND device = ?',
+        { citizenid, 'phone' }
     )
     if not row then return {} end
     return {
@@ -281,8 +308,8 @@ function store.setCard(citizenid, fields)
     if not citizenid or citizenid == '' then return end
     fields = fields or {}
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, card_name, card_avatar, card_email, card_address)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO phone_settings (citizenid, device, card_name, card_avatar, card_email, card_address)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
             card_name    = VALUES(card_name),
             card_avatar  = VALUES(card_avatar),
@@ -290,6 +317,7 @@ function store.setCard(citizenid, fields)
             card_address = VALUES(card_address)
     ]], {
         citizenid,
+        'phone',
         trimClamp(fields.name, 64),
         trimClamp(fields.avatar, 512),
         trimClamp(fields.email, 128),
@@ -301,11 +329,12 @@ end
 ---yields {}.
 ---@param citizenid string framework per-character id
 ---@return string[] ids installed app ids ({} when unset or unparseable)
-function store.getInstalledApps(citizenid)
+function store.getInstalledApps(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return {} end
     local row = MySQL.single.await(
-        'SELECT installed_apps FROM phone_settings WHERE citizenid = ?',
-        { citizenid }
+        'SELECT installed_apps FROM phone_settings WHERE citizenid = ? AND device = ?',
+        { citizenid, device }
     )
     if not row or not row.installed_apps or row.installed_apps == '' then return {} end
     local ok, decoded = pcall(json.decode, row.installed_apps)
@@ -316,12 +345,13 @@ end
 ---Persists a player's installed downloadable app ids, leaving other settings intact.
 ---@param citizenid string framework per-character id
 ---@param ids string[] installed app ids
-function store.setInstalledApps(citizenid, ids)
+function store.setInstalledApps(citizenid, ids, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, installed_apps) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, installed_apps) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE installed_apps = VALUES(installed_apps)
-    ]], { citizenid, json.encode(ids or {}) })
+    ]], { citizenid, device, json.encode(ids or {}) })
 end
 
 ---Reads a player's saved home-screen layout JSON, or nil if unset. Read-only.
@@ -330,8 +360,8 @@ end
 function store.getHomeLayout(citizenid)
     if not citizenid or citizenid == '' then return nil end
     local row = MySQL.single.await(
-        'SELECT home_layout FROM phone_settings WHERE citizenid = ?',
-        { citizenid }
+        'SELECT home_layout FROM phone_settings WHERE citizenid = ? AND device = ?',
+        { citizenid, 'phone' }
     )
     if not row or not row.home_layout or row.home_layout == '' then return nil end
     return row.home_layout
@@ -343,9 +373,9 @@ end
 function store.setHomeLayout(citizenid, layout)
     if not citizenid or citizenid == '' then return end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, home_layout) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, home_layout) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE home_layout = VALUES(home_layout)
-    ]], { citizenid, layout })
+    ]], { citizenid, 'phone', layout })
 end
 
 ---Reads a player's phone number, or nil if not yet assigned. Read-only.
@@ -354,8 +384,8 @@ end
 function store.getPhoneNumber(citizenid)
     if not citizenid or citizenid == '' then return nil end
     local row = MySQL.single.await(
-        'SELECT phone_number FROM phone_settings WHERE citizenid = ?',
-        { citizenid }
+        'SELECT phone_number FROM phone_settings WHERE citizenid = ? AND device = ?',
+        { citizenid, 'phone' }
     )
     return row and row.phone_number or nil
 end
@@ -393,9 +423,9 @@ function store.setPhoneNumber(citizenid, number)
     if not citizenid or citizenid == '' then return end
     local clean = (tostring(number or ''):gsub('%D', ''))
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, phone_number) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, phone_number) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE phone_number = VALUES(phone_number)
-    ]], { citizenid, clean })
+    ]], { citizenid, 'phone', clean })
 end
 
 ---Clears a phone identity's number mirror (device mode: a phone whose SIM was pulled has no
@@ -403,7 +433,7 @@ end
 ---@param citizenid string phone data identity
 function store.clearPhoneNumber(citizenid)
     if not citizenid or citizenid == '' then return end
-    MySQL.update.await('UPDATE phone_settings SET phone_number = NULL WHERE citizenid = ?', { citizenid })
+    MySQL.update.await("UPDATE phone_settings SET phone_number = NULL WHERE citizenid = ? AND device = 'phone'", { citizenid })
 end
 
 ---True when a phone identity already has a settings row (used by device-mode identity minting to
@@ -413,7 +443,7 @@ end
 ---@return boolean hasData
 function store.hasData(citizenid)
     if not citizenid or citizenid == '' then return false end
-    return MySQL.scalar.await('SELECT 1 FROM phone_settings WHERE citizenid = ? LIMIT 1', { citizenid }) ~= nil
+    return MySQL.scalar.await("SELECT 1 FROM phone_settings WHERE citizenid = ? AND device = 'phone' LIMIT 1", { citizenid }) ~= nil
 end
 
 ---Returns a player's number, generating and saving a unique one on first access; tries 20
@@ -462,7 +492,7 @@ function store.numbersFor(cids)
     if #list == 0 then return {} end
     local placeholders = ('?,'):rep(#list):sub(1, -2)
     local rows = MySQL.query.await(
-        'SELECT citizenid, phone_number FROM phone_settings WHERE citizenid IN (' .. placeholders .. ')', list) or {}
+        "SELECT citizenid, phone_number FROM phone_settings WHERE device = 'phone' AND citizenid IN (" .. placeholders .. ')', list) or {}
     local out = {}
     for i = 1, #rows do out[rows[i].citizenid] = (tostring(rows[i].phone_number or ''):gsub('%D', '')) end
     return out
@@ -501,9 +531,10 @@ end
 ---unparseable. Read-only.
 ---@param citizenid string framework per-character id
 ---@return { font: string|nil, layout: string|nil, color: string|nil }|nil
-function store.getLockClock(citizenid)
+function store.getLockClock(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return nil end
-    local row = MySQL.single.await('SELECT lock_clock FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await('SELECT lock_clock FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
     if not row or not row.lock_clock or row.lock_clock == '' then return nil end
     local ok, decoded = pcall(json.decode, row.lock_clock)
     if not ok or type(decoded) ~= 'table' then return nil end
@@ -514,7 +545,8 @@ end
 ---sanitised fields; a fully-invalid payload is ignored.
 ---@param citizenid string framework per-character id
 ---@param cfg { font?: string, layout?: string, color?: string, scale?: number }
-function store.setLockClock(citizenid, cfg)
+function store.setLockClock(citizenid, cfg, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' or type(cfg) ~= 'table' then return end
     local clean = {
         font   = sanitizeSlug(cfg.font),
@@ -524,9 +556,9 @@ function store.setLockClock(citizenid, cfg)
     }
     if not clean.font and not clean.layout and not clean.color and not clean.scale then return end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, lock_clock) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, lock_clock) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE lock_clock = VALUES(lock_clock)
-    ]], { citizenid, json.encode(clean) })
+    ]], { citizenid, device, json.encode(clean) })
 end
 
 ---Validates a wallpaper image URL: http(s) scheme, no whitespace or control chars, within the
@@ -556,11 +588,12 @@ end
 ---mirrors the lock one client-side) plus the per-screen blur flags. Read-only.
 ---@param citizenid string framework per-character id
 ---@return { lock: string|nil, home: string|nil, blurLock: boolean, blurHome: boolean }
-function store.getWallpapers(citizenid)
+function store.getWallpapers(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return { blurLock = false, blurHome = false } end
     local row = MySQL.single.await(
-        'SELECT wallpaper, wallpaper_home, blur_lock, blur_home FROM phone_settings WHERE citizenid = ?',
-        { citizenid })
+        'SELECT wallpaper, wallpaper_home, blur_lock, blur_home FROM phone_settings WHERE citizenid = ? AND device = ?',
+        { citizenid, device })
     if not row then return { blurLock = false, blurHome = false } end
     return {
         lock     = row.wallpaper ~= '' and row.wallpaper or nil,
@@ -575,17 +608,18 @@ end
 ---@param citizenid string framework per-character id
 ---@param lock any lock-screen wallpaper key
 ---@param home any home-screen wallpaper key
-function store.setWallpaper(citizenid, lock, home)
+function store.setWallpaper(citizenid, lock, home, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     local l = sanitizeWallpaper(lock)
     local h = sanitizeWallpaper(home)
     if not l and not h then return end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, wallpaper, wallpaper_home) VALUES (?, ?, ?)
+        INSERT INTO phone_settings (citizenid, device, wallpaper, wallpaper_home) VALUES (?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
             wallpaper      = COALESCE(VALUES(wallpaper), wallpaper),
             wallpaper_home = COALESCE(VALUES(wallpaper_home), wallpaper_home)
-    ]], { citizenid, l, h })
+    ]], { citizenid, device, l, h })
 end
 
 ---Persists a player's per-screen wallpaper blur flags (upsert); a nil field leaves that
@@ -593,17 +627,18 @@ end
 ---@param citizenid string framework per-character id
 ---@param lockOn any blur the lock screen wallpaper
 ---@param homeOn any blur the home screen wallpaper
-function store.setBlur(citizenid, lockOn, homeOn)
+function store.setBlur(citizenid, lockOn, homeOn, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     if lockOn == nil and homeOn == nil then return end
     local l = lockOn ~= nil and (lockOn == true and 1 or 0) or nil
     local h = homeOn ~= nil and (homeOn == true and 1 or 0) or nil
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, blur_lock, blur_home) VALUES (?, ?, ?)
+        INSERT INTO phone_settings (citizenid, device, blur_lock, blur_home) VALUES (?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
             blur_lock = COALESCE(VALUES(blur_lock), blur_lock),
             blur_home = COALESCE(VALUES(blur_home), blur_home)
-    ]], { citizenid, l, h })
+    ]], { citizenid, device, l, h })
 end
 
 ---@type table<string, boolean> Pets the island offers. An id from an older or hand-edited client
@@ -617,13 +652,14 @@ local ISLAND_PETS = {
 ---Saves the character's Dynamic Island pet.
 ---@param citizenid string
 ---@param pet any
-function store.setIslandPet(citizenid, pet)
+function store.setIslandPet(citizenid, pet, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     local id = type(pet) == 'string' and ISLAND_PETS[pet] and pet or 'none'
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, island_pet) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, island_pet) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE island_pet = VALUES(island_pet)
-    ]], { citizenid, id })
+    ]], { citizenid, device, id })
 end
 
 ---@type integer Cap on saved custom wallpapers per character.
@@ -634,7 +670,7 @@ local MAX_CUSTOM_WALLPAPERS = 24
 ---@param list string[] wallpaper URLs
 local function writeCustomWallpapers(citizenid, list)
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, custom_wallpapers) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, custom_wallpapers) VALUES (?, 'phone', ?)
         ON DUPLICATE KEY UPDATE custom_wallpapers = VALUES(custom_wallpapers)
     ]], { citizenid, json.encode(list) })
 end
@@ -646,7 +682,7 @@ end
 function store.getCustomWallpapers(citizenid)
     if not citizenid or citizenid == '' then return {} end
     local row = MySQL.single.await(
-        'SELECT custom_wallpapers FROM phone_settings WHERE citizenid = ?', { citizenid })
+        "SELECT custom_wallpapers FROM phone_settings WHERE citizenid = ? AND device = 'phone'", { citizenid })
     if not row or not row.custom_wallpapers or row.custom_wallpapers == '' then return {} end
     local ok, decoded = pcall(json.decode, row.custom_wallpapers)
     if not ok or type(decoded) ~= 'table' then return {} end
@@ -701,9 +737,10 @@ end
 ---Read-only.
 ---@param citizenid string framework per-character id
 ---@return number|nil scale saved multiplier
-function store.getChatTextScale(citizenid)
+function store.getChatTextScale(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return nil end
-    local row = MySQL.single.await('SELECT chat_text_scale FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await('SELECT chat_text_scale FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
     if not row or row.chat_text_scale == nil then return nil end
     return tonumber(row.chat_text_scale)
 end
@@ -712,14 +749,15 @@ end
 ---out-of-range / non-numeric value is ignored.
 ---@param citizenid string framework per-character id
 ---@param scale number multiplier (clamped to 0.8-1.5)
-function store.setChatTextScale(citizenid, scale)
+function store.setChatTextScale(citizenid, scale, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     local clean = clampChatTextScale(scale)
     if not clean then return end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, chat_text_scale) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, chat_text_scale) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE chat_text_scale = VALUES(chat_text_scale)
-    ]], { citizenid, clean })
+    ]], { citizenid, device, clean })
 end
 
 ---Clamps a 0-100 slider value to an integer; nil for non-numbers and NaN, out-of-range values
@@ -738,9 +776,10 @@ end
 ---Read-only.
 ---@param citizenid string framework per-character id
 ---@return number|nil scale saved slider value
-function store.getPhoneScale(citizenid)
+function store.getPhoneScale(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return nil end
-    local row = MySQL.single.await('SELECT phone_scale FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await('SELECT phone_scale FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
     if not row or row.phone_scale == nil then return nil end
     return tonumber(row.phone_scale)
 end
@@ -749,22 +788,24 @@ end
 ---non-numeric value is ignored.
 ---@param citizenid string framework per-character id
 ---@param scale number slider value (clamped to 0-100)
-function store.setPhoneScale(citizenid, scale)
+function store.setPhoneScale(citizenid, scale, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     local clean = clampSlider(scale)
     if not clean then return end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, phone_scale) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, phone_scale) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE phone_scale = VALUES(phone_scale)
-    ]], { citizenid, clean })
+    ]], { citizenid, device, clean })
 end
 
 ---Reads a player's screen brightness (slider value 0-100), or nil when never set.
 ---@param citizenid string framework per-character id
 ---@return number|nil brightness
-function store.getBrightness(citizenid)
+function store.getBrightness(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return nil end
-    local row = MySQL.single.await('SELECT brightness FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await('SELECT brightness FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
     if not row or row.brightness == nil then return nil end
     return tonumber(row.brightness)
 end
@@ -774,14 +815,15 @@ end
 ---compared against nil rather than tested for truthiness.
 ---@param citizenid string framework per-character id
 ---@param brightness number slider value (clamped to 0-100)
-function store.setBrightness(citizenid, brightness)
+function store.setBrightness(citizenid, brightness, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     local clean = clampSlider(brightness)
     if clean == nil then return end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, brightness) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, brightness) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE brightness = VALUES(brightness)
-    ]], { citizenid, clean })
+    ]], { citizenid, device, clean })
 end
 
 -- Mirrors the PhoneAlign union in web/src/stores/themeStore.tsx.
@@ -795,9 +837,10 @@ local PHONE_ALIGNS = {
 ---Reads a player's phone anchor position, or nil if unset. Read-only.
 ---@param citizenid string framework per-character id
 ---@return string|nil align saved anchor position
-function store.getPhoneAlign(citizenid)
+function store.getPhoneAlign(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return nil end
-    local row = MySQL.single.await('SELECT phone_align FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await('SELECT phone_align FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
     if not row or not row.phone_align or row.phone_align == '' then return nil end
     return row.phone_align
 end
@@ -805,13 +848,14 @@ end
 ---Persists a player's phone anchor position, whitelist-checked against PHONE_ALIGNS.
 ---@param citizenid string framework per-character id
 ---@param align any client-supplied anchor position
-function store.setPhoneAlign(citizenid, align)
+function store.setPhoneAlign(citizenid, align, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     if type(align) ~= 'string' or not PHONE_ALIGNS[align] then return end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, phone_align) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, phone_align) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE phone_align = VALUES(phone_align)
-    ]], { citizenid, align })
+    ]], { citizenid, device, align })
 end
 
 ---Clamps a volume to an integer 0-100; nil for non-numbers and NaN, out-of-range values fall to
@@ -830,10 +874,11 @@ end
 ---0 is returned as 0. Read-only.
 ---@param citizenid string framework per-character id
 ---@return { ringtone: number|nil, call: number|nil }
-function store.getVolumes(citizenid)
+function store.getVolumes(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return {} end
     local row = MySQL.single.await(
-        'SELECT ringtone_volume, call_volume FROM phone_settings WHERE citizenid = ?', { citizenid })
+        'SELECT ringtone_volume, call_volume FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
     if not row then return {} end
     return {
         ringtone = row.ringtone_volume ~= nil and tonumber(row.ringtone_volume) or nil,
@@ -846,18 +891,19 @@ end
 ---@param citizenid string framework per-character id
 ---@param ringtone any ringtone-and-alert volume 0-100
 ---@param call any call volume 0-100
-function store.setVolumes(citizenid, ringtone, call)
+function store.setVolumes(citizenid, ringtone, call, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     local r = clampVolume(ringtone)
     local c = clampVolume(call)
     if r == nil and c == nil then return end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, ringtone_volume, call_volume)
-        VALUES (?, ?, ?)
+        INSERT INTO phone_settings (citizenid, device, ringtone_volume, call_volume)
+        VALUES (?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
             ringtone_volume = COALESCE(VALUES(ringtone_volume), ringtone_volume),
             call_volume     = COALESCE(VALUES(call_volume), call_volume)
-    ]], { citizenid, r, c })
+    ]], { citizenid, device, r, c })
 end
 
 -- Mirrors SUPPORTED_LOCALES in web/src/i18n/index.ts.
@@ -870,9 +916,10 @@ local SUPPORTED_LOCALES = {
 ---Reads a player's saved phone language, or nil if unset. Read-only.
 ---@param citizenid string framework per-character id
 ---@return string|nil locale saved locale code
-function store.getLocale(citizenid)
+function store.getLocale(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return nil end
-    local row = MySQL.single.await('SELECT locale FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await('SELECT locale FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
     if not row or not row.locale or row.locale == '' then return nil end
     return row.locale
 end
@@ -880,13 +927,14 @@ end
 ---Persists a player's chosen phone language, whitelist-checked against SUPPORTED_LOCALES.
 ---@param citizenid string framework per-character id
 ---@param locale any client-supplied locale code
-function store.setLocale(citizenid, locale)
+function store.setLocale(citizenid, locale, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     if type(locale) ~= 'string' or not SUPPORTED_LOCALES[locale] then return end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, locale) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, locale) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE locale = VALUES(locale)
-    ]], { citizenid, locale })
+    ]], { citizenid, device, locale })
 end
 
 ---Clamps a passcode to a bare 4-6 digit string, or nil.
@@ -901,9 +949,10 @@ end
 ---set and `faceId` is forced false whenever no passcode exists. Read-only.
 ---@param citizenid string framework per-character id
 ---@return { passcode: string|nil, faceId: boolean }
-function store.getSecurity(citizenid)
+function store.getSecurity(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return { passcode = nil, faceId = false } end
-    local row = MySQL.single.await('SELECT passcode, face_id FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await('SELECT passcode, face_id FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
     if not row then return { passcode = nil, faceId = false } end
     local pin = sanitizePin(row.passcode)
     return { passcode = pin, faceId = pin ~= nil and isTruthy(row.face_id) }
@@ -914,24 +963,26 @@ end
 ---@param citizenid string framework per-character id
 ---@param passcode string|nil 4-6 digit code, nil to clear
 ---@param faceId boolean Face Unlock enabled (only honoured alongside a valid passcode)
-function store.setSecurity(citizenid, passcode, faceId)
+function store.setSecurity(citizenid, passcode, faceId, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     local pin = sanitizePin(passcode)
     local face = pin ~= nil and faceId == true
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, passcode, face_id) VALUES (?, ?, ?)
+        INSERT INTO phone_settings (citizenid, device, passcode, face_id) VALUES (?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE passcode = VALUES(passcode), face_id = VALUES(face_id)
-    ]], { citizenid, pin, face and 1 or 0 })
+    ]], { citizenid, device, pin, face and 1 or 0 })
 end
 
 ---Reads a player's saved tone selections; fields are nil when unset. Read-only.
 ---@param citizenid string framework per-character id
 ---@return { ringtone: string|nil, notificationTone: string|nil }
-function store.getTones(citizenid)
+function store.getTones(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return {} end
     local row = MySQL.single.await(
-        'SELECT ringtone, notification_tone FROM phone_settings WHERE citizenid = ?',
-        { citizenid }
+        'SELECT ringtone, notification_tone FROM phone_settings WHERE citizenid = ? AND device = ?',
+        { citizenid, device }
     )
     return {
         ringtone         = row and row.ringtone or nil,
@@ -943,31 +994,42 @@ end
 ---@type table<string, boolean> Cached airplane-mode flag per citizenid.
 local airplaneCache = {}
 
+---Cache key for one device's airplane flag. Keyed by citizenid AND device because the column is
+---per-device: a shared key would let the tablet answer with the phone's radio state.
+---@param citizenid string framework per-character id
+---@param device string device id
+---@return string key
+local function airplaneKey(citizenid, device)
+    return citizenid .. '\0' .. device
+end
+
 ---Returns true if a player currently has airplane mode on, lazily warming the cache from the DB
 ---on first read.
 ---@param citizenid string framework per-character id
 ---@return boolean on
-function store.isAirplane(citizenid)
+function store.isAirplane(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return false end
-    local cached = airplaneCache[citizenid]
+    local cached = airplaneCache[airplaneKey(citizenid, device)]
     if cached ~= nil then return cached end
-    local row = MySQL.single.await('SELECT airplane_mode FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await('SELECT airplane_mode FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
     local on = row ~= nil and isTruthy(row.airplane_mode)
-    airplaneCache[citizenid] = on
+    airplaneCache[airplaneKey(citizenid, device)] = on
     return on
 end
 
 ---Sets a player's airplane mode: cache first, then the DB write-through.
 ---@param citizenid string framework per-character id
 ---@param on boolean airplane mode enabled
-function store.setAirplane(citizenid, on)
+function store.setAirplane(citizenid, on, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     on = on == true
-    airplaneCache[citizenid] = on
+    airplaneCache[airplaneKey(citizenid, device)] = on
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, airplane_mode) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, airplane_mode) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE airplane_mode = VALUES(airplane_mode)
-    ]], { citizenid, on and 1 or 0 })
+    ]], { citizenid, device, on and 1 or 0 })
 end
 
 ---The server default 24-hour preference for a player who has never toggled it
@@ -981,9 +1043,10 @@ end
 ---the hour24 column is NULL. Read-only.
 ---@param citizenid string framework per-character id
 ---@return boolean hour24
-function store.getHour24(citizenid)
+function store.getHour24(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return defaultHour24() end
-    local row = MySQL.single.await('SELECT hour24 FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await('SELECT hour24 FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
     if row and row.hour24 ~= nil then
         return row.hour24 == true or tonumber(row.hour24) == 1
     end
@@ -994,20 +1057,22 @@ end
 ---localStorage flag, so a cleared FiveM cache or another PC never re-runs Hello. Read-only.
 ---@param citizenid string framework per-character id
 ---@return boolean done
-function store.getSetupDone(citizenid)
+function store.getSetupDone(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return false end
-    local row = MySQL.single.await('SELECT setup_done FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await('SELECT setup_done FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
     return row ~= nil and (row.setup_done == true or tonumber(row.setup_done) == 1)
 end
 
 ---Marks this profile's first-run setup as completed (upsert, one-way).
 ---@param citizenid string framework per-character id
-function store.setSetupDone(citizenid)
+function store.setSetupDone(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, setup_done) VALUES (?, 1)
+        INSERT INTO phone_settings (citizenid, device, setup_done) VALUES (?, ?, 1)
         ON DUPLICATE KEY UPDATE setup_done = 1
-    ]], { citizenid })
+    ]], { citizenid, device })
 end
 
 ---Persists a player's 24-hour time preference (upsert), coerced to a strict boolean.
@@ -1025,9 +1090,10 @@ end
 ---false when the reopen_app column is NULL. Read-only.
 ---@param citizenid string framework per-character id
 ---@return boolean reopenApp
-function store.getReopenApp(citizenid)
+function store.getReopenApp(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return false end
-    local row = MySQL.single.await('SELECT reopen_app FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await('SELECT reopen_app FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
     if row and row.reopen_app ~= nil then
         return row.reopen_app == true or tonumber(row.reopen_app) == 1
     end
@@ -1037,56 +1103,138 @@ end
 ---Persists a player's reopen-into-app preference (upsert), coerced to a strict boolean.
 ---@param citizenid string framework per-character id
 ---@param on boolean reopen into the holstered app
-function store.setReopenApp(citizenid, on)
+function store.setReopenApp(citizenid, on, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, reopen_app) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, reopen_app) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE reopen_app = VALUES(reopen_app)
-    ]], { citizenid, on == true and 1 or 0 })
+    ]], { citizenid, device, on == true and 1 or 0 })
 end
 
 ---Returns a player's light/dark theme, defaulting to 'light'. Read-only.
 ---@param citizenid string framework per-character id
 ---@return string theme 'light' | 'dark'
-function store.getTheme(citizenid)
+function store.getTheme(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return 'light' end
-    local row = MySQL.single.await('SELECT theme FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await('SELECT theme FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
     return row and row.theme == 'dark' and 'dark' or 'light'
 end
 
 ---Persists a player's light/dark theme (upsert), whitelisted to the known values.
 ---@param citizenid string framework per-character id
 ---@param theme string 'light' | 'dark'
-function store.setTheme(citizenid, theme)
+function store.setTheme(citizenid, theme, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     theme = theme == 'dark' and 'dark' or 'light'
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, theme) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, theme) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE theme = VALUES(theme)
-    ]], { citizenid, theme })
+    ]], { citizenid, device, theme })
+end
+
+-- Mirrors CUSTOM_ID in web/src/apps/settings/appearance/paletteRamp.ts.
+---@type integer Bounds on the slug after the 'custom:' prefix. 8 keeps the longest id at 15
+---characters, which is what lets a player-designed palette share dark_theme VARCHAR(16).
+local CUSTOM_PALETTE_MIN, CUSTOM_PALETTE_MAX = 4, 8
+
+---True for a well-formed player-designed palette id.
+---@param v any client-supplied palette id
+---@return boolean
+local function isCustomPaletteId(v)
+    if type(v) ~= 'string' or not v:match('^custom:[a-z0-9]+$') then return false end
+    local slug = #v - #'custom:'
+    return slug >= CUSTOM_PALETTE_MIN and slug <= CUSTOM_PALETTE_MAX
+end
+---@type table<string, boolean> Selectable dark-mode palettes; anything else falls back to graphite.
+local DARK_THEMES = { graphite = true, black = true, warm = true, midnight = true, moss = true, plum = true, slate = true, ocean = true, rose = true, clay = true }
+
+---@type table<string, boolean> Selectable light-mode palettes; anything else falls back to silver.
+local LIGHT_THEMES = { silver = true, snow = true, linen = true, sky = true, mint = true, blush = true, sand = true, lavender = true, stone = true, dusk = true }
+
+---@type table<string, boolean> Preset accent colours; mirrors ACCENT_PRESETS in web/src/apps/settings/appearance/accentRamp.ts.
+local ACCENTS = {
+    blue = true, indigo = true, purple = true, pink = true, red = true, orange = true,
+    yellow = true, green = true, mint = true, teal = true, brown = true, gray = true,
+}
+
+---@type string Accent used when the stored value is missing or not storable.
+local ACCENT_DEFAULT = 'blue'
+
+---A custom accent is stored as `custom:<hue>`, hue being 0-359.
+---@param v any client-supplied accent id
+---@return boolean
+local function isCustomAccentId(v)
+    if type(v) ~= 'string' then return false end
+    local hue = v:match('^custom:(%d%d?%d?)$')
+    return hue ~= nil and tonumber(hue) <= 359
+end
+
+---@param v any client-supplied accent id
+---@return boolean
+local function isStorableAccent(v)
+    return type(v) == 'string' and (ACCENTS[v] == true or isCustomAccentId(v))
 end
 
 ---Returns a player's selected dark-mode palette, defaulting to 'graphite'. Read-only.
 ---@param citizenid string framework per-character id
----@return string darkTheme 'graphite' | 'black' | 'warm'
-function store.getDarkTheme(citizenid)
+---@return string darkTheme a key of DARK_THEMES
+function store.getDarkTheme(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return 'graphite' end
-    local row = MySQL.single.await('SELECT dark_theme FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await('SELECT dark_theme FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
     local v = row and row.dark_theme
-    if v == 'graphite' or v == 'black' or v == 'warm' then return v end
+    if type(v) == 'string' and (DARK_THEMES[v] or isCustomPaletteId(v)) then return v end
     return 'graphite'
 end
 
 ---Persists a player's dark-mode palette (upsert), whitelisted to the known values.
 ---@param citizenid string framework per-character id
----@param theme string 'graphite' | 'black' | 'warm'
-function store.setDarkTheme(citizenid, theme)
+---@param theme string a key of DARK_THEMES
+function store.setDarkTheme(citizenid, theme, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
-    if theme ~= 'graphite' and theme ~= 'black' and theme ~= 'warm' then theme = 'graphite' end
+    if type(theme) ~= 'string' or not (DARK_THEMES[theme] or isCustomPaletteId(theme)) then theme = 'graphite' end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, dark_theme) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, dark_theme) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE dark_theme = VALUES(dark_theme)
-    ]], { citizenid, theme })
+    ]], { citizenid, device, theme })
+end
+function store.getLightTheme(citizenid, device)
+    device = device or 'phone'
+    if not citizenid or citizenid == '' then return 'silver' end
+    local row = MySQL.single.await('SELECT light_theme FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
+    local v = row and row.light_theme
+    if type(v) == 'string' and (LIGHT_THEMES[v] or isCustomPaletteId(v)) then return v end
+    return 'silver'
+end
+
+---Persists a player's light-mode palette (upsert), whitelisted to the known values.
+---@param citizenid string framework per-character id
+---@param theme string a key of LIGHT_THEMES
+function store.setLightTheme(citizenid, theme, device)
+    device = device or 'phone'
+    if not citizenid or citizenid == '' then return end
+    if type(theme) ~= 'string' or not (LIGHT_THEMES[theme] or isCustomPaletteId(theme)) then theme = 'silver' end
+    MySQL.update.await([[
+        INSERT INTO phone_settings (citizenid, device, light_theme) VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE light_theme = VALUES(light_theme)
+    ]], { citizenid, device, theme })
+end
+
+---Persists the accent colour applied over whichever palette is active.
+---@param citizenid string framework per-character id
+---@param accent string a key of ACCENTS or `custom:<hue>`
+function store.setAccent(citizenid, accent, device)
+    device = device or 'phone'
+    if not citizenid or citizenid == '' then return end
+    if not isStorableAccent(accent) then accent = ACCENT_DEFAULT end
+    MySQL.update.await([[
+        INSERT INTO phone_settings (citizenid, device, accent) VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE accent = VALUES(accent)
+    ]], { citizenid, device, accent })
 end
 
 -- Mirrors the IconThemeId union in web/src/stores/iconThemeStore.ts.
@@ -1133,9 +1281,10 @@ end
 ---Returns a player's home-screen icon theme, defaulting to 'default'. Read-only.
 ---@param citizenid string framework per-character id
 ---@return string iconTheme a built-in id or a 'custom:' one
-function store.getIconTheme(citizenid)
+function store.getIconTheme(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return 'default' end
-    local row = MySQL.single.await('SELECT icon_theme FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await('SELECT icon_theme FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
     local v = row and row.icon_theme
     if isStorableIconTheme(v) then return v end
     return 'default'
@@ -1145,13 +1294,14 @@ end
 ---well-formed custom id.
 ---@param citizenid string framework per-character id
 ---@param theme any client-supplied icon theme id
-function store.setIconTheme(citizenid, theme)
+function store.setIconTheme(citizenid, theme, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     if not isStorableIconTheme(theme) then return end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, icon_theme) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, icon_theme) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE icon_theme = VALUES(icon_theme)
-    ]], { citizenid, theme })
+    ]], { citizenid, device, theme })
 end
 
 ---A trimmed name's length in characters, or nil when the string is not valid UTF-8.
@@ -1429,7 +1579,7 @@ end
 ---@return table[] themes
 function store.getCustomIconThemes(citizenid)
     if not citizenid or citizenid == '' then return {} end
-    local row = MySQL.single.await('SELECT icon_custom FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await("SELECT icon_custom FROM phone_settings WHERE citizenid = ? AND device = 'phone'", { citizenid })
     if not row then return {} end
     return decodeCustomIconThemes(row.icon_custom)
 end
@@ -1450,7 +1600,7 @@ function store.saveCustomIconTheme(citizenid, theme)
     if not at and #list >= MAX_CUSTOM_ICON_THEMES then return false, 'limit' end
     list[at or (#list + 1)] = clean
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, icon_custom) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, icon_custom) VALUES (?, 'phone', ?)
         ON DUPLICATE KEY UPDATE icon_custom = VALUES(icon_custom)
     ]], { citizenid, json.encode(list) })
     return true, nil
@@ -1478,28 +1628,131 @@ function store.deleteCustomIconTheme(citizenid, id)
     return true
 end
 
----Returns true if a player wants app names printed under their home-screen icons, defaulting to
----true when the show_app_names column is NULL. Read-only.
+-- Mirrors MAX_CUSTOM_PALETTES / PALETTE_NAME_MAX in
+-- web/src/apps/settings/appearance/paletteRamp.ts.
+---@type integer Cap on player-designed palettes per character.
+local MAX_CUSTOM_PALETTES = 12
+---@type integer Longest palette name a player may store.
+local PALETTE_NAME_MAX = 24
+
+---Validates one player-designed palette, rebuilding it from only the sanitised fields so no
+---client JSON is ever stored verbatim. Nil when any field is malformed.
+---@param v any client-supplied palette
+---@return table|nil palette { id: string, name: string, mode: string, hue, tint, depth: integer }
+local function sanitizeCustomPalette(v)
+    if type(v) ~= 'table' or not isCustomPaletteId(v.id) then return nil end
+    if v.mode ~= 'light' and v.mode ~= 'dark' then return nil end
+    if type(v.name) ~= 'string' then return nil end
+    local name = (v.name:gsub('^%s+', ''):gsub('%s+$', ''))
+    local chars = nameLength(name)
+    if not chars or chars < 1 or chars > PALETTE_NAME_MAX then return nil end
+    local hue, tint, depth = tonumber(v.hue), tonumber(v.tint), tonumber(v.depth)
+    if not hue or not tint or not depth then return nil end
+    return {
+        id    = v.id,
+        name  = name,
+        mode  = v.mode,
+        hue   = math.floor(math.min(math.max(hue, 0), 359) + 0.5),
+        tint  = math.floor(math.min(math.max(tint, 0), 100) + 0.5),
+        depth = math.floor(math.min(math.max(depth, 0), 100) + 0.5),
+    }
+end
+
+---Decodes a palette_custom column into validated palettes; an unparseable column, a malformed
+---entry or a duplicate id is dropped rather than served.
+---@param raw any stored column value
+---@return table[] palettes
+local function decodeCustomPalettes(raw)
+    if not raw or raw == '' then return {} end
+    local ok, decoded = pcall(json.decode, raw)
+    if not ok or type(decoded) ~= 'table' then return {} end
+    local out, seen = {}, {}
+    for i = 1, #decoded do
+        local clean = sanitizeCustomPalette(decoded[i])
+        if clean and not seen[clean.id] and #out < MAX_CUSTOM_PALETTES then
+            seen[clean.id] = true
+            out[#out + 1] = clean
+        end
+    end
+    return out
+end
+
+---Reads a player's designed palettes (JSON array column on the phone row, since the library is
+---shared across a character's devices even though the active choice is not). Read-only.
+---@param citizenid string framework per-character id
+---@return table[] palettes
+function store.getCustomPalettes(citizenid)
+    if not citizenid or citizenid == '' then return {} end
+    local row = MySQL.single.await("SELECT palette_custom FROM phone_settings WHERE citizenid = ? AND device = 'phone'", { citizenid })
+    if not row then return {} end
+    return decodeCustomPalettes(row.palette_custom)
+end
+
+---Upserts one player-designed palette by id, capped at MAX_CUSTOM_PALETTES per character.
+---@param citizenid string framework per-character id
+---@param palette any client-supplied palette definition
+---@return boolean ok, string|nil reason 'invalid' or 'limit' when refused
+function store.saveCustomPalette(citizenid, palette)
+    if not citizenid or citizenid == '' then return false, 'invalid' end
+    local clean = sanitizeCustomPalette(palette)
+    if not clean then return false, 'invalid' end
+    local list = store.getCustomPalettes(citizenid)
+    local at
+    for i = 1, #list do
+        if list[i].id == clean.id then at = i break end
+    end
+    if not at and #list >= MAX_CUSTOM_PALETTES then return false, 'limit' end
+    list[at or (#list + 1)] = clean
+    MySQL.update.await([[
+        INSERT INTO phone_settings (citizenid, device, palette_custom) VALUES (?, 'phone', ?)
+        ON DUPLICATE KEY UPDATE palette_custom = VALUES(palette_custom)
+    ]], { citizenid, json.encode(list) })
+    return true, nil
+end
+
+---Removes one player-designed palette. Every device row pointing at it falls back to its
+---built-in default in the same statement, so no row is left naming a palette that is gone.
+---@param citizenid string framework per-character id
+---@param id any palette id to remove
+---@return boolean removed
+function store.deleteCustomPalette(citizenid, id)
+    if not citizenid or citizenid == '' or not isCustomPaletteId(id) then return false end
+    local list = store.getCustomPalettes(citizenid)
+    local kept, removed = {}, false
+    for i = 1, #list do
+        if list[i].id == id then removed = true else kept[#kept + 1] = list[i] end
+    end
+    if not removed then return false end
+    MySQL.update.await([[
+        UPDATE phone_settings
+        SET palette_custom = CASE WHEN device = 'phone' THEN ? ELSE palette_custom END,
+            dark_theme     = CASE WHEN dark_theme  = ? THEN 'graphite' ELSE dark_theme  END,
+            light_theme    = CASE WHEN light_theme = ? THEN 'silver'   ELSE light_theme END
+        WHERE citizenid = ?
+    ]], { json.encode(kept), id, id, citizenid })
+    return true
+end
+---Returns true if a player wants app names printed under their home-screen icons. Read-only.
 ---@param citizenid string framework per-character id
 ---@return boolean showAppNames
-function store.getShowAppNames(citizenid)
+function store.getShowAppNames(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return true end
-    local row = MySQL.single.await('SELECT show_app_names FROM phone_settings WHERE citizenid = ?', { citizenid })
-    if row and row.show_app_names ~= nil then
-        return isTruthy(row.show_app_names)
-    end
-    return true
+    local row = MySQL.single.await('SELECT show_app_names FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
+    if not row then return true end
+    return isTruthy(row.show_app_names)
 end
 
 ---Persists a player's show-app-names preference (upsert), coerced to a strict boolean.
 ---@param citizenid string framework per-character id
 ---@param on boolean print app names under the home-screen icons
-function store.setShowAppNames(citizenid, on)
+function store.setShowAppNames(citizenid, on, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, show_app_names) VALUES (?, ?)
+        INSERT INTO phone_settings (citizenid, device, show_app_names) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE show_app_names = VALUES(show_app_names)
-    ]], { citizenid, on == true and 1 or 0 })
+    ]], { citizenid, device, on == true and 1 or 0 })
 end
 
 ---Persists a player's tone selections, leaving any other settings intact; a nil or invalid
@@ -1507,18 +1760,19 @@ end
 ---@param citizenid string framework per-character id
 ---@param ringtone string|nil ringtone slug
 ---@param notificationTone string|nil notification tone slug
-function store.setTones(citizenid, ringtone, notificationTone)
+function store.setTones(citizenid, ringtone, notificationTone, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return end
     local r = sanitizeTone(ringtone)
     local n = sanitizeTone(notificationTone)
     if not r and not n then return end
     MySQL.update.await([[
-        INSERT INTO phone_settings (citizenid, ringtone, notification_tone)
-        VALUES (?, ?, ?)
+        INSERT INTO phone_settings (citizenid, device, ringtone, notification_tone)
+        VALUES (?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
             ringtone          = COALESCE(VALUES(ringtone), ringtone),
             notification_tone = COALESCE(VALUES(notification_tone), notification_tone)
-    ]], { citizenid, r, n })
+    ]], { citizenid, device, r, n })
 end
 
 ---@type integer Cap on saved custom tones per character per kind.
@@ -1603,14 +1857,23 @@ end
 ---separate. Read-only apart from warming the airplane cache.
 ---@param citizenid string framework per-character id
 ---@return table snapshot the settings:get payload shape
-function store.snapshot(citizenid)
+function store.snapshot(citizenid, device)
+    device = device or 'phone'
     if not citizenid or citizenid == '' then return {} end
-    local row = MySQL.single.await('SELECT * FROM phone_settings WHERE citizenid = ?', { citizenid })
+    local row = MySQL.single.await('SELECT * FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
 
-    local airplane = airplaneCache[citizenid]
+    -- Uploaded wallpapers and player-designed icon packs are a library, not this device's look, so
+    -- they live on the phone's row and both devices read the same one. Which wallpaper and which
+    -- pack are ACTIVE stay on the device row above.
+    local shared = row
+    if device ~= 'phone' then
+        shared = MySQL.single.await("SELECT custom_wallpapers, icon_custom, palette_custom FROM phone_settings WHERE citizenid = ? AND device = 'phone'", { citizenid })
+    end
+
+    local airplane = airplaneCache[airplaneKey(citizenid, device)]
     if airplane == nil then
         airplane = row ~= nil and isTruthy(row.airplane_mode) or false
-        airplaneCache[citizenid] = airplane
+        airplaneCache[airplaneKey(citizenid, device)] = airplane
     end
 
     local pin = row and sanitizePin(row.passcode) or nil
@@ -1624,15 +1887,14 @@ function store.snapshot(citizenid)
         hour24 = defaultHour24()
     end
     local dark = row and row.dark_theme
-    if dark ~= 'graphite' and dark ~= 'black' and dark ~= 'warm' then dark = 'graphite' end
+    if type(dark) ~= 'string' or not (DARK_THEMES[dark] or isCustomPaletteId(dark)) then dark = 'graphite' end
+    local light = row and row.light_theme
+    if type(light) ~= 'string' or not (LIGHT_THEMES[light] or isCustomPaletteId(light)) then light = 'silver' end
+    local accent = row and row.accent
+    if not isStorableAccent(accent) then accent = ACCENT_DEFAULT end
     local icons = row and row.icon_theme
     if not isStorableIconTheme(icons) then icons = 'default' end
-    local showAppNames
-    if row and row.show_app_names ~= nil then
-        showAppNames = isTruthy(row.show_app_names)
-    else
-        showAppNames = true
-    end
+    local showAppNames = row == nil or isTruthy(row.show_app_names)
 
     return {
         ringtone         = row and row.ringtone or nil,
@@ -1643,8 +1905,11 @@ function store.snapshot(citizenid)
         setupDone        = row ~= nil and (row.setup_done == true or tonumber(row.setup_done) == 1),
         theme            = (row and row.theme == 'dark') and 'dark' or 'light',
         darkTheme        = dark,
+        lightTheme       = light,
+        accent           = accent,
         iconTheme        = icons,
-        customIconThemes = row and decodeCustomIconThemes(row.icon_custom) or {},
+        customIconThemes = shared and decodeCustomIconThemes(shared.icon_custom) or {},
+        customPalettes   = shared and decodeCustomPalettes(shared.palette_custom) or {},
         showAppNames     = showAppNames,
         lockClock        = row and decodeColumn(row.lock_clock, nil) or nil,
         wallpaper        = (row and row.wallpaper ~= '') and row.wallpaper or nil,
@@ -1652,7 +1917,7 @@ function store.snapshot(citizenid)
         blurLock         = row ~= nil and isTruthy(row.blur_lock),
         blurHome         = row ~= nil and isTruthy(row.blur_home),
         islandPet        = (row and row.island_pet ~= '') and row.island_pet or nil,
-        customWallpapers = row and decodeColumn(row.custom_wallpapers, {}) or {},
+        customWallpapers = shared and decodeColumn(shared.custom_wallpapers, {}) or {},
         chatTextScale    = (row and row.chat_text_scale ~= nil) and tonumber(row.chat_text_scale) or nil,
         phoneScale       = (row and row.phone_scale ~= nil) and tonumber(row.phone_scale) or nil,
         brightness       = (row and row.brightness ~= nil) and tonumber(row.brightness) or nil,

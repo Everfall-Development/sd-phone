@@ -33,7 +33,7 @@ export function DialogShell({ title, message, exiting, forceDark = false, zIndex
             onPointerDown={e => e.stopPropagation()}
         >
             <div
-                className="flex w-[338px] flex-col overflow-hidden rounded-[18px] bg-[#f2f2f2cc] dark:bg-[#252527e6] backdrop-blur-2xl text-center text-black dark:text-white"
+                className="flex w-[338px] flex-col overflow-hidden rounded-[18px] bg-elevated/80 dark:bg-elevated/90 backdrop-blur-2xl text-center text-black dark:text-white"
                 style={{
                     animation: exiting
                         ? 'ios-alert-out 0.18s ease-in forwards'
@@ -42,9 +42,9 @@ export function DialogShell({ title, message, exiting, forceDark = false, zIndex
                 }}
             >
                 <div className="px-5 pb-4 pt-5">
-                    <div className="text-[22px] font-semibold leading-snug">{title}</div>
+                    <div className="text-[22px] font-semibold leading-snug break-words">{title}</div>
                     {message && (
-                        <div className="mt-1.5 text-[16px] leading-snug text-black/80 dark:text-white/85">
+                        <div className="mt-1.5 text-[16px] leading-snug text-black/80 dark:text-white/85 break-words">
                             {message}
                         </div>
                     )}

@@ -74,14 +74,14 @@ export function EmojiPanel({ isDark, onSelect }: Props) {
         if (cur !== activeCat) setActiveCat(cur);
     }
 
-    const fieldBg = isDark ? '#2C2C2E' : '#FFFFFF';
+    const fieldBg = isDark ? 'rgb(var(--elevated))' : '#FFFFFF';
 
     const moodEmoji = hover ?? '😊';
     const moodLabel = hover ? (emojiName(hover) || t('messages.emoji', 'Emoji')) : t('messages.whatsYourMood', "What's Your Mood?");
 
     return (
         <div
-            className="flex flex-col bg-[#F2F2F7] dark:bg-surface border-t border-black/[0.08] dark:border-white/[0.08]"
+            className="flex flex-col bg-surface border-t border-black/[0.08] dark:border-white/[0.08]"
             style={{ height: 380 }}
         >
             <div

@@ -19,7 +19,7 @@ export function GroupCard({ children, className = '', radius = 10, header, foote
     footer?:    string;
 }) {
     const card = (
-        <div className={`overflow-hidden ${RADIUS[radius]} bg-[#e5e5e5] dark:bg-surface ${className}`}>
+        <div className={`overflow-hidden ${RADIUS[radius]} bg-surface ${className}`}>
             {children}
         </div>
     );

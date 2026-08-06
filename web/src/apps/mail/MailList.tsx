@@ -84,7 +84,7 @@ export function MailList({ folder, accountId, accountName, messages, onBack, onO
 
     return (
         <div
-            className="absolute inset-0 z-20 flex flex-col bg-[#d4d4d4] dark:bg-base text-black dark:text-white"
+            className="absolute inset-0 z-20 flex flex-col bg-base text-black dark:text-white"
             style={pageStyle}
         >
             <div className="h-[54px] shrink-0" aria-hidden />
@@ -127,7 +127,7 @@ export function MailList({ folder, accountId, accountName, messages, onBack, onO
                         {t('mail.noMessages', 'No Messages')}
                     </div>
                 ) : (
-                    <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                    <div className="overflow-hidden rounded-[10px] bg-surface">
                         {visible.map((m, i) => (
                             <div key={m.id}>
                                 <MailRow
@@ -152,7 +152,7 @@ export function MailList({ folder, accountId, accountName, messages, onBack, onO
             {(editing || barExiting) && (
                 <div
                     onAnimationEnd={e => { if (e.animationName === 'ios-sheet-down') setBarExiting(false); }}
-                    className="absolute inset-x-0 bottom-0 z-20 flex items-center border-t border-black/10 bg-[#d4d4d4] px-5 pb-10 pt-5 dark:border-white/10 dark:bg-base"
+                    className="absolute inset-x-0 bottom-0 z-20 flex items-center border-t border-black/10 bg-base px-5 pb-10 pt-5 dark:border-white/10"
                     style={{ animation: barExiting
                         ? 'ios-sheet-down 0.26s cubic-bezier(0.32,0,0.68,1) forwards'
                         : 'ios-sheet-up 0.3s cubic-bezier(0.32,0.72,0,1)' }}

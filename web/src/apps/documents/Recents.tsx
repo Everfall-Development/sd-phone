@@ -25,7 +25,7 @@ export function Recents({ list, onOpenDoc, onMoreDoc }: Props) {
     const shown = q ? recents.filter(d => d.name.toLowerCase().includes(q)) : recents;
 
     return (
-        <div className="absolute inset-0 z-10 flex flex-col bg-[#d4d4d4] dark:bg-base text-black dark:text-white">
+        <div className="absolute inset-0 z-10 flex flex-col bg-base text-black dark:text-white">
             <div className="h-[58px] shrink-0" aria-hidden />
 
             <div className="px-4 pt-1">

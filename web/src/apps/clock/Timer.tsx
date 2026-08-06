@@ -104,7 +104,7 @@ export function Timer({ topPad = 0, isDark }: { topPad?: number; isDark: boolean
             </div>
 
             {showRunning && (
-                <div className={`absolute inset-0 z-30 flex flex-col items-center bg-[#d4d4d4] dark:bg-base ${closing ? 'animate-timer-out' : 'animate-timer-in'}`}>
+                <div className={`absolute inset-0 z-30 flex flex-col items-center bg-base ${closing ? 'animate-timer-out' : 'animate-timer-in'}`}>
                     <div style={{ height: topPad }} className="shrink-0" />
                     <div className="relative mt-6" style={{ width: 260, height: 260 }}>
                         <svg width={260} height={260} viewBox="0 0 260 260" className="-rotate-90">

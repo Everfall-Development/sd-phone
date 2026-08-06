@@ -13,14 +13,16 @@ import { CHERRY, type Gender, type InterestedIn, type MyProfile } from './data';
 
 const MAX_PHOTOS = 6;
 
-export function EditProfile({ profile, onChange, onSignOut, onSwitchAccount, onDeleteAccount }: {
+export function EditProfile({ profile, onChange, onSignOut, onSignOutAll, onSwitchAccount, onDeleteAccount, switchTo }: {
     onSwitchAccount?: () => void;
     profile:         MyProfile;
     onChange:        (p: MyProfile) => void;
     onSignOut:       () => void;
+    switchTo?:       string | null;
+    onSignOutAll:    () => void;
     onDeleteAccount: () => void;
 }) {
-    const [confirming, setConfirming] = useState<null | 'logout' | 'delete'>(null);
+    const [confirming, setConfirming] = useState<null | 'logout' | 'logoutAll' | 'delete'>(null);
     const [picking,    setPicking]    = useState(false);
     const [viewBlocked, setViewBlocked] = useState(false);
     const [pwOpen,      setPwOpen]      = useState(false);
@@ -191,6 +193,14 @@ export function EditProfile({ profile, onChange, onSignOut, onSwitchAccount, onD
 
                 <button
                     type="button"
+                    onClick={() => setConfirming('logoutAll')}
+                    className="mt-3 w-full rounded-[12px] bg-black/[0.05] py-4 text-[17px] font-semibold text-black active:opacity-80"
+                >
+                    {t('accounts.signOutAll', 'Log Out of All Accounts')}
+                </button>
+
+                <button
+                    type="button"
                     onClick={() => setConfirming('delete')}
                     className="mt-3 w-full rounded-[12px] py-4 text-[17px] font-semibold text-white active:opacity-80"
                     style={{ background: '#FF3B30' }}
@@ -216,11 +226,24 @@ export function EditProfile({ profile, onChange, onSignOut, onSwitchAccount, onD
             {confirming === 'logout' && (
                 <AlertDialog
                     title={t('cherry.logOutTitle', 'Log Out?')}
-                    message={t('cherry.logOutMessage', "You'll need to sign in again to use Cherry.")}
+                    message={switchTo
+                        ? t('accounts.signOutSwitchMessage', "You'll be switched to {name}.", { name: switchTo })
+                        : t('cherry.logOutMessage', "You'll need to sign in again to use Cherry.")}
                     cancelLabel={t('cherry.cancel', 'Cancel')}
                     confirmLabel={t('cherry.logOutConfirm', 'Log Out')}
                     onCancel={() => setConfirming(null)}
                     onConfirm={() => { setConfirming(null); onSignOut(); }}
+                />
+            )}
+            {confirming === 'logoutAll' && (
+                <AlertDialog
+                    title={t('accounts.signOutAllTitle', 'Log out of all accounts?')}
+                    message={t('accounts.signOutAllMessage', 'Every account you have in this app will be signed out. Saved passwords are kept.')}
+                    cancelLabel={t('cherry.cancel', 'Cancel')}
+                    confirmLabel={t('accounts.signOutAllConfirm', 'Log Out')}
+                    destructive
+                    onCancel={() => setConfirming(null)}
+                    onConfirm={() => { setConfirming(null); onSignOutAll(); }}
                 />
             )}
             {confirming === 'delete' && (

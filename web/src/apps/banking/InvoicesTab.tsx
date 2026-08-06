@@ -109,7 +109,7 @@ export function InvoicesTab({ received, receivedLoading, onRefetchReceived, onPa
                     />
                     )
                 ) : (
-                    <div className="overflow-hidden rounded-[16px] bg-[#e5e5e5] dark:bg-surface">
+                    <div className="overflow-hidden rounded-[16px] bg-surface">
                         {sentList.map((inv, i) => {
                             const card = contactByNumber.get(digits(inv.toNumber));
                             return (

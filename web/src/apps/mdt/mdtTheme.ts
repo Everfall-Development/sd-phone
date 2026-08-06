@@ -7,7 +7,7 @@ export const MDT_RAIL_W_COLLAPSED = 68;
 
 export const MDT_ACCENT = '#1d4ed8';
 
-export const mdtBackdrop = 'bg-[#d4d4d4] dark:bg-base';
+export const mdtBackdrop = 'bg-base';
 
 export const mdtCardSurface = 'rounded-[16px] bg-[#e5e5e5] shadow-[0_1px_3px_rgba(0,0,0,0.06)] ring-1 ring-black/[0.04] dark:bg-surface dark:shadow-none dark:ring-white/[0.06]';
 

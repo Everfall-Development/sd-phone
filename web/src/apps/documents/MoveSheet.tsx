@@ -17,7 +17,7 @@ export function MoveSheet({ folders, currentFolderId, onSelect, onClose }: Props
     const ordered = orderedFolders(folders);
 
     return (
-        <Sheet onClose={onClose} fit="content" title={t('documents.moveTo', 'Move to')} className="bg-[#ececec] dark:bg-surface">
+        <Sheet onClose={onClose} fit="content" title={t('documents.moveTo', 'Move to')} className="bg-surface">
             {({ close }) => {
                 const choose = (id: string | null) => { onSelect(id); close(); };
                 const Row = ({ id, name, depth, icon }: { id: string | null; name: string; depth: number; icon: ReactNode }) => (

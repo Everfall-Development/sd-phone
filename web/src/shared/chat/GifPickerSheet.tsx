@@ -68,7 +68,7 @@ export function GifPickerSheet({ onSelect, onClose, forceDark = false }: {
     const col1 = gifs.filter((_, i) => i % 2 !== 0);
 
     return (
-        <Sheet onClose={onClose} forceDark={forceDark} className="font-sf bg-[#f2f2f2] dark:bg-surface">
+        <Sheet onClose={onClose} forceDark={forceDark} className="font-sf bg-surface">
             {() => (
                 <>
                     <div className="shrink-0 px-3 pb-2 pt-5">

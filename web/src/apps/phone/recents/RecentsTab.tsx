@@ -64,7 +64,7 @@ export function RecentsTab({ recents, onAddContact, onRequestCall, onUpdateConta
                                 title={filter === 'missed' ? t('phone.noMissedCalls','No Missed Calls') : t('phone.noRecentCalls','No Recent Calls')}
                                 subtitle={t('phone.recentsSub','Calls you make and receive will show up here.')} />
                         ) : (
-                            <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                            <div className="overflow-hidden rounded-[10px] bg-surface">
                                 {list.map((entry, i) => (
                                     <div key={entry.id}>
                                         <CallRow entry={entry} onBody={requestCall} onInfo={openProfile} />

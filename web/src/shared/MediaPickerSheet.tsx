@@ -82,7 +82,7 @@ export function MediaPickerSheet({ onSelect, onSelectMany, multiple = false, max
     }
 
     return (
-        <Sheet onClose={onClose} grabber={false} forceDark={forceDark} className="font-sf bg-[#d4d4d4] dark:bg-base">
+        <Sheet onClose={onClose} grabber={false} forceDark={forceDark} className="font-sf bg-base">
             {({ close }) => (
                 <>
                     <div className="flex h-12 shrink-0 items-center px-4 pt-1">

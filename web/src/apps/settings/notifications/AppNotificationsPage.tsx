@@ -78,7 +78,7 @@ export function AppNotificationsPage({
                         </span>
                     </div>
 
-                    <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                    <div className="overflow-hidden rounded-[10px] bg-surface">
                         <ToggleRow
                             label={t('settings.allowNotifications', 'Allow Notifications')}
                             on={pref.enabled}
@@ -87,7 +87,7 @@ export function AppNotificationsPage({
                     </div>
 
                     {pref.enabled && (
-                        <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                        <div className="overflow-hidden rounded-[10px] bg-surface">
                             <ToggleRow
                                 label={t('settings.sounds', 'Sounds')}
                                 on={pref.sounds}

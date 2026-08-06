@@ -43,7 +43,7 @@ export function AccountSwitcher({ app, forceDark = false, onClose, onSwitched, o
             fit="content"
             title={t('accounts.switchAccount', 'Switch account')}
             forceDark={forceDark}
-            className="bg-[#ececec] dark:bg-surface"
+            className="bg-surface"
         >
             {() => (
             <div className="flex flex-col gap-1 px-2 pb-3">

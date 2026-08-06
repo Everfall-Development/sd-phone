@@ -108,7 +108,7 @@ export function TextEditor({ doc, backLabel, onBack, onSave, onSigned, animateIn
 
     return (
         <div
-            className="absolute inset-0 z-30 flex flex-col bg-[#d4d4d4] dark:bg-base text-black dark:text-white"
+            className="absolute inset-0 z-30 flex flex-col bg-base text-black dark:text-white"
             style={pageStyle}
         >
             <div className="h-[58px] shrink-0" aria-hidden />
@@ -525,7 +525,7 @@ export function SignSheet({ docId, docName, onClose, onSigned, signAction }: {
     }
 
     return (
-        <Sheet onClose={onClose} fit="content" title={t('documents.signDocument', 'Sign Document')} className="bg-[#ececec] dark:bg-surface">
+        <Sheet onClose={onClose} fit="content" title={t('documents.signDocument', 'Sign Document')} className="bg-surface">
             {() => (
                 <div className="flex flex-col gap-3 px-5 pb-8 pt-1">
                     {mode !== 'saved' && !loading && (
@@ -652,7 +652,7 @@ function ModeTab({ label, active, onPress }: { label: string; active: boolean; o
             type="button"
             onClick={onPress}
             className={`flex-1 rounded-[8px] py-1.5 text-[14px] font-semibold transition-colors ${
-                active ? 'bg-white text-black shadow-sm dark:bg-elevated dark:text-white' : 'text-ios-gray'
+                active ? 'bg-elevated text-black shadow-sm dark:bg-elevated dark:text-white' : 'text-ios-gray'
             }`}
         >
             {label}

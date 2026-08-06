@@ -39,7 +39,7 @@ export function MailDetail({ msg, backLabel, prevId, nextId, onBack, onOpenSibli
 
     return (
         <div
-            className="absolute inset-0 z-30 flex flex-col bg-[#d4d4d4] dark:bg-base text-black dark:text-white"
+            className="absolute inset-0 z-30 flex flex-col bg-base text-black dark:text-white"
             style={pageStyle}
         >
             <div className="h-[54px] shrink-0" aria-hidden />
@@ -147,7 +147,7 @@ export function MailDetail({ msg, backLabel, prevId, nextId, onBack, onOpenSibli
                 )}
             </div>
 
-            <div className={`absolute inset-x-0 bottom-0 flex items-center justify-around border-t border-black/10 px-4 pb-9 pt-2.5 dark:border-white/10 ${animating ? 'bg-[#f7f7f7] dark:bg-base' : 'bg-[#f7f7f7]/95 backdrop-blur-xl dark:bg-base/80'}`}>
+            <div className={`absolute inset-x-0 bottom-0 flex items-center justify-around border-t border-black/10 px-4 pb-9 pt-2.5 dark:border-white/10 ${animating ? 'bg-base' : 'bg-elevated/95 backdrop-blur-xl dark:bg-base/80'}`}>
                 <ActionBtn
                     label={t('mail.flag', 'Flag')}
                     icon={Flag}

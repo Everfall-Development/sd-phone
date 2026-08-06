@@ -18,6 +18,8 @@ local COLUMNS = {
     phone_settings = {
         theme             = 'theme VARCHAR(8) NULL',
         dark_theme        = 'dark_theme VARCHAR(16) NULL',
+        light_theme       = 'light_theme VARCHAR(16) NULL',
+        accent            = 'accent VARCHAR(16) NULL',
         reopen_app        = 'reopen_app TINYINT(1) NULL',
         setup_done        = 'setup_done TINYINT(1) NULL',
         custom_wallpapers = 'custom_wallpapers TEXT NULL',
@@ -29,8 +31,10 @@ local COLUMNS = {
         brightness        = 'brightness TINYINT UNSIGNED NULL',
         icon_theme        = 'icon_theme VARCHAR(16) NULL',
         icon_custom       = 'icon_custom LONGTEXT NULL',
-        show_app_names    = 'show_app_names TINYINT(1) NULL',
+        palette_custom    = 'palette_custom LONGTEXT NULL',
+        show_app_names    = 'show_app_names TINYINT(1) NOT NULL DEFAULT 1',
         island_pet        = 'island_pet VARCHAR(16) NULL',
+        device            = "device VARCHAR(16) NOT NULL DEFAULT 'phone'",
     },
 
     phone_documents = {

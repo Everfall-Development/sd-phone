@@ -7,8 +7,9 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { takeMailTarget } from '@/shell/deeplink';
 import { AppAuth } from '@/shared/AppAuth';
 import { ChangePasswordPage } from '@/shared/ChangePasswordPage';
-import { MAIL_DOMAIN, accountsConfirmReset, accountsMyNumber, accountsRequestReset, accountsSavePassword, accountsSavedLogin, accountsSuggestCode } from '@/core/accountsApi';
-import { isAuthed, signIn as unlockMail, signOut as lockMail } from '@/stores/authStore';
+import { MAIL_DOMAIN, accountsConfirmReset, accountsMyNumber, accountsRequestReset, accountsSavePassword, accountsSavedLogin, accountsSavedLogins, accountsSuggestCode } from '@/core/accountsApi';
+import { isAuthed, signIn as unlockMail } from '@/stores/authStore';
+import { signOutAllForApp } from '@/shared/signOutAll';
 import { Compose } from './Compose';
 import { AlertDialog } from '@/ui/AlertDialog';
 import {
@@ -34,6 +35,7 @@ export function Mail({ onClose }: { onClose: () => void }) {
     const [justAuthed,      setJustAuthed]      = useState(false);
     const [myNumber,        setMyNumber]        = useState<string | null>(null);
     const [savedLogin,      setSavedLogin]      = useState<{ username: string; password: string } | null>(null);
+    const [savedMailLogins, setSavedMailLogins] = useState<{ username: string; password: string }[]>([]);
     const [accounts,        setAccounts]        = useState<MailAccount[]>([]);
     const [messages,        setMessages]        = useState<MailMessage[]>([]);
     const [folderOrder,     setFolderOrder]     = useState<Folder[]>(() => loadFolderOrder());
@@ -72,6 +74,7 @@ export function Mail({ onClose }: { onClose: () => void }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     useEffect(() => { void accountsSavedLogin('mail').then(setSavedLogin); }, []);
+    useEffect(() => { void accountsSavedLogins('mail').then(setSavedMailLogins); }, [accounts.length]);
 
     useEffect(() => {
         if (accounts.length === 0) {
@@ -231,6 +234,15 @@ export function Mail({ onClose }: { onClose: () => void }) {
         await signOut(target.email);
     }
 
+    async function handleSignOutAll() {
+        setAccounts([]);
+        setMessages([]);
+        setNav({ stage: 'mailboxes' });
+        setComposeFor(null);
+        await signOutAllForApp('mail');
+        setLocked(true);
+    }
+
     async function handleDeleteAccount(id: string) {
         const target = accounts.find(a => a.id === id);
         if (!target) return;
@@ -278,14 +290,25 @@ export function Mail({ onClose }: { onClose: () => void }) {
         ?? (nav.stage === 'list' || nav.stage === 'detail' ? nav.accountId : undefined)
         ?? accounts[0]?.id;
 
+    const signedInEmails = new Set(accounts.map(a => a.email.toLowerCase()));
+    const offerableMailLogins = savedMailLogins.filter(e => !signedInEmails.has(e.username.toLowerCase()));
+
     const authScreen = (
             <AppAuth
+                appId="mail"
                 appName={t('mail.appName', 'Mail')}
                 tagline={t('mail.tagline', 'All your email in one place.')}
                 icon="mail"
                 theme={{ accent: '#0A84FF', welcomeBg: '#f2f2f7', welcomeText: 'dark' }}
                 myNumber={myNumber}
                 savedLogin={adding ? null : savedLogin}
+                savedAccounts={offerableMailLogins.map(e => ({ username: e.username, name: e.username.split('@')[0] }))}
+                onPickAccount={async (username) => {
+                    const entry = offerableMailLogins.find(e => e.username === username);
+                    if (!entry) return { ok: false, message: t('mail.errSignIn', 'Could not sign in') };
+                    const r = await mailSignIn({ email: entry.username, password: entry.password });
+                    return typeof r === 'string' ? { ok: false, message: r } : { ok: true };
+                }}
                 onDismiss={adding ? () => setAdding(false) : undefined}
                 modal={adding}
                 fields={[
@@ -325,7 +348,7 @@ export function Mail({ onClose }: { onClose: () => void }) {
     if (locked || (authChecked && accounts.length === 0)) return authScreen;
 
     return (
-        <div className={`absolute inset-0 z-10 overflow-hidden bg-[#d4d4d4] dark:bg-base ${justAuthed ? 'animate-swipe-in-left' : ''}`}>
+        <div className={`absolute inset-0 z-10 overflow-hidden bg-base ${justAuthed ? 'animate-swipe-in-left' : ''}`}>
             <MailboxList
                 accounts={accounts}
                 activeAccount={activeAccount}
@@ -344,8 +367,8 @@ export function Mail({ onClose }: { onClose: () => void }) {
                 onCompose={() => setComposeFor({ accountId: activeAccount?.id })}
                 onAddAccount={() => setAdding(true)}
                 onSignOut={handleSignOut}
+                onSignOutAll={() => { void handleSignOutAll(); }}
                 onReorderFolders={handleReorderFolders}
-                onLockApp={() => { lockMail('mail'); setLocked(true); }}
                 onDeleteAccount={(id) => void handleDeleteAccount(id)}
                 onChangePassword={() => setPwOpen(true)}
                 onOpenSavedEmails={() => setSavedPageOpen(true)}

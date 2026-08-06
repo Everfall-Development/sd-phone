@@ -26,7 +26,7 @@ export function AlbumPickerSheet({ albums, count, onPick, onNewAlbum, onClose }:
     const noun = count === 1 ? t('photos.photoSingular', 'Photo') : t('photos.photoPlural', 'Photos');
 
     return (
-        <Sheet onClose={handleClose} fit="top" top={76} grabber={false} className="bg-[#d4d4d4] dark:bg-base">
+        <Sheet onClose={handleClose} fit="top" top={76} grabber={false} className="bg-base">
             {({ close }) => {
                 function runThenClose(action: () => void) { pending.current = action; close(); }
                 return (

@@ -55,7 +55,7 @@ export function AddContact({ onCancel, onSave, initialPhone = '', embedded = fal
 
     return (
         <div
-            className="absolute inset-0 flex flex-col bg-[#d4d4d4] dark:bg-base"
+            className="absolute inset-0 flex flex-col bg-base"
             style={embedded ? undefined : {
                 transform:  shown ? 'translateY(0)' : 'translateY(100%)',
                 transition: 'transform 0.34s cubic-bezier(0.32,0.72,0,1)',
@@ -78,13 +78,13 @@ export function AddContact({ onCancel, onSave, initialPhone = '', embedded = fal
                     </button>
                 </div>
 
-                <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                <div className="overflow-hidden rounded-[10px] bg-surface">
                     <Field placeholder={t('phone.firstName','First Name')} value={first} onChange={setFirst} />
                     <Divider />
                     <Field placeholder={t('phone.lastName','Last Name')} value={last} onChange={setLast} />
                 </div>
 
-                <div className="mt-5 overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                <div className="mt-5 overflow-hidden rounded-[10px] bg-surface">
                     <Field placeholder={t('phone.phoneNumber','Phone Number')} value={phone} onChange={v => { setPhone(v); setError(null); }} inputMode="tel" />
                 </div>
 

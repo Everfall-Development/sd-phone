@@ -93,7 +93,7 @@ export function Compose({ accounts, defaultAccountId, initialTo = '', initialSub
             />
 
             <div
-                className="absolute inset-x-0 bottom-0 flex flex-col overflow-hidden rounded-t-[14px] bg-[#d4d4d4] text-black dark:bg-base dark:text-white"
+                className="absolute inset-x-0 bottom-0 flex flex-col overflow-hidden rounded-t-[14px] bg-base text-black dark:text-white"
                 style={{
                     top: 50,
                     animation: exiting
@@ -139,7 +139,7 @@ export function Compose({ accounts, defaultAccountId, initialTo = '', initialSub
                 </div>
 
                 <div className="flex min-h-0 flex-1 flex-col px-4 pb-6 pt-1">
-                    <div className="shrink-0 overflow-hidden rounded-[12px] bg-[#e5e5e5] dark:bg-surface">
+                    <div className="shrink-0 overflow-hidden rounded-[12px] bg-surface">
                         <Row label={t('mail.fromLabel', 'From:')}>
                             <button
                                 type="button"
@@ -203,7 +203,7 @@ export function Compose({ accounts, defaultAccountId, initialTo = '', initialSub
                     </div>
 
                     {pickerOpen && (
-                        <div className="mt-2 shrink-0 overflow-hidden rounded-[12px] bg-[#e5e5e5] dark:bg-surface">
+                        <div className="mt-2 shrink-0 overflow-hidden rounded-[12px] bg-surface">
                             {accounts.map((a, i) => (
                                 <div key={a.id}>
                                     <button
@@ -233,7 +233,7 @@ export function Compose({ accounts, defaultAccountId, initialTo = '', initialSub
                         onRemove={i => setAttachments(prev => prev.filter((_, j) => j !== i))}
                     />
 
-                    <div className="mt-3 flex min-h-0 flex-1 overflow-hidden rounded-[12px] bg-[#e5e5e5] dark:bg-surface">
+                    <div className="mt-3 flex min-h-0 flex-1 overflow-hidden rounded-[12px] bg-surface">
                         <textarea
                             value={body}
                             onChange={e => setBody(e.target.value)}

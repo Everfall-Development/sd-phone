@@ -34,9 +34,21 @@ export async function accountsLogin(app: string, values: Record<string, string>)
     return res.success ? { ok: true } : { ok: false, message: res.message };
 }
 
-export async function accountsLogout(app: string): Promise<void> {
-    if (!isFiveM) { devSessions[app] = null; return; }
-    await fetchNui('sd-phone:accounts:logout', { app });
+export async function accountsLogout(app: string): Promise<{ switchedTo: string | null }> {
+    if (!isFiveM) { devSessions[app] = null; return { switchedTo: null }; }
+    const d = await apiData<{ switchedTo?: string | null }>('sd-phone:accounts:logout', { app });
+    return { switchedTo: d?.switchedTo ?? null };
+}
+
+export const ACCOUNT_APPS = ['photogram', 'cherry', 'vibez', 'ryde', 'birdy', 'mail'] as const;
+
+export async function accountsSignOutAll(app?: string): Promise<{ signedOut: number }> {
+    if (!isFiveM) {
+        for (const key of app ? [app] : ACCOUNT_APPS) devSessions[key] = null;
+        return { signedOut: 0 };
+    }
+    const d = await apiData<{ signedOut?: number }>('sd-phone:accounts:signOutAll', app ? { app } : {});
+    return { signedOut: d?.signedOut ?? 0 };
 }
 
 export type ResetChannel = 'email' | 'sms';
@@ -108,23 +120,40 @@ export async function accountsDeletePassword(id: number): Promise<void> {
     await fetchNui('sd-phone:accounts:deletePassword', { id });
 }
 
-export async function accountsForgetPassword(app: string): Promise<void> {
-    const entries = await accountsListPasswords();
-    for (const e of entries) {
-        if (e.app === app) await accountsDeletePassword(e.id);
-    }
-}
-
 export async function accountsSavedLogin(app: string): Promise<{ username: string; password: string } | null> {
     const entries = await accountsListPasswords();
     const e = entries.find(x => x.app === app);
     return e ? { username: e.username, password: e.password } : null;
 }
 
+export interface AccountCapacity {
+    limit:     number;
+    count:     number;
+    canCreate: boolean;
+    message?:  string;
+}
+
+export async function accountsCapacity(app: string): Promise<AccountCapacity | null> {
+    if (!isFiveM) return { limit: 3, count: 0, canCreate: true };
+    const d = await apiData<AccountCapacity>('sd-phone:accounts:capacity', { app });
+    return d ?? null;
+}
+
+export async function accountsSavedLogins(app: string): Promise<{ username: string; password: string }[]> {
+    const entries = await accountsListPasswords();
+    return entries.filter(x => x.app === app).map(e => ({ username: e.username, password: e.password }));
+}
+
 export interface SwitchableAccount {
     username: string;
     name?:    string;
     email?:   string;
+}
+
+export async function accountsSignInOptions(app: string): Promise<SwitchableAccount[]> {
+    if (!isFiveM) return DEV_VAULT.filter(e => e.app === app).map(e => ({ username: e.username }));
+    const d = await apiData<{ accounts?: SwitchableAccount[] }>('sd-phone:accounts:signInOptions', { app });
+    return d?.accounts ?? [];
 }
 
 export async function accountsSwitchable(app: string): Promise<{ accounts: SwitchableAccount[]; active: string | null }> {
@@ -167,14 +196,3 @@ export async function accountsMyEmail(): Promise<string[]> {
     return (await apiData<{ emails?: string[] }>('sd-phone:accounts:myEmail'))?.emails ?? [];
 }
 
-/** Leaves the current account, landing on another saved one when there is a usable one. */
-export async function accountsSignOut(app: string): Promise<{ switchedTo: string | null }> {
-    if (!isFiveM) {
-        const active = devSessions[app]?.username ?? null;
-        const next = DEV_VAULT.find(e => e.app === app && e.username !== active);
-        devSessions[app] = next ? { username: next.username, name: next.username } : null;
-        return { switchedTo: next?.username ?? null };
-    }
-    const d = await apiData<{ switchedTo?: string | null }>('sd-phone:accounts:signOut', { app });
-    return { switchedTo: d?.switchedTo ?? null };
-}

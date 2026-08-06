@@ -53,7 +53,7 @@ export function ReceivedInvoices({ invoices, loading, onRefetch, onPaid, contact
 
     return (
         <>
-            <div className="overflow-hidden rounded-[16px] bg-[#e5e5e5] dark:bg-surface">
+            <div className="overflow-hidden rounded-[16px] bg-surface">
                 {invoices.map((inv, i) => (
                     <div key={inv.id}>
                         {i > 0 && <div className="pointer-events-none bg-black/10 dark:bg-white/10" style={{ height: '0.5px' }} />}

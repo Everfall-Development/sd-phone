@@ -26,6 +26,10 @@ local CLIPS = {
         onFoot = { dict = 'cellphone@',          anim = 'cellphone_text_read_base', blendIn = 8.0,    blendOut = -8.0,    flags = READ_FLAGS },
         inCar  = { dict = 'cellphone@in_car@ds', anim = 'cellphone_text_read_base', blendIn = 8.0,    blendOut = -8.0,    flags = READ_FLAGS },
     },
+    typing = {
+        onFoot = { dict = 'amb@code_human_wander_texting@male@base',          anim = 'static', blendIn = 8.0,    blendOut = -8.0,    flags = READ_FLAGS },
+        inCar  = { dict = 'cellphone@in_car@ds', anim = 'cellphone_text_in', blendIn = 8.0,    blendOut = -8.0,    flags = READ_FLAGS },
+    },
     camera = {
         onFoot = { dict = 'cellphone@self',      anim = 'selfie',                   blendIn = 8.0,    blendOut = -8.0,    flags = FRAME_FLAGS },
         inCar  = { dict = 'cellphone@self',      anim = 'selfie',                   blendIn = 8.0,    blendOut = -8.0,    flags = FRAME_FLAGS },
@@ -43,6 +47,13 @@ if config.Phone.AnimDict and config.Phone.AnimName then
     }
 end
 
+if config.Phone.TypingAnimDict and config.Phone.TypingAnimName then
+    CLIPS.typing.onFoot = {
+        dict = config.Phone.TypingAnimDict, anim = config.Phone.TypingAnimName,
+        blendIn = 8.0, blendOut = -8.0, flags = READ_FLAGS,
+    }
+end
+
 ---@type boolean True while the phone NUI is open.
 local phoneOpen = false
 ---@type boolean True while the lockscreen torch is lit.
@@ -55,6 +66,8 @@ local landscape = false
 local color = config.Phone.DefaultColor or 'black'
 ---@type integer|nil Handle of the attached phone prop, nil while stowed.
 local prop
+---@type boolean True while a text field in the phone has focus
+local typing = false
 
 ---Whether our pose applies: the phone is out (or the torch is lit), and the native cell cam is not
 ---the one framing. That native animates its own pose and spawns its own phone, so ours stands down
@@ -76,6 +89,8 @@ local function currentClip()
     local action = 'default'
     if cameraOn and phonecam.active() then
         action = landscape and 'landscape' or 'camera'
+    elseif typing then
+        action = "typing"
     end
     return CLIPS[action][IsPedInAnyVehicle(PlayerPedId(), true) and 'inCar' or 'onFoot']
 end
@@ -160,12 +175,14 @@ function pose.stop()
 end
 
 ---Mirrors the phone's state, then starts or stops the pose to match it.
----@param state { open: boolean, torch: boolean, camera: boolean, color: string }
+---@param state { open: boolean, torch: boolean, camera: boolean, color: string, typing: boolean }
 function pose.refresh(state)
     phoneOpen = state.open and true or false
     torchOn   = state.torch and true or false
     cameraOn  = state.camera and true or false
     color     = state.color or color
+    if state.typing ~= nil then typing = state.typing and true or false end
+    if not phoneOpen then typing = false end
     if pose.shouldHold() then play() else pose.stop() end
 end
 
@@ -184,6 +201,14 @@ function pose.setLandscape(wide)
     if landscape == wide then return end
     landscape = wide
     pose.reweld()
+    if pose.shouldHold() then play() end
+end
+
+---@param on any truthy while typing
+function pose.setTyping(on)
+    on = on and true or false
+    if typing == on then return end
+    typing = on
     if pose.shouldHold() then play() end
 end
 

@@ -16,7 +16,7 @@ export function PushLayer({
     pageStyle,
     className = '',
     innerClassName = '',
-    bg = 'bg-[#d4d4d4] dark:bg-base',
+    bg = 'bg-base',
     sub,
     children,
 }: PushLayerProps) {

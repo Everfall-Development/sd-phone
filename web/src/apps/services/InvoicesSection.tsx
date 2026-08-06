@@ -15,7 +15,7 @@ export function InvoicesSection() {
     return (
         <>
             <SectionHeader>{t('services.invoices', 'Invoices')}</SectionHeader>
-            <div className="overflow-hidden rounded-[12px] bg-[#e5e5e5] dark:bg-surface">
+            <div className="overflow-hidden rounded-[12px] bg-surface">
                 <button
                     type="button"
                     onClick={() => setComposing(true)}

@@ -9,11 +9,13 @@ import { AlertDialog } from '@/ui/AlertDialog';
 import { ListGroup } from '@/ui/ListGroup';
 import { t } from '@/i18n';
 import {
-    MAIL_DOMAIN, accountsConfirmReset, accountsForgetPassword, accountsLogin, accountsLogout,
+    MAIL_DOMAIN, accountsConfirmReset, accountsLogin, accountsLogout,
     accountsMe, accountsMyEmail, accountsMyNumber, accountsRegister, accountsRequestReset,
-    accountsSavePassword, accountsSavedLogin, accountsSignOut, accountsSuggestCode, accountsSwitch,
-    accountsSwitchable, type SwitchableAccount,
+    accountsSavePassword, accountsSavedLogin, accountsSignInOptions, accountsSuggestCode, accountsSwitch,
+    type SwitchableAccount,
 } from '@/core/accountsApi';
+import { signOutAllForApp } from '@/shared/signOutAll';
+import { logOutOrSwitch, switchTargetLabel } from '@/shared/logOutOrSwitch';
 import { driverStats, useRyde } from '../store';
 import { money } from '../data';
 import { rydeDeleteAccount } from '../rydeApi';
@@ -27,6 +29,7 @@ export function Account({ onClose }: { onClose: () => void }) {
     const [savedAccounts, setSavedAccounts] = useState<SwitchableAccount[]>([]);
     const [savedLogin,  setSavedLogin]  = useState<{ username: string; password: string } | null>(null);
     const [confirmSignOut, setConfirmSignOut] = useState(false);
+    const [confirmSignOutAll, setConfirmSignOutAll] = useState(false);
     const [switching,      setSwitching]      = useState(false);
     const [adding,         setAdding]         = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
@@ -34,7 +37,7 @@ export function Account({ onClose }: { onClose: () => void }) {
 
     const refreshAccounts = useCallback(() => {
         void accountsSavedLogin('ryde').then(setSavedLogin);
-        void accountsSwitchable('ryde').then(d => setSavedAccounts(d.accounts.filter(a => a.username !== d.active)));
+        void accountsSignInOptions('ryde').then(setSavedAccounts);
     }, []);
 
     // Ryde keeps rides and the driver profile locally and only syncs them on mount, so without
@@ -62,6 +65,7 @@ export function Account({ onClose }: { onClose: () => void }) {
 
     const authScreen = (
             <AppAuth
+                appId="ryde"
                 appName="Ryde"
                 tagline={t('ryde.tagline', 'Your ride, your schedule.')}
                 icon="ryde"
@@ -100,31 +104,35 @@ export function Account({ onClose }: { onClose: () => void }) {
     if (!authed) return authScreen;
 
     async function signOut() {
-        const res = await accountsSignOut('ryde');
+        const switched = await logOutOrSwitch('ryde');
         setConfirmSignOut(false);
-        if (res.switchedTo) {
-            afterAccountChange();
-        } else {
-            g.wipeAccount();
-            setAuth(false, null);
-            refreshAccounts();
-        }
+        if (switched) { afterAccountChange(); return; }
+        g.wipeAccount();
+        setAuth(false, null);
+        refreshAccounts();
+    }
+
+    async function signOutAll() {
+        await signOutAllForApp('ryde');
+        setConfirmSignOutAll(false);
+        g.wipeAccount();
+        setAuth(false, null);
+        refreshAccounts();
     }
 
     async function deleteAccount() {
         await rydeDeleteAccount();
-        await accountsForgetPassword('ryde');
         await accountsLogout('ryde');
         g.wipeAccount();
         setConfirmDelete(false);
         setAuth(false, null);
-        void accountsSavedLogin('ryde').then(setSavedLogin);
+        refreshAccounts();
     }
 
     const displayName = me?.name || me?.username || t('ryde.you', 'You');
 
     return (
-        <div className="absolute inset-0 flex flex-col bg-[#d4d4d4] font-sf dark:bg-base">
+        <div className="absolute inset-0 flex flex-col bg-base font-sf">
             <div className="flex shrink-0 items-center justify-between px-5 pb-2" style={{ paddingTop: 'calc(var(--safe-top) + 10px)' }}>
                 <h1 className="text-[34px] font-bold tracking-tight text-black dark:text-white">{t('ryde.account', 'Account')}</h1>
                 <button
@@ -138,7 +146,7 @@ export function Account({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="no-scrollbar flex-1 overflow-y-auto pb-10">
-                <div className="mx-4 mt-1 flex items-center gap-4 rounded-[12px] bg-[#e5e5e5] p-4 dark:bg-surface">
+                <div className="mx-4 mt-1 flex items-center gap-4 rounded-[12px] bg-surface p-4">
                     <InitialsAvatar name={displayName} color="#111" size={64} />
                     <div className="min-w-0 flex-1">
                         <p className="truncate text-[23px] font-bold tracking-tight text-black dark:text-white">{displayName}</p>
@@ -164,7 +172,7 @@ export function Account({ onClose }: { onClose: () => void }) {
                         onClick={() => setPwOpen(true)}
                         className="relative flex w-full items-center gap-3.5 px-4 py-2.5 text-left active:bg-black/5 dark:active:bg-white/5"
                     >
-                        <div className="flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-[9px] shadow-sm" style={{ background: '#0A84FF' }}>
+                        <div className="flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-[9px] shadow-sm" style={{ background: 'rgb(var(--ios-blue))' }}>
                             <KeyRound className="h-[21px] w-[21px] text-white" strokeWidth={2.2} />
                         </div>
                         <span className="flex-1 text-[18px] font-medium text-black dark:text-white">{t('ryde.changePassword', 'Change password')}</span>
@@ -175,7 +183,7 @@ export function Account({ onClose }: { onClose: () => void }) {
                         onClick={() => setSwitching(true)}
                         className="relative flex w-full items-center gap-3.5 px-4 py-2.5 text-left active:bg-black/5 dark:active:bg-white/5"
                     >
-                        <div className="flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-[9px] shadow-sm" style={{ background: '#0A84FF' }}>
+                        <div className="flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-[9px] shadow-sm" style={{ background: 'rgb(var(--ios-blue))' }}>
                             <Users className="h-[22px] w-[22px] text-white" strokeWidth={2.2} />
                         </div>
                         <span className="flex-1 text-[18px] font-medium text-black dark:text-white">{t('accounts.switchAccount', 'Switch account')}</span>
@@ -190,6 +198,16 @@ export function Account({ onClose }: { onClose: () => void }) {
                             <LogOut className="h-[22px] w-[22px] text-white" strokeWidth={2.2} />
                         </div>
                         <span className="flex-1 text-[18px] font-medium text-ios-red">{t('ryde.signOut', 'Sign out')}</span>
+                        <div className="pointer-events-none absolute bottom-0 right-0 bg-ios-gray4 dark:bg-control" style={{ left: '70px', height: '0.5px' }} />
+                    </button>
+                    <button
+                        onClick={() => setConfirmSignOutAll(true)}
+                        className="relative flex w-full items-center gap-3.5 px-4 py-2.5 text-left active:bg-black/5 dark:active:bg-white/5"
+                    >
+                        <div className="flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-[9px] shadow-sm" style={{ background: '#FF3B30' }}>
+                            <LogOut className="h-[22px] w-[22px] text-white" strokeWidth={2.2} />
+                        </div>
+                        <span className="flex-1 text-[18px] font-medium text-ios-red">{t('accounts.signOutAll', 'Log Out of All Accounts')}</span>
                         <div className="pointer-events-none absolute bottom-0 right-0 bg-ios-gray4 dark:bg-control" style={{ left: '70px', height: '0.5px' }} />
                     </button>
                     <button
@@ -216,11 +234,24 @@ export function Account({ onClose }: { onClose: () => void }) {
             {confirmSignOut && (
                 <AlertDialog
                     title={t('ryde.signOutTitle', 'Sign out of Ryde?')}
-                    message={t('ryde.signOutMessage', "You'll need to log in again to view your account.")}
+                    message={switchTargetLabel(savedAccounts[0])
+                        ? t('accounts.signOutSwitchMessage', "You'll be switched to {name}.", { name: switchTargetLabel(savedAccounts[0]) as string })
+                        : t('ryde.signOutMessage', "You'll need to log in again to view your account.")}
                     confirmLabel={t('ryde.signOutConfirm', 'Sign Out')}
                     destructive
                     onCancel={() => setConfirmSignOut(false)}
                     onConfirm={() => { void signOut(); }}
+                />
+            )}
+
+            {confirmSignOutAll && (
+                <AlertDialog
+                    title={t('accounts.signOutAllTitle', 'Log out of all accounts?')}
+                    message={t('accounts.signOutAllMessage', 'Every account you have in this app will be signed out. Saved passwords are kept.')}
+                    confirmLabel={t('accounts.signOutAllConfirm', 'Log Out')}
+                    destructive
+                    onCancel={() => setConfirmSignOutAll(false)}
+                    onConfirm={() => { void signOutAll(); }}
                 />
             )}
 
@@ -253,7 +284,7 @@ export function Account({ onClose }: { onClose: () => void }) {
 
 function Stat({ label, value }: { label: string; value: string }) {
     return (
-        <div className="rounded-[12px] bg-[#e5e5e5] p-3.5 dark:bg-surface">
+        <div className="rounded-[12px] bg-surface p-3.5">
             <p className="text-[26px] font-extrabold tracking-tight text-black dark:text-white">{value}</p>
             <p className="mt-0.5 text-[14px] text-ios-gray">{label}</p>
         </div>

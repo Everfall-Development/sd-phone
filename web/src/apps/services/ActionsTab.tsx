@@ -87,7 +87,7 @@ export function ActionsTab({ myCompany, multijob = false, invoicesEnabled = fals
 
             <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar px-4 pb-6">
                 <SectionHeader>{t('services.settings', 'Settings')}</SectionHeader>
-                <div className="overflow-hidden rounded-[12px] bg-[#e5e5e5] dark:bg-surface">
+                <div className="overflow-hidden rounded-[12px] bg-surface">
                     <Row
                         icon={<Tile color="#FF9F0A"><Hourglass className="h-[18px] w-[18px] text-white" strokeWidth={2.25} /></Tile>}
                         title={t('services.duty', 'Duty')}
@@ -119,7 +119,7 @@ export function ActionsTab({ myCompany, multijob = false, invoicesEnabled = fals
                 {showMoney && (
                     <>
                         <SectionHeader>{t('services.actions', 'Actions')}</SectionHeader>
-                        <div className="overflow-hidden rounded-[12px] bg-[#e5e5e5] dark:bg-surface">
+                        <div className="overflow-hidden rounded-[12px] bg-surface">
                             <Row
                                 icon={<Tile color="#34C759"><Briefcase className="h-[18px] w-[18px] text-white" strokeWidth={2.25} /></Tile>}
                                 title={t('services.balance', 'Balance')}
@@ -139,7 +139,7 @@ export function ActionsTab({ myCompany, multijob = false, invoicesEnabled = fals
                 {showEmployees && (
                     <>
                         <SectionHeader>{t('services.manageStaff', 'Manage Staff')}</SectionHeader>
-                        <div className="overflow-hidden rounded-[12px] bg-[#e5e5e5] dark:bg-surface">
+                        <div className="overflow-hidden rounded-[12px] bg-surface">
                             <Row
                                 icon={<Tile color="#0A84FF"><UserPlus className="h-[18px] w-[18px] text-white" strokeWidth={2.25} /></Tile>}
                                 title={t('services.hire', 'Hire')}
@@ -167,7 +167,7 @@ export function ActionsTab({ myCompany, multijob = false, invoicesEnabled = fals
                 {showInvoices && <InvoicesSection />}
 
                 <SectionHeader>{t('services.employment', 'Employment')}</SectionHeader>
-                <div className="overflow-hidden rounded-[12px] bg-[#e5e5e5] dark:bg-surface">
+                <div className="overflow-hidden rounded-[12px] bg-surface">
                     <button
                         type="button"
                         onClick={() => setQuitting(true)}
@@ -293,7 +293,7 @@ function EmployeeRow({ employee, grades, myGrade, onFire, onPromote, onDemote }:
     const canDemote  = manage && down != null;
     return (
         <div className="flex items-center gap-3.5 px-4 py-3.5">
-            <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-[#c2c2c7] dark:bg-control">
+            <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-control">
                 <User className="h-[23px] w-[23px] text-white" strokeWidth={2} fill="currentColor" />
             </div>
             <div className="min-w-0 flex-1">

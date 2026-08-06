@@ -61,7 +61,7 @@ export function WallpaperPage({ onBack }: { onBack: () => void }) {
             <div className="flex-1 overflow-y-auto no-scrollbar">
                 <div className="mt-6 flex flex-col gap-5 px-4 pb-10">
 
-                    <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                    <div className="overflow-hidden rounded-[10px] bg-surface">
                         <button
                             type="button"
                             onClick={() => setPickerTarget('both')}
@@ -74,7 +74,7 @@ export function WallpaperPage({ onBack }: { onBack: () => void }) {
                         </button>
                     </div>
 
-                    <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                    <div className="overflow-hidden rounded-[10px] bg-surface">
                         <div className="flex gap-3 p-4 pb-3">
                             <PreviewThumb caption={t('settings.lockScreen', 'Lock Screen')} onPress={() => setPickerTarget('lock')}>
                                 <LockPreview wallpaper={wallpaperLock} blurred={blurLock} time={time} date={date} lockClock={lockClock} animating={animating} />

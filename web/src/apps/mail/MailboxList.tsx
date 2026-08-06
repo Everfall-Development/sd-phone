@@ -1,14 +1,14 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import {
-    AlertOctagon, AtSign, BookUser, Check, ChevronRight, FileText, Flag, GripVertical, Inbox, Plus,
-    Send, SquarePen, Trash2,
+    AlertOctagon, AtSign, BookUser, Check, ChevronRight, FileText, Flag, GripVertical, Inbox, LogOut,
+    Plus, Send, SquarePen, Trash2,
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 
 import { AlertDialog } from '@/ui/AlertDialog';
 import { ancestorZoom, trackFractionY } from '@/lib/zoom';
 import { t } from '@/i18n';
-import { getFolderLabels, unreadCount } from './data';
+import { getFolderLabels, shortEmail, unreadCount } from './data';
 import type { Folder, MailAccount, MailMessage } from './data';
 
 interface Props {
@@ -21,8 +21,8 @@ interface Props {
     onCompose:        () => void;
     onAddAccount:     () => void;
     onSignOut:        (id: string) => void;
+    onSignOutAll:     () => void;
     onReorderFolders: (next: Folder[]) => void;
-    onLockApp:        () => void;
     onDeleteAccount:  (id: string) => void;
     onChangePassword: () => void;
     onOpenSavedEmails: () => void;
@@ -38,10 +38,11 @@ const FOLDER_ICONS: Record<Folder, ComponentType<{ className?: string }>> = {
 };
 
 export function MailboxList({
-    accounts, activeAccount, messages, folderOrder, onSelectAccount, onOpenFolder, onCompose, onAddAccount, onSignOut, onReorderFolders, onLockApp, onDeleteAccount, onChangePassword, onOpenSavedEmails,
+    accounts, activeAccount, messages, folderOrder, onSelectAccount, onOpenFolder, onCompose, onAddAccount, onSignOut, onSignOutAll, onReorderFolders, onDeleteAccount, onChangePassword, onOpenSavedEmails,
 }: Props) {
     const [editing, setEditing] = useState(false);
     const [confirmOut, setConfirmOut] = useState(false);
+    const [confirmOutAll, setConfirmOutAll] = useState(false);
     const [confirmDeleteAcc, setConfirmDeleteAcc] = useState(false);
 
     const [draggingId, setDraggingId] = useState<Folder | null>(null);
@@ -117,7 +118,7 @@ export function MailboxList({
     const composeDisabled = !activeAccount;
 
     return (
-        <div className="absolute inset-0 flex flex-col bg-[#d4d4d4] dark:bg-base text-black dark:text-white">
+        <div className="absolute inset-0 flex flex-col bg-base text-black dark:text-white">
             <div className="h-[58px] shrink-0" aria-hidden />
 
             <div className="flex items-center justify-between px-5 pb-0.5">
@@ -164,7 +165,7 @@ export function MailboxList({
                 onPointerCancel={onHandlePointerUp}
             >
                 {activeAccount && (
-                    <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                    <div className="overflow-hidden rounded-[10px] bg-surface">
                         {folderOrder.map((id, i) => {
                             const Icon  = FOLDER_ICONS[id];
                             const count = unreadCount(messages, id, activeAccount.id);
@@ -228,7 +229,7 @@ export function MailboxList({
                     <button
                         type="button"
                         onClick={onOpenSavedEmails}
-                        className="mt-6 w-full overflow-hidden rounded-[10px] bg-[#e5e5e5] active:bg-black/5 dark:bg-surface dark:active:bg-white/5"
+                        className="mt-6 w-full overflow-hidden rounded-[10px] bg-surface active:bg-black/5 dark:active:bg-white/5"
                     >
                         <div className="flex w-full items-center gap-4 px-4 py-[15px]">
                             <BookUser className="h-[25px] w-[25px] shrink-0 text-ios-blue" />
@@ -241,7 +242,7 @@ export function MailboxList({
                 <div className="mt-6 px-4 pb-1.5 text-[13px] font-medium uppercase tracking-wide text-ios-gray">
                     {t('mail.accounts', 'Accounts')}
                 </div>
-                <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                <div className="overflow-hidden rounded-[10px] bg-surface">
                     {accounts.map((a, i) => (
                         <div key={a.id}>
                             <div className="relative flex w-full items-center gap-4 px-4 py-[13px]">
@@ -286,25 +287,40 @@ export function MailboxList({
                         <Plus className="h-[25px] w-[25px] shrink-0 text-ios-blue" strokeWidth={2.2} />
                         <span className="flex-1 text-[18px] text-ios-blue">{t('mail.addMailbox', 'Add Mailbox')}</span>
                     </button>
+                    {editing && accounts.length > 0 && (
+                        <>
+                            <div className="pointer-events-none bg-black/12 dark:bg-white/10" style={{ marginLeft: 60, height: '0.5px' }} />
+                            <button
+                                type="button"
+                                onClick={() => setConfirmOutAll(true)}
+                                className="flex w-full items-center gap-4 px-4 py-[15px] text-left active:bg-black/5 dark:active:bg-white/5"
+                            >
+                                <LogOut className="h-[25px] w-[25px] shrink-0 text-ios-red" strokeWidth={2.2} />
+                                <span className="flex-1 text-[18px] text-ios-red">{t('mail.signOutAllMailboxes', 'Sign Out of All Mailboxes')}</span>
+                            </button>
+                        </>
+                    )}
                 </div>
 
                 {activeAccount && (
                     <button
                         type="button"
                         onClick={onChangePassword}
-                        className="mt-3 w-full rounded-[10px] bg-[#e5e5e5] py-4 text-center text-[18px] font-semibold text-ios-blue active:bg-black/5 dark:bg-surface dark:active:bg-white/5"
+                        className="mt-3 w-full rounded-[10px] bg-surface py-4 text-center text-[18px] font-semibold text-ios-blue active:bg-black/5 dark:active:bg-white/5"
                     >
                         {t('mail.changePassword', 'Change Password')}
                     </button>
                 )}
 
-                <button
-                    type="button"
-                    onClick={() => setConfirmOut(true)}
-                    className={`${activeAccount ? 'mt-3' : 'mt-6'} w-full rounded-[10px] bg-[#e5e5e5] py-4 text-center text-[18px] font-semibold text-ios-red active:bg-black/5 dark:bg-surface dark:active:bg-white/5`}
-                >
-                    {t('mail.signOutOfMail', 'Sign out of Mail')}
-                </button>
+                {activeAccount && (
+                    <button
+                        type="button"
+                        onClick={() => setConfirmOut(true)}
+                        className="mt-3 w-full rounded-[10px] bg-surface py-4 text-center text-[18px] font-semibold text-ios-red active:bg-black/5 dark:active:bg-white/5"
+                    >
+                        {t('mail.signOut', 'Sign Out')}
+                    </button>
+                )}
 
                 {activeAccount && (
                     <button
@@ -317,15 +333,29 @@ export function MailboxList({
                 )}
             </div>
 
-            {confirmOut && (
+            {confirmOut && activeAccount && (
                 <AlertDialog
-                    title={t('mail.signOut', 'Sign Out')}
-                    message={t('mail.signOutConfirm', "Are you sure you want to sign out of Mail? Your accounts stay saved, you'll just need to sign back in on this phone.")}
+                    title={t('mail.signOutOfTitle', 'Sign out of {email}?', { email: shortEmail(activeAccount.email) })}
+                    message={accounts.length > 1
+                        ? t('mail.signOutNextMessage', "You'll stay signed in to your other mailboxes and land on one of them.")
+                        : t('mail.signOutLastMessage', "This is your only mailbox, so you'll be signed out of Mail. Your saved password is kept.")}
                     confirmLabel={t('mail.signOut', 'Sign Out')}
                     cancelLabel={t('mail.cancel', 'Cancel')}
                     destructive
                     onCancel={() => setConfirmOut(false)}
-                    onConfirm={() => { setConfirmOut(false); onLockApp(); }}
+                    onConfirm={() => { setConfirmOut(false); onSignOut(activeAccount.id); }}
+                />
+            )}
+
+            {confirmOutAll && (
+                <AlertDialog
+                    title={t('mail.signOutAllTitle', 'Sign out of all mailboxes?')}
+                    message={t('mail.signOutAllMessage', 'Every mailbox on this phone will be signed out. Saved passwords are kept, so you can sign back in.')}
+                    confirmLabel={t('accounts.signOutAllConfirm', 'Log Out')}
+                    cancelLabel={t('mail.cancel', 'Cancel')}
+                    destructive
+                    onCancel={() => setConfirmOutAll(false)}
+                    onConfirm={() => { setConfirmOutAll(false); onSignOutAll(); }}
                 />
             )}
 

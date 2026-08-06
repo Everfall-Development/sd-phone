@@ -179,7 +179,7 @@ export function Documents({ onClose: _onClose }: { onClose: () => void }) {
     ] : [];
 
     return (
-        <div className="absolute inset-0 z-10 flex flex-col bg-[#d4d4d4] dark:bg-base text-black dark:text-white">
+        <div className="absolute inset-0 z-10 flex flex-col bg-base text-black dark:text-white">
             <div className="relative flex-1 overflow-hidden">
                 <div key={tab} className="absolute inset-0 animate-swipe-in-left">
                     {tab === 'browse' ? (
@@ -233,7 +233,7 @@ export function Documents({ onClose: _onClose }: { onClose: () => void }) {
             )}
 
             {fileInfo && (
-                <Sheet onClose={() => setFileInfo(null)} fit="content" title={fileInfo.name} className="bg-[#ececec] dark:bg-surface">
+                <Sheet onClose={() => setFileInfo(null)} fit="content" title={fileInfo.name} className="bg-surface">
                     {() => (
                         <div className="px-5 pb-6 pt-1 text-[15px]">
                             <InfoRow label={t('documents.kind', 'Kind')} value={t('documents.kindFile', 'File')} />

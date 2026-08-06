@@ -1,30 +1,61 @@
-import { Check, ChevronRight, MessageCircle, Phone, Star } from 'lucide-react';
+import { ChevronRight, MessageCircle, Phone, Star } from 'lucide-react';
 
 import { t } from '@/i18n';
 import { useIosPush } from '@/hooks/useIosPush';
+import { useSessionState } from '@/hooks/useSessionState';
 import { useTheme } from '@/stores/themeStore';
 import type { DarkTheme } from '@/stores/themeStore';
+import { ListGroup, ListRow } from '@/ui/ListGroup';
 import { NavBar } from '@/ui/NavBar';
+import { PaletteChip, CustomPalettesSection } from './PaletteRows';
+import { PaletteEditorPage } from './PaletteEditorPage';
 import { Toggle } from '@/ui/Toggle';
 
 const PALETTES: { id: DarkTheme; label: string; swatch: { base: string; surface: string; control: string } }[] = [
     { id: 'graphite', label: t('settings.darkGraphite', 'Graphite'), swatch: { base: '#0B0B0D', surface: '#1C1C1E', control: '#3A3A3C' } },
     { id: 'black',    label: t('settings.darkBlack', 'Black'),       swatch: { base: '#000000', surface: '#161618', control: '#313134' } },
     { id: 'warm',     label: t('settings.darkWarm', 'Warm'),         swatch: { base: '#0C0B0A', surface: '#1D1C1B', control: '#3A3937' } },
+    { id: 'midnight', label: t('settings.darkMidnight', 'Midnight'), swatch: { base: '#0A0C12', surface: '#181C26', control: '#333948' } },
+    { id: 'moss',     label: t('settings.darkMoss', 'Moss'),         swatch: { base: '#0A0D0B', surface: '#191E1A', control: '#343B35' } },
+    { id: 'plum',     label: t('settings.darkPlum', 'Plum'),         swatch: { base: '#0D0A10', surface: '#1E1922', control: '#3B3441' } },
+    { id: 'slate', label: t('settings.darkSlate', 'Slate'), swatch: { base: '#0B0D10', surface: '#1B1F24', control: '#373D45' } },
+    { id: 'ocean', label: t('settings.darkOcean', 'Ocean'), swatch: { base: '#080D0E', surface: '#161E20', control: '#2F3B3E' } },
+    { id: 'rose', label: t('settings.darkRose', 'Rose'), swatch: { base: '#0F0A0C', surface: '#21191C', control: '#3F3438' } },
+    { id: 'clay', label: t('settings.darkClay', 'Clay'), swatch: { base: '#0E0B09', surface: '#201B17', control: '#3E3730' } },
 ];
 
 const DESC: Record<DarkTheme, string> = {
     graphite: t('settings.darkGraphiteHint', 'Soft charcoal. Layers read clearly, easiest on the eyes.'),
     black:    t('settings.darkBlackHint', 'True black. Deep and high-contrast, best on OLED.'),
     warm:     t('settings.darkWarmHint', 'A faint warm tint. Cozier, less clinical.'),
+    midnight: t('settings.darkMidnightHint', 'A cool blue cast. Calm, and easy at night.'),
+    moss:     t('settings.darkMossHint', 'A quiet green tint. Muted and natural.'),
+    plum:     t('settings.darkPlumHint', 'A soft violet cast. Moody without being loud.'),
+    slate: t('settings.darkSlateHint', 'A cool grey-blue. Neutral, a touch crisper than Graphite.'),
+    ocean: t('settings.darkOceanHint', 'Deep teal. Cold and clean, like water at night.'),
+    rose: t('settings.darkRoseHint', 'A muted red cast. Warm without going orange.'),
+    clay: t('settings.darkClayHint', 'Earthy brown. The warmest of the set.'),
 };
 
 export function DarkAppearancePage({ onBack }: { onBack: () => void }) {
     const { goBack, pageStyle } = useIosPush(onBack);
-    const { darkTheme, setDarkTheme } = useTheme('darkTheme', 'setDarkTheme');
+    const { darkTheme, setDarkTheme, customPalettes } = useTheme('darkTheme', 'setDarkTheme', 'customPalettes');
+    const [editing, setEditing] = useSessionState<string | null>('settings:darkPaletteEditor', null);
+
+    const editTarget = editing === null || editing === 'new' ? null : customPalettes.find(p => p.id === editing) ?? null;
+    if (editing === 'new' || editTarget) {
+        return (
+            <PaletteEditorPage
+                key={editing}
+                mode="dark"
+                editing={editTarget ?? undefined}
+                onBack={() => setEditing(null)}
+            />
+        );
+    }
 
     return (
-        <div className="absolute inset-0 z-30 flex flex-col bg-[#d4d4d4] dark:bg-base text-black dark:text-white" style={pageStyle}>
+        <div className="absolute inset-0 z-30 flex flex-col bg-base text-black dark:text-white" style={pageStyle}>
             <div className="h-11 shrink-0" aria-hidden />
             <NavBar backLabel={t('settings.displayBrightness', 'Display')} onBack={goBack} title={t('settings.darkAppearance', 'Dark Appearance')} hairline />
 
@@ -32,18 +63,30 @@ export function DarkAppearancePage({ onBack }: { onBack: () => void }) {
                 <div className="mt-6 flex flex-col gap-7 px-4 pb-12">
 
                     <section>
-                        <div className="flex justify-between gap-3 rounded-[12px] bg-[#e5e5e5] dark:bg-surface px-4 py-5">
-                            {PALETTES.map(p => (
-                                <PaletteButton
+                        <ListGroup>
+                            {PALETTES.map((p, i) => (
+                                <ListRow
                                     key={p.id}
                                     label={p.label}
-                                    swatch={p.swatch}
+                                    sub={DESC[p.id]}
+                                    left={<PaletteChip swatch={p.swatch} />}
                                     selected={darkTheme === p.id}
-                                    onSelect={() => setDarkTheme(p.id)}
+                                    divider={i < PALETTES.length - 1}
+                                    onPress={() => setDarkTheme(p.id)}
                                 />
                             ))}
-                        </div>
-                        <p className="mt-2 px-1 text-[13px] leading-snug text-ios-gray">{DESC[darkTheme]}</p>
+                        </ListGroup>
+                    </section>
+
+                    <section>
+                        <CustomPalettesSection
+                            mode="dark"
+                            palettes={customPalettes}
+                            selected={darkTheme}
+                            onSelect={setDarkTheme}
+                            onEdit={setEditing}
+                            onCreate={() => setEditing('new')}
+                        />
                     </section>
 
                     <section>
@@ -123,41 +166,5 @@ function TabIcon({ icon, label, active }: { icon: React.ReactNode; label: string
             {icon}
             <span className="text-[10px] font-semibold">{label}</span>
         </div>
-    );
-}
-
-function PaletteButton({ label, swatch, selected, onSelect }: {
-    label: string;
-    swatch: { base: string; surface: string; control: string };
-    selected: boolean;
-    onSelect: () => void;
-}) {
-    return (
-        <button type="button" onClick={onSelect} className="flex flex-1 flex-col items-center gap-2 active:opacity-70">
-            <div
-                className="relative w-full overflow-hidden rounded-[13px]"
-                style={{
-                    aspectRatio: '9 / 15',
-                    background: swatch.base,
-                    boxShadow: selected ? '0 0 0 2.5px #0a84ff' : `inset 0 0 0 1px ${swatch.control}`,
-                }}
-            >
-                <div className="absolute left-1/2 top-2 h-[5px] w-[24px] -translate-x-1/2 rounded-full bg-black" />
-                <div className="absolute inset-x-2 top-6 rounded-[7px]" style={{ background: swatch.surface }}>
-                    <div className="flex flex-col gap-[5px] p-[7px]">
-                        <div className="h-[5px] w-[70%] rounded-full" style={{ background: swatch.control }} />
-                        <div className="h-[5px] w-[45%] rounded-full" style={{ background: swatch.control }} />
-                    </div>
-                </div>
-                <div className="absolute inset-x-2 bottom-2 h-[18px] rounded-[7px]" style={{ background: swatch.surface }} />
-            </div>
-            <span className="text-[14px] font-normal text-black dark:text-white">{label}</span>
-            <div className={[
-                'flex h-[21px] w-[21px] items-center justify-center rounded-full border-2 transition-colors',
-                selected ? 'border-ios-blue bg-ios-blue' : 'border-[#C6C6C8] dark:border-[#636366] bg-transparent',
-            ].join(' ')}>
-                {selected && <Check className="h-[11px] w-[11px] text-white" strokeWidth={3} />}
-            </div>
-        </button>
     );
 }

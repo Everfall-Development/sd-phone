@@ -30,7 +30,7 @@ export function AttachmentStrip({ attachments, max, onRemove }: {
     const others  = indexed.filter(({ a }) => a.kind !== 'photo');
 
     return (
-        <div className="mt-2 shrink-0 overflow-hidden rounded-[12px] bg-[#e5e5e5] dark:bg-surface">
+        <div className="mt-2 shrink-0 overflow-hidden rounded-[12px] bg-surface">
             <div className="flex items-center gap-1.5 px-4 pb-1 pt-3">
                 <Paperclip className="h-[15px] w-[15px] text-ios-gray" strokeWidth={2.2} />
                 <span className="text-[14px] font-semibold uppercase tracking-wide text-ios-gray">
@@ -115,7 +115,7 @@ function PickerSheet({ title, action, children, onClose }: {
     onClose:  () => void;
 }) {
     return (
-        <Sheet onClose={onClose} grabber={false} className="font-sf bg-[#d4d4d4] text-black dark:bg-base dark:text-white">
+        <Sheet onClose={onClose} grabber={false} className="font-sf bg-base text-black dark:text-white">
             {({ close }) => (
                 <>
                     <div className="flex h-12 shrink-0 items-center px-4 pt-1">
@@ -202,7 +202,7 @@ export function MemoPickerSheet({ excludeUrls, max, onPickMany, onClose }: {
                     {t('mail.noMemos', 'No recordings to attach. Record one in Voice Memos first.')}
                 </p>
             ) : (
-                <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                <div className="overflow-hidden rounded-[10px] bg-surface">
                     {candidates.map((m, i) => (
                         <div key={m.id}>
                             <button
@@ -268,7 +268,7 @@ export function NotePickerSheet({ max, onPickMany, onClose }: {
                     {t('mail.noNotes', 'No notes to attach. Write one in Notes first.')}
                 </p>
             ) : (
-                <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                <div className="overflow-hidden rounded-[10px] bg-surface">
                     {notes.map((n, i) => (
                         <div key={n.id}>
                             <button
@@ -329,7 +329,7 @@ export function DocPickerSheet({ excludeIds, max, onPickMany, onClose }: {
                     {t('mail.noDocuments', 'No documents to attach. Create one in Files first.')}
                 </p>
             ) : (
-                <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                <div className="overflow-hidden rounded-[10px] bg-surface">
                     {candidates.map((d, i) => (
                         <div key={d.id}>
                             <button
@@ -365,7 +365,7 @@ function DocAttachmentSheet({ att, onClose }: { att: DocAttachment; onClose: () 
     }
     return (
         <div
-            className="absolute inset-0 z-50 flex flex-col bg-[#d4d4d4] text-black dark:bg-base dark:text-white"
+            className="absolute inset-0 z-50 flex flex-col bg-base text-black dark:text-white"
             style={{ animation: leaving
                 ? 'ios-sheet-down 0.26s cubic-bezier(0.32,0,0.68,1) forwards'
                 : 'ios-sheet-up 0.34s cubic-bezier(0.32,0.72,0,1)' }}
@@ -406,7 +406,7 @@ function NoteSheet({ title, body, onClose }: { title: string; body: string; onCl
     }
     return (
         <div
-            className="absolute inset-0 z-50 flex flex-col bg-[#d4d4d4] text-black dark:bg-base dark:text-white"
+            className="absolute inset-0 z-50 flex flex-col bg-base text-black dark:text-white"
             style={{ animation: leaving
                 ? 'ios-sheet-down 0.26s cubic-bezier(0.32,0,0.68,1) forwards'
                 : 'ios-sheet-up 0.34s cubic-bezier(0.32,0.72,0,1)' }}

@@ -12,7 +12,9 @@ import { useDeckActive } from '@/shell/deckActive';
 import { AccountSwitcher } from '@/shared/AccountSwitcher';
 import { AppAuth } from '@/shared/AppAuth';
 import { AlertDialog } from '@/ui/AlertDialog';
-import { MAIL_DOMAIN, accountsConfirmReset, accountsRequestReset, accountsSavePassword, accountsSignOut, accountsSuggestCode, accountsSwitch } from '@/core/accountsApi';
+import { MAIL_DOMAIN, accountsConfirmReset, accountsRequestReset, accountsSavePassword, accountsSuggestCode, accountsSwitch } from '@/core/accountsApi';
+import { signOutAllForApp } from '@/shared/signOutAll';
+import { logOutOrSwitch, switchTargetLabel } from '@/shared/logOutOrSwitch';
 import { toggleReactionLocal } from '@/shared/chat/messagesApi';
 import type { MessageDraft } from '@/shared/chat/ChatView';
 import {
@@ -320,6 +322,7 @@ export function Birdy({ onClose }: { onClose: () => void }) {
     }
     const authScreen = (
             <AppAuth
+                appId="birdy"
                 appName="Birdy"
                 tagline={t('squawk.tagline', 'Where the city starts conversations.')}
                 icon="birdy"
@@ -452,13 +455,19 @@ export function Birdy({ onClose }: { onClose: () => void }) {
                     profile={profile}
                     onCancel={() => setEditingProfile(false)}
                     onSaved={p => { setProfile(p); setMe({ name: p.name, handle: p.handle, verified: p.verified }); setEditingProfile(false); }}
+                    switchTo={switchTargetLabel(savedAccounts[0])}
                     onSignOut={() => {
                         setEditingProfile(false);
                         setProfileOpen(false);
-                        void accountsSignOut('birdy').then(r => {
-                            if (r.switchedTo) switchedAccount();
+                        void logOutOrSwitch('birdy').then(switched => {
+                            if (switched) switchedAccount();
                             else { clearSessionState('birdy:'); refreshAccounts(); setAuthed(false); }
                         });
+                    }}
+                    onSignOutAll={() => {
+                        setEditingProfile(false);
+                        setProfileOpen(false);
+                        void signOutAllForApp('birdy').then(() => { refreshAccounts(); setAuthed(false); });
                     }}
                     onSwitchAccount={() => { setEditingProfile(false); setSwitching(true); }}
                     onDeleted={() => { setEditingProfile(false); setProfileOpen(false); clearSessionState('birdy:'); setAuthed(false); }}

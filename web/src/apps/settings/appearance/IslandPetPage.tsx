@@ -20,7 +20,7 @@ export function IslandPetPage({ onBack }: { onBack: () => void }) {
 
     return (
         <div
-            className="absolute inset-0 z-20 flex flex-col bg-[#d4d4d4] dark:bg-base text-black dark:text-white"
+            className="absolute inset-0 z-20 flex flex-col bg-base text-black dark:text-white"
             style={pageStyle}
         >
             <div className="h-11 shrink-0" aria-hidden />
@@ -70,7 +70,7 @@ export function IslandPetPage({ onBack }: { onBack: () => void }) {
                         <p className="mb-2 text-[12px] uppercase tracking-widest text-ios-gray">
                             {t('settings.islandPetChoose', 'Choose a Pet')}
                         </p>
-                        <div className="rounded-[12px] bg-[#e5e5e5] dark:bg-surface px-3 py-4">
+                        <div className="rounded-[12px] bg-surface px-3 py-4">
                             <div className="grid grid-cols-4 gap-x-2 gap-y-4">
                                 {ISLAND_PETS.map(id => {
                                     const selected = id === islandPet;
@@ -110,7 +110,7 @@ export function IslandPetPage({ onBack }: { onBack: () => void }) {
                         <p className="mb-2 text-[12px] uppercase tracking-widest text-ios-gray">
                             {t('settings.islandPetMoods', 'Moods')}
                         </p>
-                        <div className="overflow-hidden rounded-[12px] bg-[#e5e5e5] dark:bg-surface">
+                        <div className="overflow-hidden rounded-[12px] bg-surface">
                             <MoodRow label={t('settings.islandPetMoodDance', 'Dances while music plays')} />
                             <MoodRow label={t('settings.islandPetMoodStartle', 'Jumps at calls and alarms')} />
                             <MoodRow label={t('settings.islandPetMoodSleep', 'Naps when the battery is low')} />

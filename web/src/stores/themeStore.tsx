@@ -8,6 +8,7 @@ import type { DeviceAlign } from '@/device/types';
 import lockscreenAsset from '@/assets/wallpapers/lockscreen.webp';
 import devDefaultAsset from '@/assets/photos/background5.webp';
 import { fetchNui, isFiveM } from '@/core/nui';
+import { t } from '@/i18n';
 import type { IslandPetId } from '@/shell/islandPets';
 import { isDemo } from '@/core/demo';
 import { wallpaperKey } from '@/shell/wallpapers';
@@ -16,6 +17,9 @@ import { DEFAULT_LOCK_CLOCK, loadLockClockLocal, saveLockClockLocal, type LockCl
 import { DEFAULT_NOTIFICATION, DEFAULT_RINGTONE } from '@/apps/settings/tones';
 import type { CustomTone, ToneKind } from '@/apps/settings/tones';
 import { warmYouTube } from '@/apps/settings/tonePlayer';
+import { clampRecipe, isCustomPaletteId, MAX_CUSTOM_PALETTES, PALETTE_NAME_MAX } from '@/apps/settings/appearance/paletteRamp';
+import { DEFAULT_ACCENT, isAccentChoice } from '@/apps/settings/appearance/accentRamp';
+import type { PaletteMode, PaletteRecipe } from '@/apps/settings/appearance/paletteRamp';
 
 export type Theme = 'light' | 'dark';
 
@@ -29,9 +33,73 @@ function saveThemeLocal(v: Theme) {
     try { window.localStorage.setItem(THEME_KEY, v); } catch { /* ignore */ }
 }
 
-export type DarkTheme = 'graphite' | 'black' | 'warm';
+export type DarkTheme = 'graphite' | 'black' | 'warm' | 'midnight' | 'moss' | 'plum' | 'slate' | 'ocean' | 'rose' | 'clay';
+export type LightTheme = 'silver' | 'snow' | 'linen' | 'sky' | 'mint' | 'blush' | 'sand' | 'lavender' | 'stone' | 'dusk';
+export type CustomPaletteId = `custom:${string}`;
+export type DarkThemeChoice = DarkTheme | CustomPaletteId;
+export type LightThemeChoice = LightTheme | CustomPaletteId;
+export interface CustomPalette extends PaletteRecipe {
+    id:   CustomPaletteId;
+    name: string;
+    mode: PaletteMode;
+}
+const PALETTES_KEY = 'sd-phone:customPalettes';
+function sanitizePalette(v: unknown): CustomPalette | null {
+    if (!v || typeof v !== 'object') return null;
+    const raw = v as Record<string, unknown>;
+    if (!isCustomPaletteId(raw.id)) return null;
+    if (raw.mode !== 'light' && raw.mode !== 'dark') return null;
+    if (typeof raw.name !== 'string') return null;
+    const name = raw.name.trim().slice(0, PALETTE_NAME_MAX);
+    if (!name) return null;
+    return { id: raw.id as CustomPaletteId, name, mode: raw.mode, ...clampRecipe(raw as Partial<PaletteRecipe>, raw.mode) };
+}
+function decodePalettes(v: unknown): CustomPalette[] {
+    if (!Array.isArray(v)) return [];
+    const out: CustomPalette[] = [];
+    const seen = new Set<string>();
+    for (const entry of v) {
+        const clean = sanitizePalette(entry);
+        if (clean && !seen.has(clean.id) && out.length < MAX_CUSTOM_PALETTES) {
+            seen.add(clean.id);
+            out.push(clean);
+        }
+    }
+    return out;
+}
+function loadPalettesLocal(): CustomPalette[] {
+    try { return decodePalettes(JSON.parse(window.localStorage.getItem(PALETTES_KEY) ?? '[]')); }
+    catch { return []; }
+}
+function savePalettesLocal(v: CustomPalette[]) {
+    try { window.localStorage.setItem(PALETTES_KEY, JSON.stringify(v)); } catch { /* ignore */ }
+}
+function savePaletteChoiceLocal(key: string, v: string) {
+    try { window.localStorage.setItem(key, v); } catch { /* ignore */ }
+}
 const DARK_THEME_KEY = 'sd-phone:darkTheme';
-const DARK_THEMES: DarkTheme[] = ['graphite', 'black', 'warm'];
+const LIGHT_THEME_KEY = 'sd-phone:lightTheme';
+const ACCENT_KEY = 'sd-phone:accent';
+function loadAccentLocal(): string {
+    try {
+        const v = window.localStorage.getItem(ACCENT_KEY);
+        return isAccentChoice(v) ? v : DEFAULT_ACCENT;
+    } catch { return DEFAULT_ACCENT; }
+}
+function saveAccentLocal(v: string) {
+    try { window.localStorage.setItem(ACCENT_KEY, v); } catch { /* ignore */ }
+}
+const DARK_THEMES: DarkTheme[] = ['graphite', 'black', 'warm', 'midnight', 'moss', 'plum', 'slate', 'ocean', 'rose', 'clay'];
+const LIGHT_THEMES: LightTheme[] = ['silver', 'snow', 'linen', 'sky', 'mint', 'blush', 'sand', 'lavender', 'stone', 'dusk'];
+function loadLightThemeLocal(): LightTheme {
+    try {
+        const v = window.localStorage.getItem(LIGHT_THEME_KEY) as LightTheme | null;
+        return v && LIGHT_THEMES.includes(v) ? v : 'silver';
+    } catch { return 'silver'; }
+}
+function saveLightThemeLocal(v: LightTheme) {
+    try { window.localStorage.setItem(LIGHT_THEME_KEY, v); } catch { /* ignore */ }
+}
 function loadDarkThemeLocal(): DarkTheme {
     try {
         const v = window.localStorage.getItem(DARK_THEME_KEY) as DarkTheme | null;
@@ -163,8 +231,15 @@ function savePhoneAlignLocal(v: PhoneAlign) {
 interface ThemeState {
     theme:             Theme;
     setTheme:          (t: Theme) => void;
-    darkTheme:         DarkTheme;
-    setDarkTheme:      (t: DarkTheme) => void;
+    darkTheme:         DarkThemeChoice;
+    setDarkTheme:      (t: DarkThemeChoice) => void;
+    lightTheme:        LightThemeChoice;
+    setLightTheme:     (t: LightThemeChoice) => void;
+    accent:            string;
+    setAccent:         (a: string) => void;
+    customPalettes:      CustomPalette[];
+    saveCustomPalette:   (p: CustomPalette) => Promise<string | null>;
+    deleteCustomPalette: (id: CustomPaletteId) => void;
     wallpaperLock:     string;
     wallpaperHome:     string;
     setWallpaper:      (url: string, target: WallpaperTarget) => void;
@@ -267,6 +342,9 @@ function persistDebounced(key: string, send: () => void) {
 export const useThemeStore = create<ThemeState>((set, get) => ({
     theme: isFiveM ? 'light' : loadThemeLocal(),
     darkTheme: isFiveM ? 'graphite' : loadDarkThemeLocal(),
+    lightTheme: isFiveM ? 'silver' : loadLightThemeLocal(),
+    accent: isFiveM ? DEFAULT_ACCENT : loadAccentLocal(),
+    customPalettes: isFiveM ? [] : loadPalettesLocal(),
     wallpaperLock: isFiveM ? lockscreenAsset : (loadWallpaperLocal() ?? devDefaultAsset),
     wallpaperHome: isFiveM ? lockscreenAsset : (loadWallpaperHomeLocal() ?? loadWallpaperLocal() ?? devDefaultAsset),
     customWallpapers: isFiveM ? [] : loadCustomWallpapersLocal(),
@@ -354,7 +432,50 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     setDarkTheme: (next) => {
         set({ darkTheme: next });
         if (isFiveM) void fetchNui('sd-phone:settings:setDarkTheme', { darkTheme: next }).catch(() => {});
+        else if (isCustomPaletteId(next)) savePaletteChoiceLocal(DARK_THEME_KEY, next);
         else saveDarkThemeLocal(next);
+    },
+
+    setLightTheme: (next) => {
+        set({ lightTheme: next });
+        if (isFiveM) void fetchNui('sd-phone:settings:setLightTheme', { lightTheme: next }).catch(() => {});
+        else if (isCustomPaletteId(next)) savePaletteChoiceLocal(LIGHT_THEME_KEY, next);
+        else saveLightThemeLocal(next);
+    },
+
+    setAccent: (next) => {
+        if (!isAccentChoice(next)) return;
+        set({ accent: next });
+        if (isFiveM) void fetchNui('sd-phone:settings:setAccent', { accent: next }).catch(() => {});
+        else saveAccentLocal(next);
+    },
+
+    saveCustomPalette: async (palette) => {
+        const clean = sanitizePalette(palette);
+        if (!clean) return '';
+        const list = get().customPalettes;
+        const at = list.findIndex(p => p.id === clean.id);
+        if (at < 0 && list.length >= MAX_CUSTOM_PALETTES) {
+            return t('settings.paletteFull', 'You can keep up to {n} of your own palettes.', { n: MAX_CUSTOM_PALETTES });
+        }
+        if (isFiveM) {
+            const r = await fetchNui<{ success?: boolean; message?: string }>('sd-phone:settings:savePalette', { palette: clean });
+            if (!r?.success) return r?.message ?? '';
+        }
+        const next = at < 0 ? [...list, clean] : list.map(p => (p.id === clean.id ? clean : p));
+        set({ customPalettes: next });
+        if (!isFiveM) savePalettesLocal(next);
+        return null;
+    },
+
+    deleteCustomPalette: (id) => {
+        const next = get().customPalettes.filter(p => p.id !== id);
+        const patch: Partial<ThemeState> = { customPalettes: next };
+        if (get().darkTheme === id) patch.darkTheme = 'graphite';
+        if (get().lightTheme === id) patch.lightTheme = 'silver';
+        set(patch);
+        if (isFiveM) void fetchNui('sd-phone:settings:deletePalette', { id }).catch(() => {});
+        else savePalettesLocal(next);
     },
 
     setBrightness: (v) => {
@@ -526,7 +647,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
             }
         };
         const keyAtRequest = wallpaperProfileKey;
-        void fetchNui<{ data?: { ringtone?: string; notificationTone?: string; customRingtones?: CustomTone[]; customNotificationTones?: CustomTone[]; airplaneMode?: boolean; hour24?: boolean; reopenApp?: boolean; setupDone?: boolean; lockClock?: Partial<LockClock>; passcode?: string | null; faceId?: boolean; wallpaper?: string; wallpaperHome?: string; blurLock?: boolean; blurHome?: boolean; islandPet?: string; customWallpapers?: string[]; chatTextScale?: number; phoneScale?: number; brightness?: number; phoneAlign?: string; ringtoneVol?: number; callVol?: number; theme?: string; darkTheme?: string; iconTheme?: string; showAppNames?: boolean; customIconThemes?: unknown } }>('sd-phone:settings:get')
+        void fetchNui<{ data?: { ringtone?: string; notificationTone?: string; customRingtones?: CustomTone[]; customNotificationTones?: CustomTone[]; airplaneMode?: boolean; hour24?: boolean; reopenApp?: boolean; setupDone?: boolean; lockClock?: Partial<LockClock>; passcode?: string | null; faceId?: boolean; wallpaper?: string; wallpaperHome?: string; blurLock?: boolean; blurHome?: boolean; islandPet?: string; customWallpapers?: string[]; chatTextScale?: number; phoneScale?: number; brightness?: number; phoneAlign?: string; ringtoneVol?: number; callVol?: number; theme?: string; darkTheme?: string; lightTheme?: string; accent?: string; customPalettes?: unknown; iconTheme?: string; showAppNames?: boolean; customIconThemes?: unknown } }>('sd-phone:settings:get')
             .then(res => {
                 if (!res?.data) { retry(); return; }
                 const d = res.data;
@@ -555,6 +676,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
                 patch.setupDone = d.setupDone === true;
                 if (d.theme === 'light' || d.theme === 'dark') patch.theme = d.theme;
                 if (typeof d.darkTheme === 'string' && (DARK_THEMES as string[]).includes(d.darkTheme)) patch.darkTheme = d.darkTheme as DarkTheme;
+                if (typeof d.lightTheme === 'string' && (LIGHT_THEMES as string[]).includes(d.lightTheme)) patch.lightTheme = d.lightTheme as LightTheme;
+                patch.customPalettes = decodePalettes(d.customPalettes);
+                if (isCustomPaletteId(d.darkTheme)) patch.darkTheme = d.darkTheme as CustomPaletteId;
+                if (isCustomPaletteId(d.lightTheme)) patch.lightTheme = d.lightTheme as CustomPaletteId;
+                if (isAccentChoice(d.accent)) patch.accent = d.accent;
                 if (typeof d.chatTextScale === 'number') patch.chatTextScale = clampChatScale(d.chatTextScale);
                 if (typeof d.phoneScale === 'number') patch.phoneScale = clampPhoneScale(d.phoneScale);
                 if (typeof d.brightness === 'number') patch.brightness = clampPhoneScale(d.brightness);

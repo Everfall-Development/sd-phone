@@ -6,10 +6,9 @@ local player = require 'bridge.server.player'
 ---@type table Settings persistence layer (server.settings.store): phone_settings row CRUD plus
 ---custom tones and per-app notification prefs, all keyed by citizenid.
 local store  = require 'server.settings.store'
----@type table Accounts engine persistence (server.accounts.store): session rows for the factory reset.
-local accounts = require 'server.accounts.store'
----@type table Mail persistence layer (server.mail.store): per-mailbox sessions for the factory reset.
-local mail = require 'server.mail.store'
+---@type table Accounts engine handlers (server.accounts.actions): the shared sign-out the factory
+---reset and Settings > Sign Out of All Accounts both run through.
+local accounts = require 'server.accounts.actions'
 ---@type table Badge recompute-and-push (server.badges.init).
 local badges = require 'server.badges.init'
 ---@type table Photos actions (server.photos.actions): the URL-import gate + host allow/blocklist
@@ -138,11 +137,24 @@ end)
 
 ---Returns the caller's full settings snapshot: tone selections, custom tones, airplane mode,
 ---clock preferences, wallpaper, chat text scale, locale and lock security. Read-only.
-lib.callback.register('sd-phone:server:settings:get', function(source)
+---@type table<string, boolean> Devices that own a settings row. An id outside this set is the
+---phone, so a hand-edited client cannot mint rows for devices that do not exist.
+local SETTINGS_DEVICES = { phone = true, tablet = true }
+
+---Which device a settings call came from. The UI stamps it on every sd-phone:settings:* payload;
+---an absent or unknown one is the phone, which is what keeps older NUI bundles working unchanged.
+---@param payload table|nil client-supplied payload
+---@return string device
+local function deviceOf(payload)
+    local d = type(payload) == 'table' and payload.device or nil
+    return (type(d) == 'string' and SETTINGS_DEVICES[d]) and d or 'phone'
+end
+
+lib.callback.register('sd-phone:server:settings:get', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     -- One row read, not one per field: this used to issue 16 single-column PK lookups.
-    local data = store.snapshot(cid)
+    local data = store.snapshot(cid, deviceOf(payload))
     data.customRingtones         = store.listCustomTones(cid, 'ringtone')
     data.customNotificationTones = store.listCustomTones(cid, 'notification')
     -- Face Unlock only works for the SIM's first activator - a stolen phone still asks the
@@ -158,7 +170,7 @@ lib.callback.register('sd-phone:server:settings:setWallpaper', function(source, 
     if not cid then return { success = false, message = 'Player not found' } end
     if not writeAllowed(cid, 'wallpaper') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
-    store.setWallpaper(cid, payload.lock or payload.wallpaper, payload.home)
+    store.setWallpaper(cid, payload.lock or payload.wallpaper, payload.home, deviceOf(payload))
     return { success = true }
 end)
 
@@ -168,7 +180,7 @@ lib.callback.register('sd-phone:server:settings:setBlur', function(source, paylo
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     payload = type(payload) == 'table' and payload or {}
-    coalesce(cid, 'blur', function() store.setBlur(cid, payload.lock, payload.home) end)
+    coalesce(cid, 'blur', function() store.setBlur(cid, payload.lock, payload.home, deviceOf(payload)) end)
     return { success = true }
 end)
 
@@ -178,7 +190,7 @@ lib.callback.register('sd-phone:server:settings:setIslandPet', function(source, 
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     payload = type(payload) == 'table' and payload or {}
-    coalesce(cid, 'islandPet', function() store.setIslandPet(cid, payload.pet) end)
+    coalesce(cid, 'islandPet', function() store.setIslandPet(cid, payload.pet, deviceOf(payload)) end)
     return { success = true }
 end)
 
@@ -217,7 +229,7 @@ lib.callback.register('sd-phone:server:settings:setSecurity', function(source, p
     if not cid then return { success = false, message = 'Player not found' } end
     if not writeAllowed(cid, 'security') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
-    store.setSecurity(cid, payload.passcode, payload.faceId == true)
+    store.setSecurity(cid, payload.passcode, payload.faceId == true, deviceOf(payload))
     return { success = true }
 end)
 
@@ -226,7 +238,7 @@ lib.callback.register('sd-phone:server:settings:setLockClock', function(source, 
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     local cfg = type(payload) == 'table' and payload or {}
-    coalesce(cid, 'lockClock', function() store.setLockClock(cid, cfg) end)
+    coalesce(cid, 'lockClock', function() store.setLockClock(cid, cfg, deviceOf(payload)) end)
     return { success = true }
 end)
 
@@ -235,7 +247,7 @@ lib.callback.register('sd-phone:server:settings:setChatTextScale', function(sour
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     payload = type(payload) == 'table' and payload or {}
-    coalesce(cid, 'chatTextScale', function() store.setChatTextScale(cid, payload.scale) end)
+    coalesce(cid, 'chatTextScale', function() store.setChatTextScale(cid, payload.scale, deviceOf(payload)) end)
     return { success = true }
 end)
 
@@ -256,7 +268,7 @@ lib.callback.register('sd-phone:server:settings:setPhoneScale', function(source,
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     payload = type(payload) == 'table' and payload or {}
-    coalesce(cid, 'phoneScale', function() store.setPhoneScale(cid, payload.scale) end)
+    coalesce(cid, 'phoneScale', function() store.setPhoneScale(cid, payload.scale, deviceOf(payload)) end)
     return { success = true }
 end)
 
@@ -265,7 +277,7 @@ lib.callback.register('sd-phone:server:settings:setBrightness', function(source,
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     payload = type(payload) == 'table' and payload or {}
-    coalesce(cid, 'brightness', function() store.setBrightness(cid, payload.brightness) end)
+    coalesce(cid, 'brightness', function() store.setBrightness(cid, payload.brightness, deviceOf(payload)) end)
     return { success = true }
 end)
 
@@ -275,7 +287,7 @@ lib.callback.register('sd-phone:server:settings:setPhoneAlign', function(source,
     if not cid then return { success = false, message = 'Player not found' } end
     if not writeAllowed(cid, 'phoneAlign') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
-    store.setPhoneAlign(cid, payload.align)
+    store.setPhoneAlign(cid, payload.align, deviceOf(payload))
     return { success = true }
 end)
 
@@ -284,7 +296,7 @@ lib.callback.register('sd-phone:server:settings:setVolumes', function(source, pa
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     payload = type(payload) == 'table' and payload or {}
-    coalesce(cid, 'volumes', function() store.setVolumes(cid, payload.ringtone, payload.call) end)
+    coalesce(cid, 'volumes', function() store.setVolumes(cid, payload.ringtone, payload.call, deviceOf(payload)) end)
     return { success = true }
 end)
 
@@ -294,7 +306,7 @@ lib.callback.register('sd-phone:server:settings:setLocale', function(source, pay
     if not cid then return { success = false, message = 'Player not found' } end
     if not writeAllowed(cid, 'locale') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
-    store.setLocale(cid, payload.locale)
+    store.setLocale(cid, payload.locale, deviceOf(payload))
     return { success = true }
 end)
 
@@ -305,7 +317,7 @@ lib.callback.register('sd-phone:server:settings:setAirplane', function(source, p
     if not writeAllowed(cid, 'airplane') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
     local on = payload.on == true
-    store.setAirplane(cid, on)
+    store.setAirplane(cid, on, deviceOf(payload))
     if not on then TriggerEvent('sd-phone:server:airplane:released', source) end
     return { success = true }
 end)
@@ -322,11 +334,11 @@ end)
 
 ---Marks the caller's profile as having completed first-run setup (one-way; the wipe path
 ---deletes the whole settings row, which is what un-sets it).
-lib.callback.register('sd-phone:server:settings:setSetupDone', function(source)
+lib.callback.register('sd-phone:server:settings:setSetupDone', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     if not writeAllowed(cid, 'setupDone') then return BUSY end
-    store.setSetupDone(cid)
+    store.setSetupDone(cid, deviceOf(payload))
     return { success = true }
 end)
 
@@ -336,7 +348,7 @@ lib.callback.register('sd-phone:server:settings:setReopenApp', function(source, 
     if not cid then return { success = false, message = 'Player not found' } end
     if not writeAllowed(cid, 'reopenApp') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
-    store.setReopenApp(cid, payload.on == true)
+    store.setReopenApp(cid, payload.on == true, deviceOf(payload))
     return { success = true }
 end)
 
@@ -346,7 +358,7 @@ lib.callback.register('sd-phone:server:settings:setTheme', function(source, payl
     if not cid then return { success = false, message = 'Player not found' } end
     if not writeAllowed(cid, 'theme') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
-    store.setTheme(cid, payload.theme)
+    store.setTheme(cid, payload.theme, deviceOf(payload))
     return { success = true }
 end)
 
@@ -356,7 +368,27 @@ lib.callback.register('sd-phone:server:settings:setDarkTheme', function(source, 
     if not cid then return { success = false, message = 'Player not found' } end
     if not writeAllowed(cid, 'darkTheme') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
-    store.setDarkTheme(cid, payload.darkTheme)
+    store.setDarkTheme(cid, payload.darkTheme, deviceOf(payload))
+    return { success = true }
+end)
+
+---Persists the caller's light-mode palette.
+lib.callback.register('sd-phone:server:settings:setLightTheme', function(source, payload)
+    local cid = player.getIdentifier(source)
+    if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'lightTheme') then return BUSY end
+    payload = type(payload) == 'table' and payload or {}
+    store.setLightTheme(cid, payload.lightTheme, deviceOf(payload))
+    return { success = true }
+end)
+
+---Persists the caller's accent colour.
+lib.callback.register('sd-phone:server:settings:setAccent', function(source, payload)
+    local cid = player.getIdentifier(source)
+    if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'accent') then return BUSY end
+    payload = type(payload) == 'table' and payload or {}
+    store.setAccent(cid, payload.accent, deviceOf(payload))
     return { success = true }
 end)
 
@@ -366,7 +398,7 @@ lib.callback.register('sd-phone:server:settings:setIconTheme', function(source, 
     if not cid then return { success = false, message = 'Player not found' } end
     if not writeAllowed(cid, 'iconTheme') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
-    store.setIconTheme(cid, payload.iconTheme)
+    store.setIconTheme(cid, payload.iconTheme, deviceOf(payload))
     return { success = true }
 end)
 
@@ -395,13 +427,39 @@ lib.callback.register('sd-phone:server:settings:deleteCustomIconTheme', function
     return { success = true }
 end)
 
+---Saves one of the caller's own colour palettes, keyed by its id; the store validates every
+---field and refuses past the per-character cap.
+lib.callback.register('sd-phone:server:settings:savePalette', function(source, payload)
+    local cid = player.getIdentifier(source)
+    if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'paletteSave') then return BUSY end
+    payload = type(payload) == 'table' and payload or {}
+    local ok, reason = store.saveCustomPalette(cid, payload.palette)
+    if ok then return { success = true } end
+    if reason == 'limit' then
+        return { success = false, message = 'You have saved as many palettes as this phone holds' }
+    end
+    return { success = false, message = 'Could not save that palette' }
+end)
+
+---Removes one of the caller's own colour palettes; any device using it falls back to its
+---built-in default shade.
+lib.callback.register('sd-phone:server:settings:deletePalette', function(source, payload)
+    local cid = player.getIdentifier(source)
+    if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'paletteDelete') then return BUSY end
+    payload = type(payload) == 'table' and payload or {}
+    store.deleteCustomPalette(cid, payload.id)
+    return { success = true }
+end)
+
 ---Persists whether the caller wants app names under their home-screen icons.
 lib.callback.register('sd-phone:server:settings:setShowAppNames', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     if not writeAllowed(cid, 'showAppNames') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
-    store.setShowAppNames(cid, payload.on == true)
+    store.setShowAppNames(cid, payload.on == true, deviceOf(payload))
     return { success = true }
 end)
 
@@ -411,7 +469,7 @@ lib.callback.register('sd-phone:server:settings:setTones', function(source, payl
     if not cid then return { success = false, message = 'Player not found' } end
     if not writeAllowed(cid, 'tones') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
-    store.setTones(cid, payload.ringtone, payload.notificationTone)
+    store.setTones(cid, payload.ringtone, payload.notificationTone, deviceOf(payload))
     return { success = true }
 end)
 
@@ -467,7 +525,7 @@ end)
 
 ---Factory reset (Settings > Erase All Content): uninstalls every downloadable app, clears the
 ---saved home layout, and signs the caller out of all app accounts and mailboxes.
-lib.callback.register('sd-phone:server:settings:factoryReset', function(source)
+lib.callback.register('sd-phone:server:settings:factoryReset', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
     -- Two unindexed mail scans plus a badge recompute, and a character erases their phone once
@@ -475,12 +533,9 @@ lib.callback.register('sd-phone:server:settings:factoryReset', function(source)
     if not util.cooldown(cid, 'settings:factoryReset', 30000) then
         return { success = false, message = 'Please wait a moment before trying again' }
     end
-    store.setInstalledApps(cid, {})
+    store.setInstalledApps(cid, {}, deviceOf(payload))
     store.setHomeLayout(cid, '')
-    accounts.clearAllSessions(cid)
-    for _, acc in ipairs(mail.listAccountsForCitizen(cid)) do
-        mail.removeSession(acc.email, cid)
-    end
+    accounts.signOutEverywhere(cid)
     badges.push(source)
     return { success = true }
 end)
@@ -530,5 +585,7 @@ exports('isAirplaneMode', function(source)
     if type(source) ~= 'number' then return false end
     local cid = player.getIdentifier(source)
     if not cid then return false end
+    -- Always the phone's radio: a caller asking whether this player is reachable means the device
+    -- that takes calls and texts, and a tablet has none.
     return store.isAirplane(cid)
 end)

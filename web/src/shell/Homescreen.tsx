@@ -34,6 +34,10 @@ const { w: SCREEN_W, h: SCREEN_H } = device.screen;
 // A phone dock spans the screen and spreads its icons over it. A tablet dock is a floating tray
 // sized to its contents, so the slots stop stretching and the row is centred instead.
 const DOCK_FILL = device.screen.dockFill ?? true;
+const DOCK_BOTTOM = 20;
+const DOCK_PAD_Y  = 28;
+const DOTS_GAP    = 6;
+const DOTS_BOTTOM = DOCK_BOTTOM + ICON + DOCK_PAD_Y + DOTS_GAP;
 const DOCK_SLOT = DOCK_FILL ? 'relative flex flex-1 justify-center' : 'relative flex justify-center';
 const ITEMS_PER_PAGE = COLS * ROWS;
 const COMMIT_THRESHOLD = SCREEN_W * 0.2;
@@ -1137,7 +1141,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                 </div>
             )}
 
-            <div className="absolute bottom-[132px] left-0 right-0 z-10 flex justify-center">
+            <div className="absolute left-0 right-0 z-10 flex justify-center" style={{ bottom: DOTS_BOTTOM }}>
                 {visiblePages > 1 && (
                     <div className="flex items-center gap-[7px] rounded-full bg-black/35 px-2.5 py-[7px] shadow-sm backdrop-blur-md">
                         {renderPages.map((_, i) => {

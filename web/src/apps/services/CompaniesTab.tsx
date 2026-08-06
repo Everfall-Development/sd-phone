@@ -111,7 +111,7 @@ function CompanyCard({ company, onLocate, onCall, onMessage }: {
     onMessage: () => void;
 }) {
     return (
-        <div className="flex items-center gap-4 rounded-[16px] bg-[#e5e5e5] px-4 py-4 dark:bg-surface">
+        <div className="flex items-center gap-4 rounded-[16px] bg-surface px-4 py-4">
             <div className="relative shrink-0">
                 <ServiceAvatar color={company.color} emoji={company.emoji} size={58} />
                 <span
@@ -121,7 +121,7 @@ function CompanyCard({ company, onLocate, onCall, onMessage }: {
                     title={company.onDuty
                         ? t('services.dutyOpen', 'Staff on duty')
                         : t('services.dutyClosed', 'Nobody on duty')}
-                    className={`absolute -right-px -top-px h-[15px] w-[15px] rounded-full ring-[3px] ring-[#e5e5e5] dark:ring-surface ${
+                    className={`absolute -right-px -top-px h-[15px] w-[15px] rounded-full ring-[3px] ring-surface ${
                         company.onDuty ? 'bg-[#34c759]' : 'bg-[#ff3b30]'
                     }`}
                 />

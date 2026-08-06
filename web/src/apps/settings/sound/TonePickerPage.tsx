@@ -98,7 +98,7 @@ export function TonePickerPage({
 
     return (
         <div
-            className="absolute inset-0 z-30 flex flex-col bg-[#d4d4d4] dark:bg-base"
+            className="absolute inset-0 z-30 flex flex-col bg-base"
             style={pageStyle}
         >
             <div className="h-11 shrink-0" aria-hidden />
@@ -107,7 +107,7 @@ export function TonePickerPage({
 
             <div className="flex-1 overflow-y-auto no-scrollbar">
                 <div className="mt-6 px-4 pb-10">
-                    <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                    <div className="overflow-hidden rounded-[10px] bg-surface">
                         {tones.map((tone, i) => renderTone(tone, i < tones.length - 1))}
                     </div>
 
@@ -116,7 +116,7 @@ export function TonePickerPage({
                             <div className="mb-2 mt-7 px-4 text-[13px] font-normal uppercase tracking-wide text-ios-gray">
                                 {custom.myTones}
                             </div>
-                            <div className="overflow-hidden rounded-[10px] bg-[#e5e5e5] dark:bg-surface">
+                            <div className="overflow-hidden rounded-[10px] bg-surface">
                                 {custom.items.map(c => renderTone(c, true, () => {
                                     if (previewing === c.id) { stopPreview(); setPreviewing(null); }
                                     custom.onRemove(c.id);
