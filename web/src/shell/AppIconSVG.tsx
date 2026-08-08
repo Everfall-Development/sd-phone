@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 
+import kaleidoIcon from '@/assets/Kaleido.jpg';
+import quipIcon from '@/assets/Quip.png';
 import { customAccent, useCustomAppsStore } from '@/stores/customAppsStore';
 
 const S = 60;
@@ -690,28 +692,9 @@ function CalculatorIcon() {
 }
 
 function BirdyIcon() {
-    // The user-drawn "plump two-feather flyer" final mark (Downloads/BirdyIconNEWEST2.jsx)
-    // with its authored periwinkle palette; the bare glyph twin lives in apps/birdy/BirdyBird.
     return (
         <svg viewBox={`0 0 ${S} ${S}`} width={S} height={S}>
-            <defs>
-                <linearGradient id="bdy" x1="0.15" y1="0" x2="0.85" y2="1">
-                    <stop offset="0" stopColor="#6b8ff5" />
-                    <stop offset="0.55" stopColor="#5570e8" />
-                    <stop offset="1" stopColor="#4353d4" />
-                </linearGradient>
-            </defs>
-            <rect width={S} height={S} fill="url(#bdy)" />
-            <svg x="0" y="0" width={S} height={S} viewBox="0 0 512 512">
-                {/* Centered on the artwork's bounding box (x 8-95, y 19-96 in its 100-frame). */}
-                <g transform="translate(37,11.5) scale(4.25)">
-                    <path
-                        fill="#fff"
-                        d="M95 25 C89 29 83 33 78 35 C82 43 84 52 80 58 C74 78 60 95 37 95 C28 96 18 94 8 90 C18 84 26 80 32 76 C23 75 16 69 14 60 C19 62 24 62 28 61 C17 55 10 42 13 28 C20 38 30 43 41 44 C42 36 46 29 52 25 C57 20 65 19 70 22 C75 24 79 25 82 26 C86 26 90 25 95 25 Z"
-                    />
-                    <circle cx="67" cy="30" r="4" fill="#5570e8" />
-                </g>
-            </svg>
+            <image href={quipIcon} width={S} height={S} preserveAspectRatio="xMidYMid slice" />
         </svg>
     );
 }
@@ -756,26 +739,7 @@ function CherryIcon() {
 function PhotogramIcon() {
     return (
         <svg viewBox={`0 0 ${S} ${S}`} width={S} height={S}>
-            <defs>
-                <linearGradient id="pgram" x1="0" y1="1" x2="1" y2="0">
-                    <stop offset="0" stopColor="#FCAF45" />
-                    <stop offset="0.5" stopColor="#E1306C" />
-                    <stop offset="1" stopColor="#7B2FF7" />
-                </linearGradient>
-                <radialGradient id="pgramLens" cx="40%" cy="34%" r="66%">
-                    <stop offset="0" stopColor="#26262f" />
-                    <stop offset="1" stopColor="#08080c" />
-                </radialGradient>
-            </defs>
-            <rect width={S} height={S} fill="url(#pgram)" />
-            <rect x="9" y="9.5" width="12" height="3" rx="1.5" fill="#fff" opacity="0.6" />
-            <rect x="43" y="8" width="8" height="5.5" rx="2" fill="#fff" opacity="0.92" />
-            <circle cx="30" cy="33" r="16.5" fill="#fff" opacity="0.22" />
-            <circle cx="30" cy="33" r="14.5" fill="url(#pgramLens)" />
-            <circle cx="30" cy="33" r="14.5" fill="none" stroke="#fff" strokeWidth="1.8" />
-            <circle cx="30" cy="33" r="8" fill="none" stroke="#fff" strokeWidth="2" opacity="0.55" />
-            <circle cx="30" cy="33" r="3.6" fill="#08080c" />
-            <ellipse cx="24" cy="27" rx="3.7" ry="2.3" fill="#fff" opacity="0.4" transform="rotate(-30 24 27)" />
+            <image href={kaleidoIcon} width={S} height={S} preserveAspectRatio="xMidYMid slice" />
         </svg>
     );
 }
@@ -1470,4 +1434,3 @@ function CustomAppTile({ appId, size }: { appId: string; size?: number }) {
         </div>
     );
 }
-

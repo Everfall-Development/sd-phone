@@ -507,7 +507,7 @@ function actions.birdySetVerified(source, payload)
     local handle = util.trim(payload and payload.handle):lower()
     if handle == '' or #handle > 32 then return fail('Missing account') end
     local verified = payload and payload.verified == true
-    if store.setBirdyVerified(handle, verified) == 0 then return fail('No Birdy profile') end
+    if store.setBirdyVerified(handle, verified) == 0 then return fail('No Quip profile') end
     local aCid, aName = adminIdent(source)
     store.audit(aCid, aName, verified and 'birdy-verify' or 'birdy-unverify', nil, '@' .. handle)
     return ok()

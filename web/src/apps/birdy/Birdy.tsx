@@ -323,7 +323,7 @@ export function Birdy({ onClose }: { onClose: () => void }) {
     const authScreen = (
             <AppAuth
                 appId="birdy"
-                appName="Birdy"
+                appName="Quip"
                 tagline={t('squawk.tagline', 'Where the city starts conversations.')}
                 icon="birdy"
                 theme={{
@@ -497,7 +497,7 @@ export function Birdy({ onClose }: { onClose: () => void }) {
             <button
                 type="button"
                 onClick={onClose}
-                aria-label={t('squawk.closeBirdy', 'Close Squawk')}
+                aria-label={t('squawk.closeBirdy', 'Close Quip')}
                 className="absolute inset-x-0 bottom-0 z-[5] h-5 cursor-default"
             />
 

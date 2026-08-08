@@ -34,7 +34,7 @@ function M.run(ctx)
         if not app or not cid then
             skipped = skipped + 1
         else
-            rows[#rows + 1] = { app, cid, l.username }
+            rows[#rows + 1] = { app, cid, l.username, 1 }
             written = written + 1
         end
     end

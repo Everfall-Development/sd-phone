@@ -4,7 +4,7 @@
 
 **An iOS-themed smartphone for FiveM.** that supports QBOX, QBCORE and ESX. 45+ server-backed apps, real app accounts, a live game-view camera and online multiplayer games. Ships its own custom phone props: eight phone items in eight colours, each tinting both the on-screen frame and the custom prop model held in hand. A unique phone system as well as sim cards can be enabled!
 
-**A drop-in lb-phone replacement.** Scripts and custom apps written against lb-phone's exports and events keep running unmodified, and a first-boot migration carries your players across rather than resetting them: phone numbers and lock passcodes, contacts, blocked numbers, call history, SMS threads including groups and reactions, photos and albums, notes, phone settings, mail accounts with their inboxes, wallet transaction history, voice memos, Photogram and Birdy accounts with their posts, stories, DMs and followers, and the app logins themselves, so players open the phone already signed in.
+**A drop-in lb-phone replacement.** Scripts and custom apps written against lb-phone's exports and events keep running unmodified, and a first-boot migration carries your players across rather than resetting them: phone numbers and lock passcodes, contacts, blocked numbers, call history, SMS threads including groups and reactions, photos and albums, notes, phone settings, mail accounts with their inboxes, wallet transaction history, voice memos, Kaleido and Quip accounts with their posts, stories, DMs and followers, and the app logins themselves, so players open the phone already signed in.
 
 If sd-phone is useful to you, please ⭐ the repo. Issues and pull requests are always welcome.
 
@@ -76,7 +76,7 @@ The Camera, Photos and Voice Memos apps need somewhere to store what they captur
 | | |
 |---|---|
 | **Communication** | Phone (1:1, group and company calls over pma-voice), Messages (SMS, group threads, GIFs, money and location cards), Mail (multi-account, global inboxes), Groups, Dark Chat, Radio, Find Friends |
-| **Social** | Photogram (posts, stories, DMs, real live video streaming), Birdy, Cherry, Vibez, Streaks, all on a shared accounts engine with registration, sign-in, and password resets delivered in-game |
+| **Social** | Kaleido (posts, stories, DMs, real live video streaming), Quip, Cherry, Vibez, Streaks, all on a shared accounts engine with registration, sign-in, and password resets delivered in-game |
 | **Camera & media** | Camera (live game view: photos, video with voice capture, selfie mode), Photos, Music (with AirShare library sharing), Voice Memos |
 | **World** | Maps (CDN-streamed tiles, routing, pins), Garages, Homes, Wallet, Services (company directory, dispatch messaging, phone multijob), Ryde (player-to-player ride hailing), Weazel News, Pages, Marketplace, Review, Weather, Stocks |
 | **Games** | Chess, Connect Four, Battleship and Wordle with online lobbies, plus Blackjack, Cookie, Flappy, Blocks, Climber and Rail Runner with server-side leaderboards |
@@ -133,7 +133,7 @@ after: [github.com/Samuels-Development/sd-tablet](https://github.com/Samuels-Dev
 
 - **Real accounts engine.** Social apps use actual registration and login, with verification codes and password resets delivered by in-game mail or SMS. Accounts are global, not per-character-slot.
 - **Live game-view camera.** The Camera app renders the world into the phone screen in real time; video clips record your microphone and nearby players' voices.
-- **Photogram Live.** Stream real encoded video to other players' phones, with clean late-joins.
+- **Kaleido Live.** Stream real encoded video to other players' phones, with clean late-joins.
 - **Deep world integration.** Garages and Homes bridge across ten-plus garage and housing systems; Wallet routes through Everfall or framework banking; Services maps jobs to callable, messageable companies; Weather mirrors the in-game sky.
 - **Custom apps.** Other resources can put their own apps on the phone: one export call turns any webpage into an installable app with icons, badges, notifications, popups and an App Store listing. Custom apps built for lb-phone run unmodified. Start from the [app templates](https://github.com/Samuels-Development/sd-phone-app-templates) (plain JS, React JS/TS, Vue 3, Svelte 5) and the [custom app guide](https://docs.samueldev.shop/resources/phone/custom-apps).
 - **lb-phone drop-in compatibility.** Third-party scripts written against lb-phone's exports and events keep working unmodified, and a one-command migrator imports lb-phone player data. See the [compatibility docs](https://docs.samueldev.shop/resources/phone/lb-phone-compatibility).

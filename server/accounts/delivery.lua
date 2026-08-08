@@ -10,10 +10,10 @@ local delivery = {}
 -- Per-app delivery identity: SMS short code and display name.
 ---@type table<string, { name: string, code: string }> Sender identity per account app.
 local APPS = {
-    photogram = { name = 'Photogram', code = '74682' },
+    photogram = { name = 'Kaleido',   code = '74682' },
     cherry    = { name = 'Cherry',    code = '24377' },
     vibez     = { name = 'Vibez',     code = '84239' },
-    birdy     = { name = 'Squawk',    code = '24739' },
+    birdy     = { name = 'Quip',      code = '24739' },
     mail      = { name = 'Mail',      code = '62450' },
     ryde      = { name = 'Ryde',      code = '79333' },
 }

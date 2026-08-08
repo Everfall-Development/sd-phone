@@ -80,7 +80,7 @@ function M.run(ctx)
             out.collided = out.collided + 1
         else
             taken[addr] = true
-            addressOf[a.address] = addr
+            addressOf[tostring(a.address):lower()] = addr
             kept[#kept + 1] = { raw = a.address, email = addr, password = a.password }
         end
     end
@@ -93,10 +93,10 @@ function M.run(ctx)
 
     if store.lbSource('mail_messages') then
         for _, m in ipairs(store.lbMailMessages()) do
-            local to = addressOf[m.recipient]
+            local to = addressOf[tostring(m.recipient):lower()]
             local box = to and inbox[to]
             if box then
-                local from = addressOf[m.sender] or onOurDomain(m.sender)
+                local from = addressOf[tostring(m.sender):lower()] or onOurDomain(m.sender)
                 -- Built to the shape server/mail/actions.lua writes for a real send. Getting this
                 -- wrong renders a message with an empty sender, no recipients and no body.
                 -- Attachments are deliberately dropped: sd-phone's are a tagged union
@@ -125,7 +125,7 @@ function M.run(ctx)
             -- lb-phone capitalises these ('Mail'), so compare case-insensitively.
             if tostring(l.app or ''):lower() == 'mail' then
                 local cid = ctx.numberToCid[digits(l.phone_number)]
-                local addr = addressOf[l.username]
+                local addr = addressOf[tostring(l.username):lower()]
                 local box = addr and logins[addr]
                 if cid and box then
                     box[#box + 1] = cid

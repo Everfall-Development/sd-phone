@@ -150,7 +150,7 @@ end)
 ---old account's posts and followers.
 ---@param source integer player server id (0 from console)
 lib.addCommand('wipephotogram', {
-    help = 'Wipe ALL Photogram accounts and their content. Same as /wipephoneaccounts photogram.',
+    help = 'Wipe ALL Kaleido accounts and their content. Same as /wipephoneaccounts photogram.',
     restricted = 'group.admin',
 }, function(source)
     local removed = wipeApp('photogram')
@@ -158,7 +158,7 @@ lib.addCommand('wipephotogram', {
     print(('^3[sd-phone:accounts]^0 %s'):format(msg))
     if source and source > 0 then
         TriggerClientEvent('ox_lib:notify', source, {
-            title = 'Photogram', description = msg, type = 'success',
+            title = 'Kaleido', description = msg, type = 'success',
         })
     end
 end)

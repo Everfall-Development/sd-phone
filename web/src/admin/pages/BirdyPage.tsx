@@ -107,7 +107,7 @@ export function BirdyPage({ onOpenPlayer, toast }: {
 
             {doomed && (
                 <ConfirmModal
-                    title="Delete Birdy post"
+                    title="Delete Quip post"
                     body="The post, its replies and their likes are permanently removed. This cannot be undone."
                     confirmLabel="Delete post"
                     danger

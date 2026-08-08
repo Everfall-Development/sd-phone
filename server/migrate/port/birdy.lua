@@ -1,5 +1,5 @@
----@type table Birdy porter (server.migrate.port.birdy). Copies lb-phone's Twitter graph into
----Birdy and restores the active account for each resolved character.
+---@type table Quip porter (server.migrate.port.birdy). Copies lb-phone's Twitter graph into
+---Quip and restores every resolved account session for each character.
 local M = {}
 
 ---@type table Migration data layer (server.migrate.store).
@@ -50,20 +50,13 @@ local function claimHandle(source, cid, used)
     end
 end
 
-local function accountOrder(left, right)
-    if left.active ~= right.active then return left.active end
-
-    local leftTimestamp = tonumber(left.account.ts) or 0
-    local rightTimestamp = tonumber(right.account.ts) or 0
-    if leftTimestamp ~= rightTimestamp then return leftTimestamp < rightTimestamp end
-
-    return tostring(left.account.username) < tostring(right.account.username)
+local function identityKey(cid, phone, timestamp)
+    return ('%s\0%s\0%s'):format(cid, digits(phone), tonumber(timestamp) or 0)
 end
 
----Birdy has one profile per character while lb-phone allowed several Twitter accounts per phone.
----Choose the account active on that character's own phone; if none is active, keep the oldest one.
----Unresolved owners and additional accounts cannot be represented without assigning their content
----to the wrong character, so their rows are reported and left untouched in the lb-phone archive.
+---Quip supports multiple profiles per character. Preserve every legacy account whose phone resolves
+---to a character, create a switchable session for each one, and make the account that was active in
+---lb-phone the most recently used session.
 ---@param ctx table migration context (numberToCid, dryRun)
 ---@return table counts
 function M.run(ctx)
@@ -75,32 +68,31 @@ function M.run(ctx)
     }
     if not store.lbSource('twitter_accounts') then return out end
 
-    local twitterLogins = {}
     local activeByPhone = {}
     if store.lbSource('logged_in_accounts') then
         for _, login in ipairs(store.lbLoggedIn()) do
             if tostring(login.app or ''):lower() == 'twitter' then
                 local number = digits(login.phone_number)
                 local cid = ctx.numberToCid[number]
-                twitterLogins[#twitterLogins + 1] = {
-                    username = tostring(login.username or ''),
-                    cid = cid,
-                }
-                activeByPhone[number] = tostring(login.username or ''):lower()
+                if cid then
+                    activeByPhone[number] = tostring(login.username or ''):lower()
+                else
+                    out.sessionOrphan = out.sessionOrphan + 1
+                end
             end
         end
     end
 
-    local groups = {}
+    local resolved = {}
     for _, account in ipairs(store.lbTwitterAccounts()) do
         local number = digits(account.phone_number)
         local cid = ctx.numberToCid[number]
         if not cid then
             out.unresolved = out.unresolved + 1
         else
-            groups[cid] = groups[cid] or {}
-            groups[cid][#groups[cid] + 1] = {
+            resolved[#resolved + 1] = {
                 account = account,
+                cid = cid,
                 active = activeByPhone[number] == tostring(account.username):lower(),
             }
         end
@@ -110,61 +102,65 @@ function M.run(ctx)
     local used = {}
     for handle in pairs(existing.handles) do used[tostring(handle):lower()] = true end
 
-    local cids = {}
-    for cid in pairs(groups) do cids[#cids + 1] = cid end
-    table.sort(cids)
+    local existingByIdentity = {}
+    for _, profile in ipairs(existing.profiles) do
+        local key = identityKey(profile.citizenid, profile.phone, profile.created_ts)
+        existingByIdentity[key] = existingByIdentity[key] or {}
+        existingByIdentity[key][#existingByIdentity[key] + 1] = profile
+    end
+    for _, profiles in pairs(existingByIdentity) do
+        table.sort(profiles, function(left, right)
+            return tostring(left.handle) < tostring(right.handle)
+        end)
+    end
+
+    table.sort(resolved, function(left, right)
+        if left.cid ~= right.cid then return left.cid < right.cid end
+        local leftTimestamp = tonumber(left.account.ts) or 0
+        local rightTimestamp = tonumber(right.account.ts) or 0
+        if leftTimestamp ~= rightTimestamp then return leftTimestamp < rightTimestamp end
+        return tostring(left.account.username) < tostring(right.account.username)
+    end)
 
     local selected = {}
-    for _, cid in ipairs(cids) do
-        local candidates = groups[cid]
-        table.sort(candidates, accountOrder)
-        out.alternate = out.alternate + math.max(0, #candidates - 1)
-
-        local account = candidates[1].account
+    local accountsByCid = {}
+    for _, candidate in ipairs(resolved) do
+        local account = candidate.account
+        local cid = candidate.cid
         local source = tostring(account.username)
-        local existingProfile = existing.cids[cid]
-        if existingProfile then
-            -- A failed first attempt can leave the profile insert behind before the domain marker
-            -- is written. Its source phone and original join timestamp identify it precisely enough
-            -- to resume the idempotent graph inserts. Any other profile is live data and is skipped.
-            local samePhone = digits(existingProfile.phone) == digits(account.phone_number)
-            local sameTimestamp = tonumber(existingProfile.created_ts) == tonumber(account.ts)
-            if samePhone and sameTimestamp then
-                selected[source:lower()] = {
-                    account = account,
-                    cid = cid,
-                    handle = existingProfile.handle,
-                    loggedIn = false,
-                }
-            else
-                out.occupied = out.occupied + 1
+        local key = identityKey(cid, account.phone_number, account.ts)
+        local matches = existingByIdentity[key]
+        local existingProfile
+        if matches then
+            local expectedHandle = normalizedHandle(source)
+            for index, profile in ipairs(matches) do
+                if tostring(profile.handle):lower() == expectedHandle then
+                    existingProfile = table.remove(matches, index)
+                    break
+                end
             end
-        else
-            selected[source:lower()] = {
-                account = account,
-                cid = cid,
-                handle = claimHandle(source, cid, used),
-                loggedIn = false,
-            }
+            existingProfile = existingProfile or table.remove(matches, 1)
         end
+        local handle
+        if existingProfile then
+            handle = existingProfile.handle
+        else
+            handle = claimHandle(source, cid, used)
+        end
+
+        selected[source:lower()] = {
+            account = account,
+            cid = cid,
+            handle = handle,
+            active = candidate.active,
+        }
+        accountsByCid[cid] = (accountsByCid[cid] or 0) + 1
+    end
+    for _, count in pairs(accountsByCid) do
+        out.alternate = out.alternate + math.max(0, count - 1)
     end
 
     local sessions = {}
-    local seenSessions = {}
-    for _, login in ipairs(twitterLogins) do
-        local profile = selected[login.username:lower()]
-        if profile and login.cid and not existing.sessions[login.cid] then
-            local key = login.cid .. '\0' .. profile.handle
-            if not seenSessions[key] then
-                seenSessions[key] = true
-                profile.loggedIn = true
-                sessions[#sessions + 1] = { 'birdy', login.cid, profile.handle }
-            end
-        else
-            out.sessionOrphan = out.sessionOrphan + 1
-        end
-    end
-
     local profiles = {}
     local grants = {}
     for _, profile in pairs(selected) do
@@ -172,7 +168,13 @@ function M.run(ctx)
             profile.account.username,
             profile.cid,
             profile.handle,
-            profile.loggedIn and 1 or 0,
+            profile.active and 1 or 0,
+        }
+        sessions[#sessions + 1] = {
+            'birdy',
+            profile.cid,
+            profile.handle,
+            profile.active and 1 or 0,
         }
         grants[#grants + 1] = {
             app = 'birdy',
@@ -180,7 +182,10 @@ function M.run(ctx)
             cid = profile.cid,
         }
     end
-    table.sort(profiles, function(left, right) return left[2] < right[2] end)
+    table.sort(profiles, function(left, right)
+        if left[2] ~= right[2] then return left[2] < right[2] end
+        return left[1] < right[1]
+    end)
 
     local migrated = store.migrateBirdy(profiles, ctx.dryRun)
     for key, value in pairs(migrated) do out[key] = value end
@@ -195,7 +200,7 @@ function M.run(ctx)
     local linked, inserted = store.insertPgSessions(sessions)
     linked, inserted = linked or 0, inserted or 0
     if linked == 0 and #sessions > 0 then
-        error(('no Birdy accounts found to link %d active session(s)'):format(#sessions), 0)
+        error(('no Quip accounts found to link %d session(s)'):format(#sessions), 0)
     end
     out.sessions = linked
     out.createdSessions = inserted

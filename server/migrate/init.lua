@@ -138,11 +138,11 @@ local SUMMARY_FIELDS = {
     notes      = { { 'migrated', 'note' } },
     settings   = { { 'imported', 'settings profile' } },
     photogram  = {
-        { 'profiles', 'Photogram account' }, { 'posts', 'post' }, { 'comments', 'comment' },
+        { 'profiles', 'Kaleido account' }, { 'posts', 'post' }, { 'comments', 'comment' },
         { 'stories', 'story' }, { 'dms', 'direct message' }, { 'follows', 'follow' },
     },
     birdy      = {
-        { 'profiles', 'Birdy profile' }, { 'posts', 'post' }, { 'likes', 'like' },
+        { 'profiles', 'Quip profile' }, { 'posts', 'post' }, { 'likes', 'like' },
         { 'reposts', 'repost' }, { 'follows', 'follow' }, { 'dms', 'direct message' },
         { 'notifications', 'notification' }, { 'sessions', 'signed-in account' },
     },

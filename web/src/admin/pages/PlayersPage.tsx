@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { ChevronRight, Radar, Search } from 'lucide-react';
 
 import { adminSearch, adminSimLookup } from '../adminApi';
-import { fmtPhone, type AdminPlayerHit, type AdminSimLookup } from '../types';
+import { fmtPhone, matchLabel, type AdminPlayerHit, type AdminSimLookup } from '../types';
 import { Badge, Btn, Card, CenterNote, ConfirmModal, Input, LoadMore, OnlineDot, PromptModal, Spinner } from '../ui';
 import { usePaged } from '../usePaged';
 
@@ -39,7 +39,7 @@ export function PlayersPage({ initialQuery, onOpenPlayer }: {
                     onChange={setQ}
                     autoFocus
                     onEnter={submit}
-                    placeholder="Search by name, citizen ID, phone number, Birdy handle or account username — press Enter"
+                    placeholder="Search by name, citizen ID, phone number, Quip handle or account username — press Enter"
                 />
                 <Btn variant="primary" onClick={submit} disabled={q.trim().length === 1}>
                     <Search size={14} /> Search
@@ -80,7 +80,7 @@ export function PlayersPage({ initialQuery, onOpenPlayer }: {
                                 </td>
                                 <td className="px-4 py-2.5 font-mono text-[12px] text-zinc-400">{h.citizenid}</td>
                                 <td className="px-4 py-2.5 text-zinc-300">{fmtPhone(h.phoneNumber)}</td>
-                                <td className="px-4 py-2.5">{h.matchedOn && <Badge>{h.matchedOn}</Badge>}</td>
+                                <td className="px-4 py-2.5">{h.matchedOn && <Badge>{matchLabel(h.matchedOn)}</Badge>}</td>
                                 <td className="pr-3 text-zinc-600"><ChevronRight size={15} /></td>
                             </tr>
                         ))}

@@ -185,8 +185,8 @@ export interface MuteScopeDef {
 
 // Mirrors SCOPES in server/admin/moderation.lua.
 export const MUTE_SCOPES: MuteScopeDef[] = [
-    { id: 'birdy',     label: 'Squawk',    social: true },
-    { id: 'photogram', label: 'Photogram', social: true },
+    { id: 'birdy',     label: 'Quip',    social: true },
+    { id: 'photogram', label: 'Kaleido', social: true },
     { id: 'vibez',     label: 'Vibez',     social: true },
     { id: 'cherry',    label: 'Cherry',    social: true },
     { id: 'darkchat',  label: 'Dark Chat', social: true },
@@ -196,6 +196,14 @@ export const MUTE_SCOPES: MuteScopeDef[] = [
 
 export function scopeLabel(id: string): string {
     return MUTE_SCOPES.find(s => s.id === id)?.label ?? id;
+}
+
+export function matchLabel(value: string): string {
+    const [app, username] = value.split(':', 2);
+    if (!username) return value;
+    if (app === 'birdy') return `Quip: ${username}`;
+    if (app === 'photogram') return `Kaleido: ${username}`;
+    return value;
 }
 
 // Epoch seconds OR milliseconds -> short local date-time. The server mixes both

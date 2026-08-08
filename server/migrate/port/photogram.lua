@@ -36,10 +36,10 @@ function M.run(ctx)
     local out = {
         profiles = 0, posts = 0, comments = 0, likes = 0, commentLikes = 0, follows = 0,
         stories = 0, views = 0, dms = 0, notifications = 0, accounts = 0, skipped = 0, orphan = 0,
-        logins = 0,
+        logins = 0, sessions = 0,
     }
     local profiles, accounts = {}, {}
-    local grants = {}
+    local grants, sessions = {}, {}
     local posts, comments, likes, commentLikes = {}, {}, {}, {}
     local follows, stories, views, dms, notifs = {}, {}, {}, {}, {}
 
@@ -63,26 +63,28 @@ function M.run(ctx)
     if store.lbSource('instagram_accounts') then
         for _, a in ipairs(store.lbIgAccounts()) do
             local user = str(a.username, 64)
-            if user and not taken[user] then
+            local existing = user and taken[user] or nil
+            local resumed = existing and tonumber(existing.created_ts) == tonumber(a.ts)
+            if user and (not existing or resumed) then
                 known[user] = true
-                profiles[#profiles + 1] = {
-                    user, str(a.display_name, 64) or user, str(a.bio, 200) or '',
-                    str(a.profile_image, 512), bit(a.private), bit(a.verified), ts(a.ts),
-                }
-                out.profiles = out.profiles + 1
+                if not existing then
+                    profiles[#profiles + 1] = {
+                        user, str(a.display_name, 64) or user, str(a.bio, 200) or '',
+                        str(a.profile_image, 512), bit(a.private), bit(a.verified), ts(a.ts),
+                    }
+                    out.profiles = out.profiles + 1
 
-                -- Accounts only. Who is signed in comes from lb's logged-in state, which the
-                -- sessions porter owns; signing in every account whose phone resolves would sign a
-                -- player into all of their alts.
-                accounts[#accounts + 1] = {
-                    'photogram', user, str(a.display_name, 50) or user, str(a.password, 64) or '',
-                }
-                out.accounts = out.accounts + 1
+                    accounts[#accounts + 1] = {
+                        'photogram', user, str(a.display_name, 50) or user, str(a.password, 64) or '',
+                    }
+                    out.accounts = out.accounts + 1
+                end
 
-                -- lb's hash is bcrypt and unusable here, so the owner needs a password they can
-                -- actually read and type. Granted after the insert below.
                 local cid = ctx.numberToCid[digits(a.phone_number)]
-                if cid then grants[#grants + 1] = { app = 'photogram', username = user, cid = cid } end
+                if cid then
+                    grants[#grants + 1] = { app = 'photogram', username = user, cid = cid }
+                    sessions[#sessions + 1] = { 'photogram', cid, user, 0 }
+                end
             else
                 out.skipped = out.skipped + 1
             end
@@ -209,6 +211,8 @@ function M.run(ctx)
         store.insertPgDms(dms)
         store.insertPgNotifications(notifs)
         out.logins = store.grantMigratedLogins(grants)
+        local linked = store.insertPgSessions(sessions)
+        out.sessions = linked or 0
     end
     return out
 end

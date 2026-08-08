@@ -102,11 +102,11 @@ export function PostCard({ post, isOwn, onToggleLike, onToggleRepost, onOpen, on
 
         {confirmRepost && (
             <AlertDialog
-                title={reposted ? t('squawk.undoRetweet', 'Undo Retweet') : t('squawk.retweet', 'Retweet')}
+                title={reposted ? t('squawk.undoRetweet', 'Undo Repost') : t('squawk.retweet', 'Repost')}
                 message={reposted
-                    ? t('squawk.removeRetweetMessage', "Remove your retweet of {name}'s post?", { name: post.author.name })
-                    : t('squawk.retweetMessage', "Are you sure you want to retweet {name}'s post?", { name: post.author.name })}
-                confirmLabel={reposted ? t('squawk.undo', 'Undo') : t('squawk.retweet', 'Retweet')}
+                    ? t('squawk.removeRetweetMessage', "Remove your repost of {name}'s post?", { name: post.author.name })
+                    : t('squawk.retweetMessage', "Are you sure you want to repost {name}'s post?", { name: post.author.name })}
+                confirmLabel={reposted ? t('squawk.undo', 'Undo') : t('squawk.retweet', 'Repost')}
                 onCancel={() => setConfirmRepost(false)}
                 onConfirm={() => { onToggleRepost?.(); setConfirmRepost(false); }}
             />

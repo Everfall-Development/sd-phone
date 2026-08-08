@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, CalendarDays, Heart, Image as ImageIcon, Lock, Mail, MessageCircle } from 'lucide-react';
 
-import { BirdyBird } from '../BirdyBird';
+import { QuipMark } from '../QuipMark';
 
 import { t } from '@/i18n';
 import { useAsyncData } from '@/hooks/useAsyncData';
@@ -24,7 +24,7 @@ function tabLabels(): Record<Tab, string> {
 
 function tabEmptyStates(): Record<Tab, { icon: React.ReactNode; title: string; subtitle: string }> {
     return {
-        posts:   { icon: <BirdyBird className="h-7 w-7" />,       title: t('squawk.noPostsYet', 'No posts yet'),   subtitle: t('squawk.postsEmptySubtitle', 'Posts will show up here.') },
+        posts:   { icon: <QuipMark className="h-7 w-7" />,       title: t('squawk.noPostsYet', 'No posts yet'),   subtitle: t('squawk.postsEmptySubtitle', 'Posts will show up here.') },
         replies: { icon: <MessageCircle className="h-7 w-7" strokeWidth={1.8} />, title: t('squawk.noRepliesYet', 'No replies yet'), subtitle: t('squawk.repliesEmptySubtitle', 'Replies will show up here.') },
         media:   { icon: <ImageIcon className="h-7 w-7" strokeWidth={1.8} />,     title: t('squawk.noMediaYet', 'No media yet'),   subtitle: t('squawk.mediaEmptySubtitle', 'Photos and videos will show up here.') },
         likes:   { icon: <Heart className="h-7 w-7" strokeWidth={1.8} />,         title: t('squawk.noLikesYet', 'No likes yet'),   subtitle: t('squawk.likesEmptySubtitle', 'Liked posts will show up here.') },

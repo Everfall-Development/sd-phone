@@ -111,7 +111,7 @@ export function EditProfile({ profile, onCancel, onSave, onSignOut, onSignOutAll
 
             {confirmOut && (
                 <AlertDialog
-                    title={t('photogram.signOutTitle', 'Sign out of Photogram?')}
+                    title={t('photogram.signOutTitle', 'Sign out of Kaleido?')}
                     message={switchTo
                         ? t('accounts.signOutSwitchMessage', "You'll be switched to {name}.", { name: switchTo })
                         : t('photogram.signOutMessage', 'You can sign back in anytime.')}
@@ -144,7 +144,7 @@ export function EditProfile({ profile, onCancel, onSave, onSignOut, onSignOutAll
             {pwOpen && (
                 <ChangePasswordPage
                     app="photogram"
-                    appName="Photogram"
+                    appName="Kaleido"
                     icon="photogram"
                     theme={{ accent: IG.blue, welcomeBg: '#f2f2f2', welcomeText: 'dark' }}
                     onClose={() => setPwOpen(false)}

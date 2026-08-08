@@ -7,7 +7,6 @@ import { type Post, type User } from '../data';
 import type { LiveEntry, StoryGroup } from '../photogramApi';
 import { StoriesRow } from '../stories/StoriesRow';
 import { PostCard } from './PostCard';
-import { VerifiedCheck } from '../ui';
 
 export function Feed({ posts, me, stories, lives, hasOwnStory, onLike, onDoubleLike, onSave, onComment, onOpenStory, onOpenLive, onAddStory, onOpenDMs, onOpenProfile, onShare, onDelete, onRefresh, dmCount }: {
     posts:         Post[];
@@ -43,10 +42,7 @@ export function Feed({ posts, me, stories, lives, hasOwnStory, onLike, onDoubleL
     return (
         <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex shrink-0 items-center justify-between px-4 pb-0.5 pt-0.5">
-                <div className="flex items-center gap-1.5">
-                    <span className="text-[27px] font-bold italic tracking-tight text-black">Photogram</span>
-                    <VerifiedCheck size={25} />
-                </div>
+                <span className="text-[27px] font-bold tracking-[-0.04em] text-black">Kaleido</span>
                 <div className="flex items-center gap-4">
                     <button type="button" aria-label={t('photogram.refresh', 'Refresh')} onClick={handleRefresh} disabled={refreshing} className="text-black active:opacity-50">
                         <RotateCw className={`h-[27px] w-[27px] ${refreshing ? 'animate-spin' : ''}`} strokeWidth={1.9} />

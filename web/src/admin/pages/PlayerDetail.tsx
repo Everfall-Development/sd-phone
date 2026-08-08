@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-    ArrowLeft, AtSign, BadgeCheck, Bird, Bomb, ChevronRight, Grid3x3, KeyRound, LockOpen,
+    ArrowLeft, AtSign, BadgeCheck, Bomb, ChevronRight, Grid3x3, KeyRound, LockOpen,
     LogOut, MessageSquare, Phone, PhoneCall, ShieldAlert, User,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -18,6 +18,7 @@ import {
 import { Badge, Btn, Card, CenterNote, ConfirmModal, LoadMore, OnlineDot, PromptModal, Spinner } from '../ui';
 import { usePaged } from '../usePaged';
 import { PostCard } from './BirdyPage';
+import { QuipMark } from '@/apps/birdy/QuipMark';
 import { MuteForm } from './MutesPage';
 
 type Tab = 'overview' | 'apps' | 'accounts' | 'birdy' | 'messages' | 'calls' | 'moderation';
@@ -26,7 +27,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'overview',   label: 'Overview',   icon: <User size={13} /> },
     { id: 'apps',       label: 'Apps',       icon: <Grid3x3 size={13} /> },
     { id: 'accounts',   label: 'Accounts',   icon: <AtSign size={13} /> },
-    { id: 'birdy',      label: 'Squawk',     icon: <Bird size={13} /> },
+    { id: 'birdy',      label: 'Quip',       icon: <QuipMark color="white" className="h-[13px] w-[13px]" /> },
     { id: 'messages',   label: 'Messages',   icon: <MessageSquare size={13} /> },
     { id: 'calls',      label: 'Calls',      icon: <PhoneCall size={13} /> },
     { id: 'moderation', label: 'Moderation', icon: <ShieldAlert size={13} /> },
@@ -185,7 +186,7 @@ export function PlayerDetail({ cid, onBack, toast, onOpenGallery }: {
                     danger
                     confirmLabel="Wipe everything"
                     requireText={ov.citizenid}
-                    body={<>Deletes <b>{ov.name}</b>&apos;s entire phone footprint: settings, number, messages, photos, Birdy profile
+                    body={<>Deletes <b>{ov.name}</b>&apos;s entire phone footprint: settings, number, messages, photos, Quip profile
                         and posts, all app accounts and content. If they are online their phone resets instantly. <b>This cannot be undone.</b></>}
                     onConfirm={async () => {
                         const res = await adminWipePhone(cid, cid);
@@ -257,16 +258,16 @@ function OverviewTab({ ov, toast, reload, onOpenTab, onOpenGallery }: {
             </Card>
             <div className="space-y-4">
                 <Card title="Content">
-                    <CountRow label="Birdy posts"   count={c?.birdyPosts ?? 0} onOpen={() => onOpenTab('birdy')} />
+                    <CountRow label="Quip posts" count={c?.birdyPosts ?? 0} onOpen={() => onOpenTab('birdy')} />
                     <CountRow label="Text messages" count={c?.messages ?? 0}   onOpen={() => onOpenTab('messages')} />
                     <CountRow label="Calls"         count={c?.calls ?? 0}      onOpen={() => onOpenTab('calls')} />
                     <CountRow label="Photos"        count={c?.photos ?? 0}
                         onOpen={onOpenGallery ? () => onOpenGallery(ov.citizenid) : undefined} />
                     <CountRow label="Contacts"      count={c?.contacts ?? 0} />
                 </Card>
-                <Card title="Squawk accounts">
+                <Card title="Quip accounts">
                     {ov.birdy.length === 0 && (
-                        <div className="px-4 py-3 text-[13px] text-zinc-500">No Squawk account.</div>
+                        <div className="px-4 py-3 text-[13px] text-zinc-500">No Quip account.</div>
                     )}
                     {ov.birdy.map(b => (
                         <InfoRow key={b.handle} label={`@${b.handle}`}>
@@ -510,7 +511,7 @@ function BirdyTab({ ov, onChanged, toast }: {
         else toast(res.message ?? 'Delete failed', true);
     };
 
-    if (ov.birdy.length === 0) return <CenterNote>This player has no Squawk account.</CenterNote>;
+    if (ov.birdy.length === 0) return <CenterNote>This player has no Quip account.</CenterNote>;
 
     return (
         <div className="space-y-4">
@@ -538,7 +539,7 @@ function BirdyTab({ ov, onChanged, toast }: {
 
             {doomed && (
                 <ConfirmModal
-                    title="Delete Birdy post"
+                    title="Delete Quip post"
                     body="The post, its replies and their likes are permanently removed."
                     confirmLabel="Delete post"
                     danger

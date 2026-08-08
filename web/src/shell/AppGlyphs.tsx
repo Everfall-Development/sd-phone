@@ -1,6 +1,6 @@
 import {
     Activity, AlarmClock, Anchor, Antenna, Aperture, AppWindow, Archive, AudioLines, AudioWaveform,
-    BadgeCheck, Banknote, BedDouble, Bike, Bird, Blocks, Book, Bookmark, BookMarked, BookOpen,
+    BadgeCheck, Banknote, BedDouble, Bike, Blocks, Book, Bookmark, BookMarked, BookOpen,
     BoomBox, Box, Brain, BrickWall, Briefcase, Building, Bus, CakeSlice, Calculator, CalendarCheck,
     CalendarClock, CalendarDays, CalendarPlus, CalendarRange, Camera, Candy, Car, CarFront,
     CarTaxiFront, Castle, ChartBar, ChartCandlestick, ChartLine, Cherry, CircleCheckBig,
@@ -58,7 +58,7 @@ const APP_GLYPHS: Record<string, LucideIcon> = {
     health:      HeartPulse,
     groups:      Users,
     calculator:  Calculator,
-    birdy:       Bird,
+    birdy:       PenLine,
     darkchat:    MessagesSquare,
     cherry:      Heart,
     photogram:   Aperture,

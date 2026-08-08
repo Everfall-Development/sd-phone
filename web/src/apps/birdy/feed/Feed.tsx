@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Loader2 } from 'lucide-react';
 
-import { BirdyBird } from '../BirdyBird';
+import { QuipMark } from '../QuipMark';
 
 import { t } from '@/i18n';
 import { EmptyState } from '@/ui/EmptyState';
@@ -56,7 +56,7 @@ export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, o
                 <div className="flex items-center px-4 py-2">
                     <button type="button" onClick={onOpenProfile} aria-label={t('squawk.yourProfile', 'Your profile')}><Avatar size={44} src={me.avatar} /></button>
                     <div className="flex flex-1 justify-center">
-                        <BirdyBird className="h-9 w-9 text-[#1d9bf0]" />
+                        <QuipMark className="h-[45px] w-[45px]" />
                     </div>
                     <div className="w-11" aria-hidden />
                 </div>
@@ -113,7 +113,7 @@ export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, o
                     ) : shown.length === 0 ? (
                         <EmptyState
                             center
-                            icon={<BirdyBird className="h-8 w-8" />}
+                            icon={<QuipMark className="h-8 w-8" />}
                             circleClassName="bg-black/[0.06] text-black/35"
                             title={feed === 'following'
                                 ? t('squawk.nothingHereYet', 'Nothing here yet')

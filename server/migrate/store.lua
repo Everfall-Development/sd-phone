@@ -686,16 +686,16 @@ end
 
 ---Existing Birdy identities and account handles, used to keep a forced import from claiming a
 ---live profile or attaching migrated content to the wrong account.
----@return { cids: table<string, table>, handles: table<string, string|true>, sessions: table<string, boolean> }
+---@return { profiles: table[], handles: table<string, string|true>, sessions: table<string, boolean> }
 function store.existingBirdyIdentities()
-    local out = { cids = {}, handles = {}, sessions = {} }
+    local out = { profiles = {}, handles = {}, sessions = {} }
     local profiles = MySQL.query.await([[
         SELECT p.citizenid, p.handle, a.phone, UNIX_TIMESTAMP(p.created_at) AS created_ts
         FROM phone_birdy_profiles p
         LEFT JOIN phone_app_accounts a ON a.app = 'birdy' AND a.username = p.handle
     ]]) or {}
     for _, profile in ipairs(profiles) do
-        out.cids[profile.citizenid] = profile
+        out.profiles[#out.profiles + 1] = profile
         out.handles[profile.handle] = profile.citizenid
     end
 
@@ -722,9 +722,17 @@ end
 ---Usernames already present in Photogram, so a migrated account never overwrites a live one.
 ---@return table<string, boolean>
 function store.existingPhotogramUsernames()
-    local rows = MySQL.query.await('SELECT username FROM phone_photogram_profiles') or {}
+    local rows = MySQL.query.await([[
+        SELECT a.username, UNIX_TIMESTAMP(p.created_at) AS created_ts
+        FROM phone_app_accounts a
+        LEFT JOIN phone_photogram_profiles p ON p.username = a.username
+        WHERE a.app = 'photogram'
+        UNION
+        SELECT p.username, UNIX_TIMESTAMP(p.created_at) AS created_ts
+        FROM phone_photogram_profiles p
+    ]]) or {}
     local set = {}
-    for _, r in ipairs(rows) do set[r.username] = true end
+    for _, r in ipairs(rows) do set[r.username] = r end
     return set
 end
 
@@ -885,6 +893,7 @@ function store.migrateBirdy(profiles, dryRun)
     local profileStage, postStage = BIRDY_STAGES[1], BIRDY_STAGES[2]
 
     dropBirdyStages()
+    local ok, result = xpcall(function()
     MySQL.query.await(([=[
         CREATE TABLE `%s` (
             source_username VARCHAR(20) NOT NULL,
@@ -892,7 +901,6 @@ function store.migrateBirdy(profiles, dryRun)
             handle VARCHAR(32) NOT NULL,
             logged_in TINYINT(1) NOT NULL DEFAULT 0,
             PRIMARY KEY (source_username),
-            UNIQUE KEY uq_birdy_stage_cid (citizenid),
             UNIQUE KEY uq_birdy_stage_handle (handle)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ]=]):format(profileStage))
@@ -968,7 +976,7 @@ function store.migrateBirdy(profiles, dryRun)
             SELECT COUNT(*) FROM %s f
             JOIN `%s` follower ON follower.source_username = f.follower
             JOIN `%s` target ON target.source_username = f.followed
-            WHERE follower.citizenid <> target.citizenid
+            WHERE follower.handle <> target.handle
         ]=]):format(followsTable, profileStage, profileStage))
     end
     if dmsTable then
@@ -1015,8 +1023,8 @@ function store.migrateBirdy(profiles, dryRun)
         if tweetsTable then
             MySQL.query.await(([=[
                 INSERT IGNORE INTO phone_birdy_posts
-                    (id, author_cid, body, parent_id, images, views, created_at)
-                SELECT staged.post_id, author.citizenid, LEFT(COALESCE(t.content, ''), 280),
+                    (id, author, body, parent_id, images, views, created_at)
+                SELECT staged.post_id, author.handle, LEFT(COALESCE(t.content, ''), 280),
                        parent.post_id,
                        CASE WHEN JSON_VALID(t.attachments) = 1 AND JSON_LENGTH(t.attachments) > 0
                             THEN t.attachments ELSE NULL END,
@@ -1032,8 +1040,8 @@ function store.migrateBirdy(profiles, dryRun)
 
         if likesTable then
             MySQL.query.await(([=[
-                INSERT IGNORE INTO phone_birdy_likes (post_id, citizenid, created_at)
-                SELECT post.post_id, actor.citizenid, l.`timestamp`
+                INSERT IGNORE INTO phone_birdy_likes (post_id, handle, created_at)
+                SELECT post.post_id, actor.handle, l.`timestamp`
                 FROM %s l
                 JOIN `%s` actor ON actor.source_username = l.username
                 JOIN `%s` post ON post.source_id = l.tweet_id
@@ -1043,8 +1051,8 @@ function store.migrateBirdy(profiles, dryRun)
 
         if repostsTable then
             MySQL.query.await(([=[
-                INSERT IGNORE INTO phone_birdy_reposts (post_id, citizenid, created_at)
-                SELECT post.post_id, actor.citizenid, r.`timestamp`
+                INSERT IGNORE INTO phone_birdy_reposts (post_id, handle, created_at)
+                SELECT post.post_id, actor.handle, r.`timestamp`
                 FROM %s r
                 JOIN `%s` actor ON actor.source_username = r.username
                 JOIN `%s` post ON post.source_id = r.tweet_id
@@ -1054,23 +1062,23 @@ function store.migrateBirdy(profiles, dryRun)
 
         if followsTable then
             MySQL.query.await(([=[
-                INSERT IGNORE INTO phone_birdy_follows (follower_cid, target_cid, created_at)
-                SELECT follower.citizenid, target.citizenid,
+                INSERT IGNORE INTO phone_birdy_follows (follower, target, created_at)
+                SELECT follower.handle, target.handle,
                        GREATEST(followerAccount.date_joined, targetAccount.date_joined)
                 FROM %s f
                 JOIN `%s` follower ON follower.source_username = f.follower
                 JOIN `%s` target ON target.source_username = f.followed
                 JOIN %s followerAccount ON followerAccount.username = f.follower
                 JOIN %s targetAccount ON targetAccount.username = f.followed
-                WHERE follower.citizenid <> target.citizenid
+                WHERE follower.handle <> target.handle
             ]=]):format(followsTable, profileStage, profileStage, accountsTable, accountsTable))
         end
 
         if dmsTable then
             MySQL.query.await(([=[
                 INSERT IGNORE INTO phone_birdy_dms
-                    (id, from_cid, to_cid, body, kind, meta, reactions, read_flag, created_at)
-                SELECT CONCAT('tw', d.id), sender.citizenid, recipient.citizenid,
+                    (id, from_handle, to_handle, body, kind, meta, reactions, read_flag, created_at)
+                SELECT CONCAT('tw', d.id), sender.handle, recipient.handle,
                        COALESCE(d.content, ''),
                        CASE WHEN JSON_VALID(d.attachments) = 1 AND JSON_LENGTH(d.attachments) > 0
                             THEN 'image' ELSE 'text' END,
@@ -1089,11 +1097,11 @@ function store.migrateBirdy(profiles, dryRun)
         if notificationsTable then
             MySQL.query.await(([=[
                 INSERT IGNORE INTO phone_birdy_notifications
-                    (id, recipient_cid, kind, actor_cid, post_id, seen, created_at)
-                SELECT CONCAT('tw', n.id), recipient.citizenid,
+                    (id, recipient, kind, actor, post_id, seen, created_at)
+                SELECT CONCAT('tw', n.id), recipient.handle,
                        CASE n.type WHEN 'tweet' THEN 'post' WHEN 'retweet' THEN 'repost'
                             ELSE LEFT(n.type, 16) END,
-                       actor.citizenid, post.post_id, 1, n.`timestamp`
+                       actor.handle, post.post_id, 1, n.`timestamp`
                 FROM %s n
                 JOIN `%s` recipient ON recipient.source_username = n.username
                 JOIN `%s` actor ON actor.source_username = n.`from`
@@ -1103,8 +1111,11 @@ function store.migrateBirdy(profiles, dryRun)
         end
     end
 
-    dropBirdyStages()
     return out
+    end, debug.traceback)
+    dropBirdyStages()
+    if not ok then error(result, 0) end
+    return result
 end
 
 ---Accounts-engine rows for migrated app accounts.
@@ -1132,8 +1143,8 @@ end
 ---
 ---lb-phone hashes passwords with bcrypt, which sd-phone cannot verify and cannot reverse, so a
 ---migrated account is unreachable the moment its owner signs out. Each account with a resolved
----owner therefore gets a freshly generated password: stored as the engine hash on the account, and
----written to that owner's vault so it shows up in the Passwords app.
+---owner therefore gets a readable password stored as the engine hash on the account and written to
+---the owner's vault. A rerun reuses that saved credential instead of silently rotating it.
 ---
 ---Accounts with no resolved owner keep whatever hash they came with. Nobody can sign into them, but
 ---there is also no one to hand a password to.
@@ -1142,6 +1153,25 @@ end
 function store.grantMigratedLogins(entries)
     if #entries == 0 then return 0 end
     local accounts = require 'server.accounts.store'
+
+    -- Reuse a saved credential for an account whenever one exists. Older forced runs generated a
+    -- different password per owner and could leave a shared account with conflicting vault rows;
+    -- prefer whichever plaintext still matches the account hash, then converge every owner on it.
+    local credentials, matched = {}, {}
+    local saved = MySQL.query.await([[
+        SELECT p.app, p.username, p.password, a.password_hash
+        FROM phone_passwords p
+        JOIN phone_app_accounts a ON a.app = p.app AND a.username = p.username
+        WHERE p.app IN ('birdy', 'photogram', 'mail')
+    ]]) or {}
+    for _, row in ipairs(saved) do
+        local key = row.app .. '\0' .. row.username
+        if not credentials[key] then credentials[key] = row.password end
+        if not matched[key] and accounts.hashPassword(row.password) == row.password_hash then
+            credentials[key] = row.password
+            matched[key] = true
+        end
+    end
 
     -- Staged and joined rather than two queries per account: row-by-row took 47s on a full dump.
     local tmp = '_sdphone_migrate_logins'
@@ -1159,7 +1189,12 @@ function store.grantMigratedLogins(entries)
         local groups, params = {}, {}
         for j = i, last do
             local e = entries[j]
-            local plain = newPassword()
+            local key = e.app .. '\0' .. e.username
+            local plain = credentials[key]
+            if not plain then
+                plain = newPassword()
+                credentials[key] = plain
+            end
             groups[#groups + 1] = '(?,?,?,?,?,?)'
             params[#params + 1] = e.app
             params[#params + 1] = e.username
@@ -1175,10 +1210,15 @@ function store.grantMigratedLogins(entries)
 
     -- Only accounts that exist get a password, and only those get a vault entry, so the vault never
     -- lists a login that cannot be used.
-    local granted = tonumber(MySQL.update.await(([[
+    local granted = tonumber(MySQL.scalar.await(([[
+        SELECT COUNT(DISTINCT t.app, t.username) FROM `%s` t
+        JOIN phone_app_accounts a ON a.app = t.app AND a.username = t.username
+    ]]):format(tmp))) or 0
+
+    MySQL.update.await(([[
         UPDATE phone_app_accounts a JOIN `%s` t ON t.app = a.app AND t.username = a.username
         SET a.password_hash = t.hash
-    ]]):format(tmp))) or 0
+    ]]):format(tmp))
 
     -- Birdy keeps a compatibility password hash on the profile as well as in the shared accounts
     -- engine. Keep both copies aligned so any later legacy-account reconciliation cannot revive the
@@ -1204,7 +1244,7 @@ end
 ---session; `inserted` counts only the new ones. They differ on a re-run, where every session is
 ---already present and INSERT IGNORE affects no rows: that is success, not failure, so callers must
 ---judge on `linked`.
----@param rows any[][] { app, citizenid, username }
+---@param rows any[][] { app, citizenid, username, active }
 ---@return integer linked, integer inserted
 function store.insertPgSessions(rows)
     if #rows == 0 then return 0, 0 end
@@ -1216,6 +1256,7 @@ function store.insertPgSessions(rows)
     MySQL.query.await(([[
         CREATE TABLE `%s` (
             app VARCHAR(24) NOT NULL, citizenid VARCHAR(64) NOT NULL, username VARCHAR(64) NOT NULL,
+            active TINYINT(1) NOT NULL DEFAULT 0,
             PRIMARY KEY (app, citizenid, username)
         ) ENGINE=MEMORY DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ]]):format(tmp))
@@ -1224,13 +1265,14 @@ function store.insertPgSessions(rows)
         local last = math.min(i + 299, #rows)
         local groups, params = {}, {}
         for j = i, last do
-            groups[#groups + 1] = '(?,?,?)'
+            groups[#groups + 1] = '(?,?,?,?)'
             params[#params + 1] = rows[j][1]
             params[#params + 1] = rows[j][2]
             params[#params + 1] = rows[j][3]
+            params[#params + 1] = rows[j][4] or 0
         end
         MySQL.query.await(
-            ('INSERT IGNORE INTO `%s` (app, citizenid, username) VALUES %s'):format(tmp, table.concat(groups, ',')),
+            ('INSERT IGNORE INTO `%s` (app, citizenid, username, active) VALUES %s'):format(tmp, table.concat(groups, ',')),
             params)
     end
 
@@ -1240,10 +1282,19 @@ function store.insertPgSessions(rows)
     ]]):format(tmp))) or 0
 
     local inserted = tonumber(MySQL.update.await(([[
-        INSERT IGNORE INTO phone_app_sessions (app, citizenid, account_id)
-        SELECT t.app, t.citizenid, a.id FROM `%s` t
+        INSERT IGNORE INTO phone_app_sessions (app, citizenid, account_id, last_used)
+        SELECT t.app, t.citizenid, a.id,
+               IF(t.active = 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP - INTERVAL 1 SECOND)
+        FROM `%s` t
         JOIN phone_app_accounts a ON a.app = t.app AND a.username = t.username
     ]]):format(tmp))) or 0
+
+    MySQL.update.await(([=[
+        UPDATE phone_app_sessions s
+        JOIN `%s` t ON t.app = s.app AND t.citizenid = s.citizenid AND t.active = 1
+        JOIN phone_app_accounts a ON a.id = s.account_id AND a.app = t.app AND a.username = t.username
+        SET s.last_used = CURRENT_TIMESTAMP
+    ]=]):format(tmp))
 
     MySQL.query.await(('DROP TABLE IF EXISTS `%s`'):format(tmp))
     return linked, inserted

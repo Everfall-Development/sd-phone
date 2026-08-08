@@ -15,7 +15,7 @@ import { SlideOver } from '@/ui/SlideOver';
 import { t } from '@/i18n';
 
 const APP_LABELS: Record<string, string> = {
-    photogram: 'Photogram', cherry: 'Cherry', vibez: 'Vibez', birdy: 'Squawk', mail: 'Mail',
+    photogram: 'Kaleido', cherry: 'Cherry', vibez: 'Vibez', birdy: 'Quip', mail: 'Mail',
 };
 const labelFor = (app: string) => APP_LABELS[app] ?? app.charAt(0).toUpperCase() + app.slice(1);
 
@@ -200,4 +200,3 @@ function Row({ label, value, last, copyable = true }: { label: string; value: st
         </div>
     );
 }
-

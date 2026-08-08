@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-    Bird, Camera, Clapperboard, Flame, Hash, Images, LayoutDashboard, MessageSquare, Newspaper,
+    Clapperboard, Flame, Hash, Images, LayoutDashboard, MessageSquare, Newspaper,
     ScrollText, Search, ShieldCheck, ShoppingBag, Skull, VolumeX, X,
 } from 'lucide-react';
 import clsx from 'clsx';
 
 import { fetchNui } from '@/core/nui';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
+import { QuipMark } from '@/apps/birdy/QuipMark';
+import { KaleidoMark } from '@/apps/photogram/KaleidoMark';
 import { AuditPage } from './pages/AuditPage';
 import { BirdyPage } from './pages/BirdyPage';
 import { ContentPage } from './pages/ContentPage';
@@ -32,10 +34,10 @@ const NAV_MAIN: NavItem[] = [
 ];
 
 const NAV_APPS: NavItem[] = [
-    { id: 'birdy',       label: 'Squawk',      icon: <Bird size={15} /> },
+    { id: 'birdy',       label: 'Quip',        icon: <QuipMark color="white" className="h-[15px] w-[15px]" /> },
     { id: 'messages',    label: 'Messages',    icon: <MessageSquare size={15} /> },
     { id: 'darkchat',    label: 'Dark Chat',   icon: <Skull size={15} /> },
-    { id: 'photogram',   label: 'Photogram',   icon: <Camera size={15} /> },
+    { id: 'photogram',   label: 'Kaleido',     icon: <KaleidoMark className="h-[15px] w-[15px]" /> },
     { id: 'vibez',       label: 'Vibez',       icon: <Clapperboard size={15} /> },
     { id: 'cherry',      label: 'Cherry',      icon: <Flame size={15} /> },
     { id: 'marketplace', label: 'Marketplace', icon: <ShoppingBag size={15} /> },
@@ -47,12 +49,12 @@ const PAGE_TITLE: Record<PageId, string> = {
     dashboard:   'Dashboard',
     players:     'Players',
     numbers:     'Numbers — SIM registry',
-    birdy:       'Squawk moderation',
+    birdy:       'Quip moderation',
     mutes:       'Active mutes',
     audit:       'Audit log',
     messages:    'Messages (read-only)',
     darkchat:    'Dark Chat moderation',
-    photogram:   'Photogram moderation',
+    photogram:   'Kaleido moderation',
     vibez:       'Vibez moderation',
     cherry:      'Cherry profiles',
     marketplace: 'Marketplace moderation',
@@ -64,7 +66,7 @@ const PAGE_TITLE: Record<PageId, string> = {
 const CONTENT_PAGES: Record<string, { search: string; empty: string; deleteBody: string; grid?: boolean }> = {
     messages:    { search: 'Filter sent texts by content or number',      empty: 'No messages yet.',            deleteBody: '' },
     darkchat:    { search: 'Filter messages by content, alias or room',   empty: 'No Dark Chat messages yet.',  deleteBody: 'The message and its reactions are permanently removed.' },
-    photogram:   { search: 'Filter posts by caption or username',         empty: 'No Photogram posts yet.',     deleteBody: 'The post, its comments, likes and saves are permanently removed.' },
+    photogram:   { search: 'Filter posts by caption or username',         empty: 'No Kaleido posts yet.',       deleteBody: 'The post, its comments, likes and saves are permanently removed.' },
     vibez:       { search: 'Filter vibes by caption or username',         empty: 'No Vibez posts yet.',         deleteBody: 'The vibe, its comments, likes and saves are permanently removed.' },
     cherry:      { search: 'Filter profiles by username, name or bio',    empty: 'No Cherry profiles yet.',     deleteBody: '' },
     marketplace: { search: 'Filter listings by title or description',     empty: 'No listings yet.',            deleteBody: 'The listing is permanently removed.' },

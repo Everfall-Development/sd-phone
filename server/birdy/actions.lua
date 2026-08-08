@@ -320,7 +320,7 @@ function actions.login(source, payload)
         return fail('Wrong username or password')
     end
     local prof = store.getProfileByHandle(acc.username)
-    if not prof then return fail('That account has no Birdy profile') end
+    if not prof then return fail('That account has no Quip profile') end
 
     acctStore.setSession('birdy', cid, acc.id)
     store.setLoggedIn(prof.handle, true)
@@ -598,7 +598,7 @@ function actions.create(source, payload)
         for _, src in ipairs(sourcesFor(handle, activeSrcs)) do
             TriggerClientEvent('sd-phone:client:birdy:notification', src, {})
             TriggerClientEvent('sd-phone:client:notify', src, {
-                app = 'birdy', appId = 'birdy', title = 'Squawk',
+                app = 'birdy', appId = 'birdy', title = 'Quip',
                 body = ('%s posted: %s'):format(prof.displayName, preview),
                 time = 'now', quietInApp = true,
             })
@@ -1061,7 +1061,7 @@ function actions.dmSend(source, payload)
         if not toCid then return fail('They need to be online to receive money') end
         local number = settings.getPhoneNumber(toCid)
         if not number then return fail('Payment failed') end
-        local res = banking.send(source, { number = number, amount = meta.amount, note = 'Birdy payment' })
+        local res = banking.send(source, { number = number, amount = meta.amount, note = 'Quip payment' })
         if not res or not res.success then return fail(res and res.message or 'Payment failed') end
     end
 

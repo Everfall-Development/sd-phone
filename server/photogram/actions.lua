@@ -1,46 +1,46 @@
 ---@type table Player bridge (bridge.server.player): citizenid/source lookups.
-local player    = require 'bridge.server.player'
+local player               = require 'bridge.server.player'
 ---@type table App-accounts engine store (server.accounts.store): account rows + per-character app sessions.
-local acctStore = require 'server.accounts.store'
+local acctStore            = require 'server.accounts.store'
 ---@type table Badges module (server.badges.init): server-authoritative unread-badge pushes.
-local badges    = require 'server.badges.init'
+local badges               = require 'server.badges.init'
 ---@type table Photogram persistence layer (server.photogram.store): profile/post/comment/follow/story/DM CRUD.
-local store     = require 'server.photogram.store'
+local store                = require 'server.photogram.store'
 ---@type table Photogram Live module (server.photogram.live): in-memory livestream sessions merged into the stories tray.
-local live      = require 'server.photogram.live'
+local live                 = require 'server.photogram.live'
 ---@type table Admin mute registry (server.admin.moderation): scope guards for posting/commenting/DMing.
-local moderation = require 'server.admin.moderation'
+local moderation           = require 'server.admin.moderation'
 ---@type table Watcher registry (server.watchers): shared with server.photogram.live and init.
-local watchers  = require('server.watchers').of('photogram')
+local watchers             = require('server.watchers').of('photogram')
 
 ---@type table Actions module; the table returned at end of file.
-local actions = {}
+local actions              = {}
 
 ---@type integer Story lifetime in seconds (24h) - older stories are pruned and never served.
-local STORY_TTL    = 86400
+local STORY_TTL            = 86400
 ---@type table<string, boolean> Whitelisted DM kinds; anything else coerces to 'text'.
-local VALID_DMKIND = { text = true, image = true, gif = true, voice = true, post = true }
+local VALID_DMKIND         = { text = true, image = true, gif = true, voice = true, post = true }
 ---@type table<string, boolean> Allowed DM reaction emoji, mirroring the four the composer offers
 ---(web/src/shared/chat/MessageBubble.tsx). Bounds the reactions blob to four keys.
-local REACTION_SET = { ['❤️'] = true, ['👍'] = true, ['👎'] = true, ['😂'] = true }
+local REACTION_SET         = { ['❤️'] = true, ['👍'] = true, ['👎'] = true, ['😂'] = true }
 ---@type integer Live (<24h) story frames one account may hold at once.
-local STORY_CAP    = 50
+local STORY_CAP            = 50
 ---@type integer How long a like/follow notification suppresses an identical repeat (seconds).
-local NOTIF_DEDUPE = 3600
+local NOTIF_DEDUPE         = 3600
 
-local util = require 'server.util'
+local util                 = require 'server.util'
 local ok, fail, trim, flag = util.ok, util.fail, util.trim, util.truthy
 
 ---@type table<string, boolean> Notification kinds a toggle can re-raise indefinitely, so the same
 ---actor + post + recipient is only stored once per NOTIF_DEDUPE window.
 ---follow_request is absent on purpose: cancelling a request deletes its row, so that pair cannot
 ---accumulate, and deduping it would swallow a genuine second request after a decline.
-local TOGGLE_KINDS = { like = true, follow = true, unfollow = true }
+local TOGGLE_KINDS         = { like = true, follow = true, unfollow = true }
 
 ---@type table<string, integer[]> Per-citizenid write budgets as { minimum gap ms, accepted calls
 ---per day }. Both sit far above real play; they exist so a scripted client cannot mint rows,
 ---notifications or broadcasts faster than a person can tap.
-local WRITE_BUDGET = {
+local WRITE_BUDGET         = {
     create  = { 2000, 100 },
     comment = { 800, 500 },
     story   = { 1500, 100 },
@@ -51,7 +51,7 @@ local WRITE_BUDGET = {
 }
 
 ---@type integer Rolling window the per-day half of WRITE_BUDGET is measured over (ms).
-local BUDGET_WINDOW = 86400000
+local BUDGET_WINDOW        = 86400000
 
 ---Applies the caller's write budget for `key`. nil means the call may proceed; anything else is
 ---the envelope to hand straight back to the client.
@@ -88,7 +88,11 @@ local function ensureProfile(acc)
     if row then return row end
     store.upsertProfile(acc.username, {
         displayName = (acc.displayName and acc.displayName ~= '') and acc.displayName or acc.username,
-        bio = '', avatar = nil, isPrivate = false, verified = false, createdAt = os.time(),
+        bio = '',
+        avatar = nil,
+        isPrivate = false,
+        verified = false,
+        createdAt = os.time(),
     })
     return store.getProfile(acc.username)
 end
@@ -201,14 +205,14 @@ end
 ---@param preview string|nil comment preview text
 ---@return string suffix
 local function notifSuffix(kind, preview)
-    if kind == 'like'           then return 'liked your photo.' end
-    if kind == 'comment'        then return (preview and preview ~= '') and ('commented: "%s"'):format(preview) or 'commented with a GIF.' end
-    if kind == 'mention'        then return 'mentioned you in a comment.' end
-    if kind == 'follow'         then return 'started following you.' end
+    if kind == 'like' then return 'liked your photo.' end
+    if kind == 'comment' then return (preview and preview ~= '') and ('commented: "%s"'):format(preview) or 'commented with a GIF.' end
+    if kind == 'mention' then return 'mentioned you in a comment.' end
+    if kind == 'follow' then return 'started following you.' end
     if kind == 'follow_request' then return 'requested to follow you.' end
-    if kind == 'follow_accept'  then return 'accepted your follow request.' end
-    if kind == 'post'           then return 'shared a new post.' end
-    if kind == 'unfollow'       then return 'unfollowed you.' end
+    if kind == 'follow_accept' then return 'accepted your follow request.' end
+    if kind == 'post' then return 'shared a new post.' end
+    if kind == 'unfollow' then return 'unfollowed you.' end
     return ''
 end
 
@@ -248,7 +252,10 @@ local function serializeReactions(row, viewer)
     for emoji, users in pairs(reactions) do
         if #users > 0 then
             local mine = false
-            for _, u in ipairs(users) do if u == viewer then mine = true break end end
+            for _, u in ipairs(users) do if u == viewer then
+                    mine = true
+                    break
+                end end
             out[#out + 1] = { emoji = emoji, count = #users, mine = mine }
         end
     end
@@ -269,12 +276,12 @@ local function serializeDm(row, viewer)
         kind = row.kind or 'text',
         ts   = (tonumber(row.created_at) or 0) * 1000,
     }
-    if meta.gifUrl   then msg.gifUrl   = meta.gifUrl end
+    if meta.gifUrl then msg.gifUrl = meta.gifUrl end
     if meta.duration then msg.duration = meta.duration end
-    if meta.audio    then msg.audioUrl = meta.audio end
+    if meta.audio then msg.audioUrl = meta.audio end
     if meta.waveform then msg.waveform = meta.waveform end
-    if meta.replyTo  then msg.replyTo  = meta.replyTo end
-    if meta.post     then msg.post     = meta.post end
+    if meta.replyTo then msg.replyTo = meta.replyTo end
+    if meta.post then msg.post = meta.post end
     msg.reactions = serializeReactions(row, viewer)
     return msg
 end
@@ -314,19 +321,26 @@ local function notify(recipient, kind, actor, postId, preview, ctx)
         actorName, thumb = ctx.actorName, ctx.thumb
     else
         local actorRow = store.getProfile(actor)
-        actorName = (actorRow and actorRow.display_name ~= '' and actorRow.display_name) or actor
-        thumb     = postId and store.postThumb(postId) or nil
+        actorName      = (actorRow and actorRow.display_name ~= '' and actorRow.display_name) or actor
+        thumb          = postId and store.postThumb(postId) or nil
     end
     for _, src in ipairs(sources) do
         TriggerClientEvent('sd-phone:client:photogram:notification', src, {})
         TriggerClientEvent('sd-phone:client:notify', src, {
-            app = 'photogram', appId = 'photogram', title = 'Photogram',
-            body = notifBanner(actorName, kind, preview), image = thumb,
-            time = 'now', quietInApp = true,
+            app = 'photogram',
+            appId = 'photogram',
+            title = 'Kaleido',
+            body = notifBanner(actorName, kind, preview),
+            image = thumb,
+            time = 'now',
+            quietInApp = true,
             link = {
                 ['photogram:tab'] = 'activity',
-                ['photogram:dmOpen'] = false, ['photogram:commentId'] = false,
-                ['photogram:viewHandle'] = false, ['photogram:detail'] = false, ['photogram:follows'] = false,
+                ['photogram:dmOpen'] = false,
+                ['photogram:commentId'] = false,
+                ['photogram:viewHandle'] = false,
+                ['photogram:detail'] = false,
+                ['photogram:follows'] = false,
             },
         })
         badges.pushApp(src, 'photogram')
@@ -386,7 +400,7 @@ local function sanitizeDmMeta(kind, payload)
             if #bars > 0 then meta.waveform = bars end
         end
     elseif kind == 'post' then
-        local p = type(payload.post) == 'table' and payload.post or {}
+        local p     = type(payload.post) == 'table' and payload.post or {}
         local pid   = trim(p.id)
         local image = trim(p.image)
         if pid ~= '' then
@@ -414,14 +428,14 @@ end
 ---@param meta table sanitized metadata
 ---@return boolean hasContent
 local function hasDmContent(kind, body, meta)
-    if kind == 'text'                   then return body ~= '' end
+    if kind == 'text' then return body ~= '' end
     if kind == 'image' or kind == 'gif' then return meta.gifUrl ~= nil end
-    if kind == 'voice'                  then return (meta.duration or 0) > 0 end
-    if kind == 'post'                   then return meta.post ~= nil end
+    if kind == 'voice' then return (meta.duration or 0) > 0 end
+    if kind == 'post' then return meta.post ~= nil end
     return body ~= ''
 end
 
----@-mentions in a caption / comment that resolve to real photogram accounts, deduplicated and
+---@mentions in a caption / comment that resolve to real photogram accounts, deduplicated and
 ---excluding the author. Lookups cap at 50 per text.
 ---@param text string caption or comment body (already length-capped)
 ---@param exclude string author's own handle
@@ -555,9 +569,14 @@ function actions.create(src, payload)
     broadcast('feedChanged', {})
     -- First-party hook: one server-local event per created post.
     TriggerEvent('sd-phone:server:photogram:post', {
-        id = id, source = src, citizenid = player.getIdentifier(src),
-        username = acc.username, images = images, caption = caption,
-        location = location, private = flag(me.is_private),
+        id = id,
+        source = src,
+        citizenid = player.getIdentifier(src),
+        username = acc.username,
+        images = images,
+        caption = caption,
+        location = location,
+        private = flag(me.is_private),
     })
     return ok({ post = serializePost(store.getPost(acc.username, id)) })
 end
@@ -674,7 +693,7 @@ function actions.addComment(src, payload)
 
     local text   = trim(payload.text):sub(1, 1000)
     local gifUrl = trim(payload.gifUrl)
-    gifUrl = (gifUrl:sub(1, 4) == 'http') and gifUrl:sub(1, 512) or nil
+    gifUrl       = (gifUrl:sub(1, 4) == 'http') and gifUrl:sub(1, 512) or nil
     if text == '' and not gifUrl then return fail('Empty comment') end
 
     local id = store.newId()
@@ -954,9 +973,13 @@ function actions.stories(src)
     local mine, unseen, seenList = nil, {}, {}
     for _, author in ipairs(order) do
         local g = groups[author]
-        if g.isMe then mine = g
-        elseif g.seen then seenList[#seenList + 1] = g
-        else unseen[#unseen + 1] = g end
+        if g.isMe then
+            mine = g
+        elseif g.seen then
+            seenList[#seenList + 1] = g
+        else
+            unseen[#unseen + 1] = g
+        end
     end
     local stories = {}
     if mine then stories[#stories + 1] = mine end
@@ -1057,8 +1080,11 @@ local function peerCard(username, row)
     row = row or store.getProfile(username)
     if not row then return { id = username, handle = username, avatar = '', verified = false, name = username } end
     return {
-        id = row.username, handle = row.username, avatar = row.avatar or '',
-        verified = flag(row.verified), name = row.display_name or '',
+        id = row.username,
+        handle = row.username,
+        avatar = row.avatar or '',
+        verified = flag(row.verified),
+        name = row.display_name or '',
     }
 end
 
@@ -1076,15 +1102,15 @@ function actions.dmList(src)
     local profiles = store.profilesByUsernames(handles)
     local unread   = store.dmUnreadByPeer(acc.username)
 
-    local out = {}
+    local out      = {}
     for _, p in ipairs(peers) do
         local last = store.dmLast(acc.username, p.peer)
         out[#out + 1] = {
-            id      = p.peer,
-            user    = peerCard(p.peer, profiles[p.peer]),
-            last    = last and serializeDm(last, acc.username) or nil,
-            unread  = unread[p.peer] or 0,
-            ts      = (tonumber(p.last_at) or 0) * 1000,
+            id     = p.peer,
+            user   = peerCard(p.peer, profiles[p.peer]),
+            last   = last and serializeDm(last, acc.username) or nil,
+            unread = unread[p.peer] or 0,
+            ts     = (tonumber(p.last_at) or 0) * 1000,
         }
     end
     return ok({ conversations = out })
@@ -1140,13 +1166,20 @@ function actions.dmSend(src, payload)
             peer = acc.username, user = peerCard(acc.username), message = serializeDm(row, to),
         })
         TriggerClientEvent('sd-phone:client:notify', tsrc, {
-            app = 'photogram', appId = 'photogram', title = myName ~= '' and myName or acc.username,
+            app = 'photogram',
+            appId = 'photogram',
+            title = myName ~= '' and myName or acc.username,
             body = (kind == 'image' and '📷 Photo') or (kind == 'gif' and 'GIF') or (kind == 'voice' and '🎤 Voice message') or (kind == 'post' and '📷 Shared a post') or body,
-            time = 'now', quietInApp = true,
+            time = 'now',
+            quietInApp = true,
             link = {
-                ['photogram:tab'] = 'home', ['photogram:dmOpen'] = true, ['photogram:dmDeepLink'] = acc.username,
-                ['photogram:commentId'] = false, ['photogram:viewHandle'] = false,
-                ['photogram:detail'] = false, ['photogram:follows'] = false,
+                ['photogram:tab'] = 'home',
+                ['photogram:dmOpen'] = true,
+                ['photogram:dmDeepLink'] = acc.username,
+                ['photogram:commentId'] = false,
+                ['photogram:viewHandle'] = false,
+                ['photogram:detail'] = false,
+                ['photogram:follows'] = false,
             },
         })
         badges.push(tsrc)
@@ -1173,7 +1206,10 @@ function actions.dmReact(src, payload)
     local reactions = store.decodeJson(row.reactions)
     local users = reactions[emoji] or {}
     local found
-    for i, u in ipairs(users) do if u == acc.username then found = i break end end
+    for i, u in ipairs(users) do if u == acc.username then
+            found = i
+            break
+        end end
     if found then table.remove(users, found) else users[#users + 1] = acc.username end
     if #users > 0 then reactions[emoji] = users else reactions[emoji] = nil end
     store.updateDmReactions(row.id, reactions)

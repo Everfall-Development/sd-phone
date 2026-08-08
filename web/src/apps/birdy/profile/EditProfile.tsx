@@ -127,7 +127,7 @@ export function EditProfile({ profile, onCancel, onSaved, onSignOut, onSignOutAl
 
             {confirmSignOut && (
                 <AlertDialog
-                    title={t('squawk.signOutTitle', 'Sign out of Squawk?')}
+                    title={t('squawk.signOutTitle', 'Sign out of Quip?')}
                     message={switchTo
                         ? t('accounts.signOutSwitchMessage', "You'll be switched to {name}.", { name: switchTo })
                         : t('squawk.signOutMessage', 'You can sign back in anytime.')}
@@ -160,7 +160,7 @@ export function EditProfile({ profile, onCancel, onSaved, onSignOut, onSignOutAl
             {pwOpen && (
                 <ChangePasswordPage
                     app="birdy"
-                    appName="Birdy"
+                    appName="Quip"
                     icon="birdy"
                     theme={{ accent: BLUE, welcomeBg: '#f2f3f5', welcomeText: 'dark' }}
                     onClose={() => setPwOpen(false)}
@@ -186,4 +186,3 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
         </div>
     );
 }
-

@@ -20,6 +20,12 @@ const ACTION_TONE: Record<string, 'red' | 'amber' | 'blue' | 'green' | 'neutral'
     'birdy-unverify':    'neutral',
 };
 
+const ACTION_LABEL: Record<string, string> = {
+    'delete-birdy-post': 'Delete Quip post',
+    'birdy-verify':      'Verify Quip account',
+    'birdy-unverify':    'Unverify Quip account',
+};
+
 export function AuditPage({ onOpenPlayer }: { onOpenPlayer: (cid: string) => void }) {
     const fetchPage = useCallback(async (cursor: number | null) => {
         const res = await adminAudit(cursor);
@@ -46,7 +52,9 @@ export function AuditPage({ onOpenPlayer }: { onOpenPlayer: (cid: string) => voi
                         <tr key={e.id} className="border-t border-white/[0.05]">
                             <td className="whitespace-nowrap px-4 py-2.5 text-zinc-400">{fmtTime(e.createdAt)}</td>
                             <td className="px-4 py-2.5 font-semibold text-zinc-200">{e.adminName || e.adminCid}</td>
-                            <td className="px-4 py-2.5"><Badge tone={ACTION_TONE[e.action] ?? 'neutral'}>{e.action}</Badge></td>
+                            <td className="px-4 py-2.5">
+                                <Badge tone={ACTION_TONE[e.action] ?? 'neutral'}>{ACTION_LABEL[e.action] ?? e.action}</Badge>
+                            </td>
                             <td className="px-4 py-2.5">
                                 {e.targetCid ? (
                                     <button
