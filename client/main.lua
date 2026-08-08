@@ -974,3 +974,7 @@ AddEventHandler('onResourceStop', function(resource)
 end)
 
 require 'client.compat.lbphone'
+
+-- Built-in apps initialize with this resource. Custom app resources retain their Lua state across
+-- an sd-phone restart, so announce only after this fresh registry and its exports are ready for them.
+TriggerEvent('sd-phone:client:ready')
