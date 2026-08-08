@@ -27,9 +27,7 @@ end)
 ---@param payload any
 local function pushTo(handle, event, payload)
     if not handle then return end
-    for _, src in ipairs(actions.sourcesFor(handle)) do
-        TriggerClientEvent(event, src, payload)
-    end
+    util.pushMany(event, actions.sourcesFor(handle), payload)
 end
 
 ---Forwards an action result, pinging the `notify` account (wherever it is open) with a
@@ -49,6 +47,7 @@ lib.callback.register('sd-phone:server:birdy:me',             function(src)     
 lib.callback.register('sd-phone:server:birdy:register',       function(src, payload) return actions.register(src, payload) end)
 lib.callback.register('sd-phone:server:birdy:login',          function(src, payload) return actions.login(src, payload) end)
 lib.callback.register('sd-phone:server:birdy:logout',         function(src)          return actions.logout(src) end)
+lib.callback.register('sd-phone:server:birdy:deletePost',    function(src, payload) return actions.deletePost(src, payload) end)
 lib.callback.register('sd-phone:server:birdy:profile',        function(src, payload) return actions.profile(src, payload) end)
 lib.callback.register('sd-phone:server:birdy:profilePosts',   function(src, payload) return actions.profilePosts(src, payload) end)
 lib.callback.register('sd-phone:server:birdy:search',         function(src, payload) return actions.search(src, payload) end)
@@ -57,6 +56,8 @@ lib.callback.register('sd-phone:server:birdy:hashtag',        function(src, payl
 lib.callback.register('sd-phone:server:birdy:updateProfile',  function(src, payload) return actions.updateProfile(src, payload) end)
 lib.callback.register('sd-phone:server:birdy:changePassword', function(src, payload) return actions.changePassword(src, payload) end)
 lib.callback.register('sd-phone:server:birdy:deleteAccount',  function(src)          return actions.deleteAccount(src) end)
+lib.callback.register('sd-phone:server:birdy:verificationOffer',    function(src) return actions.verificationOffer(src) end)
+lib.callback.register('sd-phone:server:birdy:purchaseVerification', function(src) return actions.purchaseVerification(src) end)
 lib.callback.register('sd-phone:server:birdy:feed',           function(src, payload) return actions.feed(src, payload) end)
 lib.callback.register('sd-phone:server:birdy:post',           function(src, payload) return actions.post(src, payload) end)
 lib.callback.register('sd-phone:server:birdy:create',         function(src, payload) return actions.create(src, payload) end)

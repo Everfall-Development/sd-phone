@@ -12,6 +12,8 @@ local acctActions = require 'server.accounts.actions'
 local settings = require 'server.settings.store'
 ---@type table Banking actions (server.banking.actions): authoritative money transfer for money DMs.
 local banking = require 'server.banking.actions'
+---@type table Money bridge (bridge.server.money): balance read + charge for buying the blue check.
+local money = require 'bridge.server.money'
 ---@type table Badges module (server.badges.init): server-authoritative unread-badge pushes.
 local badges = require 'server.badges.init'
 ---@type table Admin mute registry (server.admin.moderation): scope guards for posting/DMing.
@@ -47,6 +49,8 @@ local WRITE_BUDGET = {
     follow   = { 400, 500 },
     dm       = { 400, 1000 },
     react    = { 250, 2000 },
+    verify   = { 3000, 20 },
+    deletePost = { 500, 300 },
 }
 
 ---@type integer Rolling window the per-day half of WRITE_BUDGET is measured over (ms).
@@ -59,7 +63,7 @@ local BUDGET_WINDOW = 86400000
 ---@param key string WRITE_BUDGET key
 ---@return table|nil refusal
 local function throttle(cid, key)
-    local budget = WRITE_BUDGET[key]
+    local budget = WRITE_BUDGET[key] or { 2000, 60 }
     if not util.cooldown(cid, 'birdy:' .. key, budget[1]) then return fail('Slow down') end
     if not util.rateLimit(cid, 'birdy:' .. key, BUDGET_WINDOW, budget[2]) then
         return fail('Daily limit reached')
@@ -182,7 +186,7 @@ actions.sourcesFor = sourcesFor
 ---@param profile table
 ---@return { name: string, handle: string, verified: boolean, avatar?: string }
 local function serializeAuthor(profile)
-    return { name = profile.displayName, handle = profile.handle, verified = profile.verified, avatar = profile.avatar }
+    return { name = profile.displayName, handle = profile.handle, verified = profile.verified, verifiedType = profile.verifiedType, avatar = profile.avatar }
 end
 
 ---Shapes a full profile (with live follow counts) for the profile page.
@@ -193,6 +197,7 @@ local function serializeProfile(profile)
         name      = profile.displayName,
         handle    = profile.handle,
         verified  = profile.verified,
+        verifiedType = profile.verifiedType,
         bio       = profile.bio or '',
         -- Derived from created_at; join_label was client-writable.
         joined    = profile.createdTs and os.date('%B %Y', profile.createdTs) or (profile.joinLabel or ''),
@@ -211,7 +216,7 @@ end
 local function serializePost(p)
     return {
         id        = p.id,
-        author    = { name = p.displayName, handle = p.handle, verified = p.verified, avatar = p.avatar },
+        author    = { name = p.displayName, handle = p.handle, verified = p.verified, verifiedType = p.verifiedType, avatar = p.avatar },
         body      = p.body,
         images    = p.images,
         createdAt = p.createdMs,
@@ -221,6 +226,7 @@ local function serializePost(p)
         likes     = p.likes,
         liked     = p.liked,
         views     = p.views,
+        repostedBy = p.repostedBy and { handle = p.repostedBy, name = p.repostedByName, avatar = p.repostedByAvatar } or nil,
     }
 end
 
@@ -419,7 +425,7 @@ function actions.search(source, payload)
     local rows = store.searchProfiles(q:sub(1, 64), me, 20)
     local users = {}
     for i = 1, #rows do
-        users[i] = { name = rows[i].displayName, handle = rows[i].handle, verified = rows[i].verified }
+        users[i] = { name = rows[i].displayName, handle = rows[i].handle, verified = rows[i].verified, verifiedType = rows[i].verifiedType }
     end
     return ok({ users = users })
 end
@@ -464,7 +470,7 @@ function actions.updateProfile(source, payload)
 
     local function imageUrl(v, fallback)
         local u = trimmed(v)
-        if u and u:sub(1, 4) == 'http' then return u:sub(1, 512) end
+        if u and lib.string.startsWith(u, 'http') then return u:sub(1, 512) end
         if v == false then return nil end
         return fallback
     end
@@ -474,6 +480,57 @@ function actions.updateProfile(source, payload)
     -- joinLabel is ignored; the join date is derived from created_at.
     store.updateProfileFields(prof.handle, name, bio, prof.joinLabel or '', payload.protected == true, avatar, banner)
     return ok({ profile = serializeProfile(store.getProfileByHandle(prof.handle)) })
+end
+
+---What the Get Verified row should show: whether the blue check is on sale at all, its price, and
+---whether this account already carries a badge. The price is read here rather than mirrored in
+---the bundle so changing configs/birdy.lua takes effect on a restart, with no rebuild.
+---@param source number player server id
+---@return table envelope { enabled, price, account, verified, verifiedType }
+function actions.verificationOffer(source)
+    local prof = viewer(source)
+    if not prof then return fail('Not signed in') end
+
+    local cfg = birdyCfg.Verification
+    return ok({
+        enabled      = (cfg and cfg.Enabled) == true,
+        price        = math.floor(tonumber(cfg and cfg.Price) or 0),
+        account      = (cfg and cfg.Account) or 'bank',
+        verified     = prof.verified == true,
+        verifiedType = prof.verifiedType,
+    })
+end
+
+---Buys the blue check for the signed-in account. Only blue is ever sold: gold and grey assert an
+---identity someone has to have checked, so they stay staff-granted.
+---@param source number player server id
+---@return table envelope { me } on success
+function actions.purchaseVerification(source)
+    local prof, cid = viewer(source)
+    if not prof or not cid then return fail('Not signed in') end
+
+    local cfg = birdyCfg.Verification
+    if not (cfg and cfg.Enabled) then return fail('Verification is not available') end
+    if prof.verified then return fail('This account is already verified') end
+
+    local slow = throttle(cid, 'verify'); if slow then return slow end
+
+    local price   = math.floor(tonumber(cfg.Price) or 0)
+    local account = cfg.Account or 'bank'
+
+    if price > 0 then
+        if (tonumber(money.get(source, account)) or 0) < price then return fail('Not enough money') end
+        if not money.remove(source, account, price, 'Birdy verification') then return fail('Payment failed') end
+    end
+
+    -- Nothing here is transactional, so the charge is undone by hand if the badge write misses.
+    -- Without this a player whose account vanished mid-purchase is simply out the money.
+    if store.setVerified(prof.handle, 'blue') == 0 then
+        if price > 0 then money.add(source, account, price, 'Birdy verification refund') end
+        return fail('Could not verify this account')
+    end
+
+    return ok({ me = serializeAuthor(store.getProfileByHandle(prof.handle)) })
 end
 
 ---Changes the signed-in account's password, syncing the engine hash, the Passwords-app vault
@@ -594,17 +651,19 @@ function actions.create(source, payload)
     -- One pass over the connected players for the whole fan-out; this resolved each follower
     -- separately, and every resolution re-scanned every player on the server.
     local activeSrcs = player.activeCidMap()
+    local targets = {}
     for _, handle in ipairs(followers) do
-        for _, src in ipairs(sourcesFor(handle, activeSrcs)) do
-            TriggerClientEvent('sd-phone:client:birdy:notification', src, {})
-            TriggerClientEvent('sd-phone:client:notify', src, {
-                app = 'birdy', appId = 'birdy', title = 'Quip',
-                body = ('%s posted: %s'):format(prof.displayName, preview),
-                time = 'now', quietInApp = true,
-            })
-            badges.pushApp(src, 'birdy')
-        end
+        for _, src in ipairs(sourcesFor(handle, activeSrcs)) do targets[#targets + 1] = src end
     end
+
+    util.pushMany('sd-phone:client:birdy:notification', targets, {})
+    util.pushMany('sd-phone:client:notify', targets, {
+        app = 'birdy', appId = 'birdy', title = 'Quip',
+        body = ('%s posted: %s'):format(prof.displayName, preview),
+        time = 'now', quietInApp = true,
+    })
+
+    for _, src in ipairs(targets) do badges.pushApp(src, 'birdy') end
 
     return ok({ post = serializePost(store.getPost(id, prof.handle)) })
 end
@@ -640,6 +699,28 @@ function actions.reply(source, payload)
     end
 
     return ok({ post = serializePost(store.getPost(id, prof.handle)), notify = notify })
+end
+
+---Deletes one of the caller's own posts, along with every reply, like, repost and notification
+---hanging off it. Ownership is proved against the stored author handle rather than anything the
+---client sends, so a crafted payload cannot remove someone else's post.
+---@param source number player server id
+---@param payload { id?: string }|nil
+---@return table envelope
+function actions.deletePost(source, payload)
+    local prof, cid = viewer(source); if not prof or not cid then return fail('Player not found') end
+    payload = tbl(payload)
+    local id = payload and payload.id
+    if type(id) ~= 'string' or id == '' then return fail('Missing post') end
+    local slow = throttle(cid, 'deletePost'); if slow then return slow end
+
+    local author = store.getPostAuthor(id)
+    if not author then return fail('Post not found') end
+    if author ~= prof.handle then return fail('Not your post') end
+
+    store.deletePost(id)
+    store.invalidateTrending()
+    return ok({ id = id })
 end
 
 ---Toggles the viewer's like on a post. Returns the new liked state plus the author handle to
@@ -693,6 +774,8 @@ function actions.toggleRepost(source, payload)
     local author = store.getPostAuthor(id)
     if not author then return fail('Post not found') end
 
+    if author == prof.handle then return fail('You cannot repost your own post') end
+
     local nowReposted
     if store.isReposted(id, prof.handle) then
         store.removeRepost(id, prof.handle)
@@ -710,6 +793,8 @@ function actions.toggleRepost(source, payload)
         store.insertNotification(store.newId(), author, 'repost', prof.handle, id)
         notify = author
     end
+
+    watchers.push('sd-phone:client:birdy:feedChanged', {})
 
     return ok({ reposted = nowReposted, notify = notify })
 end
@@ -744,6 +829,7 @@ function actions.followList(source, payload)
             name        = row.display_name,
             handle      = row.handle,
             verified    = tonumber(row.verified) == 1,
+            verifiedType = row.verified_type,
             bio         = row.bio or '',
             avatar      = row.avatar,
             followsYou  = tonumber(row.follows_you) == 1,
@@ -863,13 +949,13 @@ local function sanitizeDmMeta(kind, payload)
         meta.amount = math.max(0, math.floor(amount))
         if payload.requested == true then meta.requested = true end
     elseif kind == 'voice' then
-        meta.duration = math.max(0, math.min(36000, math.floor(tonumber(payload.duration) or 0)))
+        meta.duration = lib.math.clamp(math.floor(tonumber(payload.duration) or 0), 0, 36000)
         local audio = trimmed(payload.audioUrl) or ''
         if audio ~= '' then meta.audio = audio:sub(1, 512) end
         if type(payload.waveform) == 'table' then
             local bars = {}
             for i = 1, math.min(#payload.waveform, 64) do
-                bars[i] = math.max(0, math.min(100, math.floor(tonumber(payload.waveform[i]) or 0)))
+                bars[i] = lib.math.clamp(math.floor(tonumber(payload.waveform[i]) or 0), 0, 100)
             end
             if #bars > 0 then meta.waveform = bars end
         end

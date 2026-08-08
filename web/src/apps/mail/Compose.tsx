@@ -221,7 +221,7 @@ export function Compose({ accounts, defaultAccountId, initialTo = '', initialSub
                                             <div className="truncate text-[14px] text-ios-gray">{a.email}</div>
                                         </div>
                                     </button>
-                                    {i < accounts.length - 1 && <Divider inset={44} />}
+                                    {i < accounts.length - 1 && <Divider />}
                                 </div>
                             ))}
                         </div>
@@ -347,6 +347,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     );
 }
 
-function Divider({ inset = 0 }: { inset?: number }) {
-    return <div className="pointer-events-none bg-black/[0.12] dark:bg-white/10" style={{ marginLeft: inset, height: '0.5px' }} />;
+function Divider() {
+    return <div className="pointer-events-none bg-black/[0.12] dark:bg-white/10" style={{ height: '0.5px' }} />;
 }

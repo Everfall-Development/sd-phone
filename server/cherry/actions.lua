@@ -205,16 +205,16 @@ local function sanitizeMeta(kind, payload)
     elseif kind == 'money' then
         local amount = tonumber(payload.amount) or 0
         if amount ~= amount or amount == math.huge or amount == -math.huge then amount = 0 end
-        meta.amount = math.max(0, math.min(1000000000, math.floor(amount)))
+        meta.amount = lib.math.clamp(math.floor(amount), 0, 1000000000)
         if payload.requested == true then meta.requested = true end
     elseif kind == 'voice' then
-        meta.duration = math.max(0, math.min(36000, math.floor(tonumber(payload.duration) or 0)))
+        meta.duration = lib.math.clamp(math.floor(tonumber(payload.duration) or 0), 0, 36000)
         local audio = trim(payload.audioUrl)
         if audio ~= '' then meta.audio = audio:sub(1, 512) end
         if type(payload.waveform) == 'table' then
             local bars = {}
             for i = 1, math.min(#payload.waveform, 64) do
-                bars[i] = math.max(0, math.min(100, math.floor(tonumber(payload.waveform[i]) or 0)))
+                bars[i] = lib.math.clamp(math.floor(tonumber(payload.waveform[i]) or 0), 0, 100)
             end
             if #bars > 0 then meta.waveform = bars end
         end
@@ -318,13 +318,13 @@ function actions.saveProfile(src, payload)
     if type(payload.photos) == 'table' then
         for i = 1, math.min(#payload.photos, 6) do
             local url = trim(payload.photos[i])
-            if url:sub(1, 4) == 'http' then photos[#photos + 1] = url:sub(1, 512) end
+            if lib.string.startsWith(url, 'http') then photos[#photos + 1] = url:sub(1, 512) end
         end
     end
 
     store.upsertProfile(acc.username, {
         name       = name,
-        age        = math.max(18, math.min(99, math.floor(tonumber(payload.age) or 21))),
+        age        = lib.math.clamp(math.floor(tonumber(payload.age) or 21), 18, 99),
         about      = trim(payload.about):sub(1, 300),
         gender     = GENDERS[payload.gender] and payload.gender or 'Man',
         interested = INTERESTS[payload.interestedIn] and payload.interestedIn or 'Everyone',
@@ -335,9 +335,8 @@ function actions.saveProfile(src, payload)
     -- Push the fresh card to matched partners so their app doesn't keep the old photo.
     local card = partnerCard(acc.username, store.getProfile(acc.username))
     for _, m in ipairs(store.matchesFor(acc.username)) do
-        for _, tsrc in ipairs(sourcesFor(partnerOf(m, acc.username))) do
-            TriggerClientEvent('sd-phone:client:cherry:partner', tsrc, { username = acc.username, partner = card })
-        end
+        util.pushMany('sd-phone:client:cherry:partner', sourcesFor(partnerOf(m, acc.username)),
+            { username = acc.username, partner = card })
     end
 
     return ok(serializeProfile(store.getProfile(acc.username)))
@@ -369,8 +368,9 @@ function actions.swipe(src, payload)
     local matchRow = store.getMatch(matchId)
 
     if not existing then
-        for _, tsrc in ipairs(sourcesFor(target)) do
-            TriggerClientEvent('sd-phone:client:cherry:match', tsrc, serializeMatch(matchRow, target))
+        local matched = sourcesFor(target)
+        util.pushMany('sd-phone:client:cherry:match', matched, serializeMatch(matchRow, target))
+        for _, tsrc in ipairs(matched) do
             if not watchers[tsrc] then
                 notify(tsrc, ("It's a match! You and %s liked each other."):format(partnerCard(acc.username).name))
             end
@@ -473,8 +473,9 @@ function actions.send(src, payload)
 
     local msg = serializeMessage(store.getMessage(id), acc.username)
     local myName = partnerCard(acc.username).name
-    for _, tsrc in ipairs(sourcesFor(partner)) do
-        TriggerClientEvent('sd-phone:client:cherry:message', tsrc, { matchId = m.id, message = msg })
+    local peers = sourcesFor(partner)
+    util.pushMany('sd-phone:client:cherry:message', peers, { matchId = m.id, message = msg })
+    for _, tsrc in ipairs(peers) do
         notify(tsrc, ('%s: %s'):format(myName, previewFor(kind, body, meta)))
     end
 

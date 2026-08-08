@@ -1,33 +1,28 @@
 import { useState } from 'react';
-import { Bell, Heart, Repeat2 } from 'lucide-react';
+import { Bell, Heart, MessageCircle, Repeat2 } from 'lucide-react';
 
 import { t } from '@/i18n';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { EmptyState } from '@/ui/EmptyState';
 import { apiNotifications } from '../birdyApi';
-import { BG, BLUE, LIKE, META, REPOST, type BirdyAuthor, type BirdyNotification } from '../data';
+import { BG, BLUE, LIKE, REPOST, type BirdyAuthor, type BirdyNotification } from '../data';
 import { FeedSkeleton } from '../polish/Skeleton';
-import { PostCard } from '../feed/PostCard';
 import { Avatar, PersonGlyph } from '../ui';
 
-export function Notifications({ onOpenProfile }: { onOpenProfile: (handle?: string) => void }) {
+export function Notifications({ me, onOpenProfile, onOpenPost }: {
+    me:            BirdyAuthor;
+    onOpenProfile: (handle?: string) => void;
+    onOpenPost?:   (id: string) => void;
+}) {
     const [items, setItems] = useState<BirdyNotification[]>([]);
 
     const { loading } = useAsyncData(apiNotifications, [], { onData: setItems });
 
-    function toggleReplyLike(id: string) {
-        setItems(prev => prev.map(n =>
-            n.kind === 'reply' && n.id === id
-                ? { ...n, post: { ...n.post, liked: !n.post.liked, likes: n.post.likes + (n.post.liked ? -1 : 1) } }
-                : n,
-        ));
-    }
-
     return (
         <div className="flex h-full flex-col" style={{ background: BG }}>
             <header className="flex shrink-0 items-center px-4 py-2">
-                <button type="button" onClick={() => onOpenProfile()} aria-label={t('squawk.yourProfile', 'Your profile')}><Avatar size={44} /></button>
-                <h1 className="flex-1 text-center text-[22px] font-extrabold text-black">{t('squawk.notifications', 'Notifications')}</h1>
+                <button type="button" onClick={() => onOpenProfile()} aria-label={t('squawk.yourProfile', 'Your profile')}><Avatar size={44} src={me.avatar} /></button>
+                <h1 className="flex-1 text-center text-[22px] font-extrabold text-label">{t('squawk.notifications', 'Notifications')}</h1>
                 <div className="w-11" aria-hidden />
             </header>
 
@@ -37,15 +32,24 @@ export function Notifications({ onOpenProfile }: { onOpenProfile: (handle?: stri
                     <EmptyState
                         center
                         icon={<Bell className="h-7 w-7" strokeWidth={1.8} />}
-                        circleClassName="bg-black/[0.06] text-black/35"
+                        circleClassName="bg-hairline/[0.06] text-label/35"
                         title={t('squawk.noNotificationsYet', 'No notifications yet')}
                         subtitle={t('squawk.notificationsEmptySubtitle', "When people reply, like, or follow you, you'll see it here.")}
-                        subtitleClassName="text-[#536471]"
+                        subtitleClassName="text-ios-gray"
                     />
                 )}
                 {items.map(n => {
                     if (n.kind === 'reply') {
-                        return <PostCard key={n.id} post={n.post} isOwn={false} onToggleLike={() => toggleReplyLike(n.id)} />;
+                        return (
+                            <NotifRow
+                                key={n.id}
+                                icon={<MessageCircle className="h-7 w-7" color={BLUE} />}
+                                user={n.post.author}
+                                text={t('squawk.repliedToYou', 'replied to your post')}
+                                preview={n.post.body}
+                                onOpen={() => onOpenPost?.(n.post.id)}
+                            />
+                        );
                     }
                     const icon = n.kind === 'like'
                         ? <Heart className="h-7 w-7" fill={LIKE} color={LIKE} />
@@ -63,17 +67,17 @@ export function Notifications({ onOpenProfile }: { onOpenProfile: (handle?: stri
 
 function NotifRow({ icon, user, text, preview, onOpen }: { icon: React.ReactNode; user: BirdyAuthor; text: string; preview?: string; onOpen?: () => void }) {
     return (
-        <button type="button" onClick={onOpen} className="flex w-full gap-3.5 border-b border-black/10 px-4 py-4 text-left transition-colors active:bg-black/[0.04]">
+        <button type="button" onClick={onOpen} className="flex w-full gap-3.5 border-b border-hairline/10 px-4 py-4 text-left transition-colors active:bg-hairline/[0.04]">
             <div className="flex w-8 shrink-0 justify-center pt-2">{icon}</div>
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-3">
                     <div className="shrink-0"><Avatar size={44} src={user.avatar} /></div>
-                    <div className="min-w-0 flex-1 text-[17px] leading-snug text-black">
+                    <div className="min-w-0 flex-1 text-[17px] leading-snug text-label">
                         <span className="font-bold">{user.name}</span> {text}
                     </div>
                 </div>
                 {preview && (
-                    <div className="mt-1.5 line-clamp-2 pl-[56px] text-[15px] leading-snug" style={{ color: META }}>{preview}</div>
+                    <div className="mt-1.5 line-clamp-3 pl-[56px] text-[16px] leading-normal text-label/70">{preview}</div>
                 )}
             </div>
         </button>

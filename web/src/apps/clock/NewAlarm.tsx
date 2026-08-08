@@ -116,7 +116,7 @@ export function NewAlarm({ isDark, alarm, onSave, onCancel }: {
 }
 
 function Hairline({ isDark }: { isDark: boolean }) {
-    return <div className="ml-4" style={{ height: '0.5px', background: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)' }} />;
+    return <div style={{ height: '0.5px', background: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)' }} />;
 }
 
 function SettingToggleRow({ label, on, onToggle }: { label: string; on: boolean; onToggle: () => void }) {

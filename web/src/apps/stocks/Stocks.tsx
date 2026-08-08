@@ -80,7 +80,7 @@ export function Stocks({ onClose }: { onClose: () => void }) {
                 : <ChevronDown className="h-3.5 w-3.5" strokeWidth={3} />;
 
     const openAsset = openSymbol ? market.assets.find(a => a.symbol === openSymbol) ?? null : null;
-    const animateNav = useDidEnter(market.assets.length > 0);
+    const animateNav = useDidEnter();
 
     async function onTradeConfirm(amount: number, all?: boolean): Promise<string | null> {
         if (!trade) return t('stocks.noTrade', 'No trade');

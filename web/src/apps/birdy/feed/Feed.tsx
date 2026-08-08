@@ -5,7 +5,7 @@ import { QuipMark } from '../QuipMark';
 
 import { t } from '@/i18n';
 import { EmptyState } from '@/ui/EmptyState';
-import { BLUE, META, type BirdyAuthor, type BirdyPost } from '../data';
+import { BLUE, META, postKey, type BirdyAuthor, type BirdyPost} from '../data';
 import { FeedSkeleton } from '../polish/Skeleton';
 import { usePullToRefresh } from '../polish/usePullToRefresh';
 import { PostCard } from './PostCard';
@@ -13,7 +13,7 @@ import { Avatar } from '../ui';
 
 type FeedKind = 'all' | 'following';
 
-export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, onToggleRepost, onOpenPost, onOpenProfile, onOpenAuthor }: {
+export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, onToggleRepost, onOpenPost, onOpenProfile, onOpenAuthor, onDeletePost }: {
     posts:         BirdyPost[] | null;
     me:            BirdyAuthor;
     feed:          FeedKind;
@@ -24,6 +24,7 @@ export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, o
     onOpenPost:    (id: string) => void;
     onOpenProfile: () => void;
     onOpenAuthor?: (handle: string) => void;
+    onDeletePost?: (id: string) => void;
 }) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const { pull, refreshing, armed } = usePullToRefresh(scrollRef, onRefresh);
@@ -38,7 +39,7 @@ export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, o
         const deep = (el?.scrollTop ?? 0) > 400;
         setShown(prev => {
             if (!posts || !prev || prev.length === 0 || !deep) { setHasNew(false); return posts; }
-            if (posts[0]?.id === prev[0]?.id) return posts;
+            if (posts[0] && prev[0] && postKey(posts[0]) === postKey(prev[0])) return posts;
             setHasNew(true);
             return prev;
         });
@@ -60,7 +61,7 @@ export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, o
                     </div>
                     <div className="w-11" aria-hidden />
                 </div>
-                <div className="relative flex border-b border-black/10">
+                <div className="relative flex border-b border-hairline/10">
                     <FeedTab label={t('squawk.all', 'All')}       active={feed === 'all'}       onClick={() => onFeedChange('all')} />
                     <FeedTab label={t('squawk.following', 'Following')} active={feed === 'following'} onClick={() => onFeedChange('following')} />
                     <span
@@ -76,7 +77,7 @@ export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, o
             <div className="relative min-h-0 flex-1">
                 {(pull > 0 || refreshing) && (
                     <div
-                        className="pointer-events-none absolute left-1/2 top-2 z-10 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full bg-white shadow-md"
+                        className="pointer-events-none absolute left-1/2 top-2 z-10 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full bg-surface shadow-md"
                         style={{ opacity: Math.min(1, pull / 40) }}
                     >
                         <Loader2
@@ -102,7 +103,9 @@ export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, o
                 <div
                     ref={scrollRef}
                     key={feed}
-                    className="h-full animate-swipe-in-left overflow-y-auto no-scrollbar"
+                    // pb-20 so the last post can scroll clear of the compose button, which is 56px
+                    // tall at bottom-[9px] and otherwise sits over that post's like button.
+                    className="h-full animate-swipe-in-left overflow-y-auto no-scrollbar pb-20"
                     style={{
                         transform: pull > 0 ? `translateY(${pull}px)` : undefined,
                         transition: pull === 0 ? 'transform 0.28s cubic-bezier(0.22,1,0.36,1)' : undefined,
@@ -114,25 +117,26 @@ export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, o
                         <EmptyState
                             center
                             icon={<QuipMark className="h-8 w-8" />}
-                            circleClassName="bg-black/[0.06] text-black/35"
+                            circleClassName="bg-hairline/[0.06] text-label/35"
                             title={feed === 'following'
                                 ? t('squawk.nothingHereYet', 'Nothing here yet')
                                 : t('squawk.noPostsYet', 'No posts yet')}
                             subtitle={feed === 'following'
                                 ? t('squawk.followingEmptySubtitle', 'When you follow people, their latest posts will show up here.')
                                 : t('squawk.feedEmptySubtitle', 'Posts from you and people you follow will show up here.')}
-                            subtitleClassName="text-[#536471]"
+                            subtitleClassName="text-ios-gray"
                         />
                     ) : (
                         shown.map(p => (
                             <PostCard
-                                key={p.id}
+                                key={postKey(p)}
                                 post={p}
                                 isOwn={p.author.handle === me.handle}
                                 onToggleLike={() => onToggleLike(p.id)}
                                 onToggleRepost={() => onToggleRepost(p.id)}
                                 onOpen={() => onOpenPost(p.id)}
                                 onOpenAuthor={onOpenAuthor}
+                                onDelete={onDeletePost ? () => onDeletePost(p.id) : undefined}
                             />
                         ))
                     )}
@@ -145,7 +149,7 @@ export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, o
 function FeedTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
     return (
         <button type="button" onClick={onClick} className="relative flex-1 py-3.5 text-[17px]">
-            <span className={`transition-colors duration-200 ${active ? 'font-bold text-black' : 'font-medium'}`} style={active ? undefined : { color: META }}>
+            <span className={`transition-colors duration-200 ${active ? 'font-bold text-label' : 'font-medium'}`} style={active ? undefined : { color: META }}>
                 {label}
             </span>
         </button>

@@ -41,11 +41,11 @@ export function PostDetail({ post, me, onBack, onToggleLike, onToggleRepost, onT
 
     return (
         <div className="flex h-full flex-col" style={{ background: BG }}>
-            <header className="flex shrink-0 items-center border-b border-black/10 px-3 py-2.5">
+            <header className="flex shrink-0 items-center border-b border-hairline/10 px-3 py-2.5">
                 <button type="button" onClick={onBack} aria-label={t('squawk.back', 'Back')} style={{ color: BLUE }}>
                     <ArrowLeft className="h-6 w-6" strokeWidth={2.4} />
                 </button>
-                <div className="flex-1 text-center text-[17px] font-bold text-black">{t('squawk.postTitle', 'Post')}</div>
+                <div className="flex-1 text-center text-[17px] font-bold text-label">{t('squawk.postTitle', 'Post')}</div>
                 <div className="w-6" aria-hidden />
             </header>
 
@@ -55,15 +55,15 @@ export function PostDetail({ post, me, onBack, onToggleLike, onToggleRepost, onT
                         <Avatar size={52} src={post.author.avatar} />
                         <div className="min-w-0 leading-tight">
                             <div className="flex items-center gap-1">
-                                <span className="text-[18px] font-bold text-black">{post.author.name}</span>
-                                {post.author.verified && <VerifiedBadge size={18} />}
+                                <span className="text-[18px] font-bold text-label">{post.author.name}</span>
+                                {post.author.verified && <VerifiedBadge size={18} type={post.author.verifiedType} />}
                             </div>
                             <div className="text-[16px]" style={{ color: META }}>@{post.author.handle}</div>
                         </div>
                     </button>
 
                     {post.body && (
-                        <p className="mt-3 whitespace-pre-wrap break-words text-[22px] leading-[1.35] text-black">
+                        <p className="mt-3 whitespace-pre-wrap break-words text-[22px] leading-[1.35] text-label">
                             <RichText text={post.body} />
                         </p>
                     )}
@@ -71,13 +71,13 @@ export function PostDetail({ post, me, onBack, onToggleLike, onToggleRepost, onT
                     <PostImages images={post.images} />
 
                     <div className="mt-3 text-[16px]" style={{ color: META }}>
-                        {absoluteTime(post.createdAt)} · <span className="font-semibold text-black">{compactCount(post.views ?? 0)}</span> {t('squawk.views', 'views')}
+                        {absoluteTime(post.createdAt)} · <span className="font-semibold text-label">{compactCount(post.views ?? 0)}</span> {t('squawk.views', 'views')}
                     </div>
                 </div>
 
                 <div className="mx-4 mt-4 text-[16px]" style={{ color: META }}>
-                    <span className="font-bold text-black">{compactCount(post.reposts)}</span> {t('squawk.reposts', 'Reposts')}
-                    <span className="ml-5 font-bold text-black">{compactCount(post.likes)}</span> {t('squawk.likes', 'Likes')}
+                    <span className="font-bold text-label">{compactCount(post.reposts)}</span> {t('squawk.reposts', 'Reposts')}
+                    <span className="ml-5 font-bold text-label">{compactCount(post.likes)}</span> {t('squawk.likes', 'Likes')}
                 </div>
 
                 <div className="mx-4 flex items-center justify-around py-4" style={{ color: META }}>
@@ -91,7 +91,7 @@ export function PostDetail({ post, me, onBack, onToggleLike, onToggleRepost, onT
                 </div>
 
                 {(post.thread?.length ?? 0) > 0 && (
-                    <p className="border-t border-black/10 px-4 pt-3 text-[14px] font-semibold uppercase tracking-wide" style={{ color: META }}>
+                    <p className="border-t border-hairline/10 px-4 pt-3 text-[14px] font-semibold uppercase tracking-wide" style={{ color: META }}>
                         {t('squawk.replies', 'Replies')}
                     </p>
                 )}
@@ -107,7 +107,7 @@ export function PostDetail({ post, me, onBack, onToggleLike, onToggleRepost, onT
             </div>
 
             {onReply && (
-                <div className="shrink-0 border-t border-black/10" style={{ background: BG }}>
+                <div className="shrink-0 border-t border-hairline/10" style={{ background: BG }}>
                     {media.length > 0 && (
                         <div className="flex gap-2 px-3 pt-2">
                             {media.map((url, i) => (
@@ -131,7 +131,7 @@ export function PostDetail({ post, me, onBack, onToggleLike, onToggleRepost, onT
                             aria-label={t('squawk.addImage', 'Add image')}
                             disabled={media.length >= MAX_REPLY_IMAGES}
                             onClick={() => setPicking('photo')}
-                            className="flex h-10 w-9 shrink-0 items-center justify-center rounded-full active:bg-black/5 disabled:opacity-40"
+                            className="flex h-10 w-9 shrink-0 items-center justify-center rounded-full active:bg-hairline/5 disabled:opacity-40"
                         >
                             <ImageIcon className="h-[24px] w-[24px]" style={{ color: BLUE }} strokeWidth={2} />
                         </button>
@@ -140,7 +140,7 @@ export function PostDetail({ post, me, onBack, onToggleLike, onToggleRepost, onT
                             aria-label={t('squawk.addGif', 'Add GIF')}
                             disabled={media.length >= MAX_REPLY_IMAGES}
                             onClick={() => setPicking('gif')}
-                            className="mr-1 flex h-10 w-9 shrink-0 items-center justify-center rounded-full active:bg-black/5 disabled:opacity-40"
+                            className="mr-1 flex h-10 w-9 shrink-0 items-center justify-center rounded-full active:bg-hairline/5 disabled:opacity-40"
                         >
                             <span className="rounded-[6px] border-[1.5px] px-[4px] py-[2px] text-[12px] font-extrabold leading-none" style={{ borderColor: BLUE, color: BLUE }}>GIF</span>
                         </button>
@@ -151,7 +151,7 @@ export function PostDetail({ post, me, onBack, onToggleLike, onToggleRepost, onT
                             onKeyDown={e => { if (e.key === 'Enter') sendReply(); }}
                             maxLength={MAX_POST_LENGTH}
                             placeholder={t('squawk.writeAReply', 'Write a reply')}
-                            className="min-w-0 flex-1 rounded-full px-4 py-2.5 text-[17px] text-black outline-none placeholder:text-[#657786]"
+                            className="min-w-0 flex-1 rounded-full px-4 py-2.5 text-[17px] text-label outline-none placeholder:text-ios-gray"
                             style={{ background: PILL, caretColor: BLUE }}
                         />
                         <button

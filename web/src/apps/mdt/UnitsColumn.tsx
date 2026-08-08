@@ -3,11 +3,11 @@ import { RadioTower } from 'lucide-react';
 
 import { t } from '@/i18n';
 import { EmptyState } from '@/ui/EmptyState';
+import { ListColumn } from '@/ui/ListColumn';
 import { Pill } from '@/ui/Pill';
 import type { Unit, UnitCode } from './data';
 import { mdtRowMeta } from './mdtTheme';
 import { mdtLocate, mdtSetWaypoint } from './mdtApi';
-import { MdtColumn } from './ui/MdtColumn';
 
 const CODE_DOT: Record<UnitCode, string> = {
     '10-8':  '#34c759',
@@ -68,7 +68,11 @@ export function UnitRow({ unit, onPress, selected = false, divider = true }: {
     );
 }
 
-export function UnitsColumn({ units, className = '' }: { units: Unit[]; className?: string }) {
+export function UnitsColumn({ units, minWidth = 268, className = '' }: {
+    units:      Unit[];
+    minWidth?:  number;
+    className?: string;
+}) {
     const [query, setQuery] = useState('');
 
     const rows = useMemo(() => {
@@ -81,8 +85,9 @@ export function UnitsColumn({ units, className = '' }: { units: Unit[]; classNam
     }, [units, query]);
 
     return (
-        <MdtColumn
+        <ListColumn
             className={className}
+            minWidth={minWidth}
             title={t('mdt.activeUnits', 'Active Units')}
             count={units.length || undefined}
             search={{
@@ -112,6 +117,6 @@ export function UnitsColumn({ units, className = '' }: { units: Unit[]; classNam
                     onPress={() => { void waypointToUnit(u.citizenid); }}
                 />
             ))}
-        </MdtColumn>
+        </ListColumn>
     );
 }

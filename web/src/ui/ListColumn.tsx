@@ -2,31 +2,33 @@ import { Children, type ReactNode } from 'react';
 
 import { SearchBar } from '@/ui/SearchBar';
 import { Scroller } from '@/ui/Scroller';
-import { mdtColumnTitle } from '../mdtTheme';
+import { columnTitle } from './surfaces';
 
-interface ColumnSearch {
+export interface ListColumnSearch {
     value:        string;
     onChange:     (value: string) => void;
     placeholder?: string;
 }
 
-export function MdtColumn({
-    title, count, action, search, query, onQuery, placeholder, isEmpty, empty, footer, className = '', children,
+export function ListColumn({
+    title, count, action, search, query, onQuery, placeholder, isEmpty, empty, footer,
+    minWidth = 268, className = '', children,
 }: {
     title:        string;
     count?:       number;
     action?:      ReactNode;
-    search?:      ColumnSearch;
+    search?:      ListColumnSearch;
     query?:       string;
     onQuery?:     (value: string) => void;
     placeholder?: string;
     isEmpty?:     boolean;
     empty?:       ReactNode;
     footer?:      ReactNode;
+    minWidth?:    number;
     className?:   string;
     children:     ReactNode;
 }) {
-    const field: ColumnSearch | undefined = search
+    const field: ListColumnSearch | undefined = search
         ?? (query !== undefined && onQuery !== undefined
             ? { value: query, onChange: onQuery, placeholder }
             : undefined);
@@ -34,9 +36,9 @@ export function MdtColumn({
     const showEmpty = !!empty && (isEmpty ?? Children.count(children) === 0);
 
     return (
-        <div className={`flex min-h-0 min-w-[268px] flex-1 flex-col ${className}`}>
+        <div className={`flex min-h-0 flex-1 flex-col ${className}`} style={{ minWidth }}>
             <div className="flex min-h-[26px] shrink-0 items-center gap-2 px-4 pt-4">
-                <h2 className={`min-w-0 truncate ${mdtColumnTitle}`}>{title}</h2>
+                <h2 className={`min-w-0 truncate ${columnTitle}`}>{title}</h2>
                 {count !== undefined && (
                     <span className="shrink-0 rounded-full bg-black/[0.06] px-2 py-[1px] text-[12px] font-semibold tabular-nums text-ios-gray dark:bg-white/[0.10]">
                         {count}

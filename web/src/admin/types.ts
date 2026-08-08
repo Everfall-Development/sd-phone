@@ -102,6 +102,7 @@ export interface AdminBirdyProfile {
     displayName: string;
     bio:         string;
     verified:    boolean;
+    verifiedType?: string | null;
     loggedIn:    boolean;
     protected:   boolean;
     createdAt?:  number;
@@ -121,6 +122,7 @@ export interface AdminBirdyPost {
     handle?:      string | null;
     display?:     string | null;
     verified:     boolean;
+    verifiedType?: string | null;
     createdAt:    number;
 }
 

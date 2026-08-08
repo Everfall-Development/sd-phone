@@ -7,10 +7,13 @@ import seedPhoto2 from '@/assets/photos/background12.webp';
 import seedPhoto3 from '@/assets/photos/background15.webp';
 import seedPhoto4 from '@/assets/photos/background20.webp';
 
+export type BirdyVerifiedType = 'blue' | 'gold' | 'grey';
+
 export interface BirdyAuthor {
     name:     string;
     handle:   string;
     verified: boolean;
+    verifiedType?: BirdyVerifiedType;
     avatar?:  string;
 }
 
@@ -18,6 +21,7 @@ export interface BirdyProfile {
     name:         string;
     handle:       string;
     verified:     boolean;
+    verifiedType?: BirdyVerifiedType;
     bio:          string;
     joined:       string;
     following:    number;
@@ -33,6 +37,7 @@ export interface BirdyFollowUser {
     name:        string;
     handle:      string;
     verified:    boolean;
+    verifiedType?: BirdyVerifiedType;
     bio:         string;
     avatar?:     string;
     followsYou:  boolean;
@@ -52,18 +57,29 @@ export interface BirdyPost {
     images?:   string[];
     views?:    number;
     thread?:   BirdyPost[];
+    repostedBy?: { handle: string; name: string; avatar?: string };
 }
 
-export const BLUE   = '#1d9bf0';
-export const META   = '#657786';
+export const postKey = (p: BirdyPost): string =>
+    p.repostedBy ? `${p.id}@${p.repostedBy.handle}` : p.id;
+
+export const BLUE   = 'rgb(var(--ios-blue))';
+export const BRAND  = '#1d9bf0';
+export const BRAND_DIM = '#0c4165';
+export const META   = 'rgb(var(--ios-gray))';
 export const LIKE   = '#f91880';
 export const REPOST = '#00ba7c';
-export const BG     = '#e5e5e5';
-export const PILL   = '#d9d9d9';
+export const BG     = 'rgb(var(--base))';
+export const CARD   = 'rgb(var(--surface))';
+export const PILL   = 'rgb(var(--control))';
+export const TEXT   = 'rgb(var(--label))';
+export const LINE   = 'rgb(var(--hairline) / 0.12)';
+export const LINE_STRONG = 'rgb(var(--hairline) / 0.25)';
+export const AVATAR_EMPTY = '#5b6671';
 
-export const CURRENT_USER: BirdyAuthor = { name: 'Renata Salas',      handle: 'renata_ls', verified: true  };
-export const MARCUS:       BirdyAuthor = { name: 'Kilo Tire & Wheel', handle: 'kilotire',  verified: false };
-export const TOMMY:        BirdyAuthor = { name: 'Deb Karras',        handle: 'debkarras', verified: false };
+export const CURRENT_USER: BirdyAuthor = { name: 'Renata Salas',      handle: 'renata_ls', verified: true, verifiedType: 'blue' };
+export const MARCUS:       BirdyAuthor = { name: 'Kilo Tire & Wheel', handle: 'kilotire',  verified: true, verifiedType: 'gold' };
+export const TOMMY:        BirdyAuthor = { name: 'Deb Karras',        handle: 'debkarras', verified: true, verifiedType: 'grey' };
 
 export const MAX_POST_LENGTH = 280;
 
@@ -104,6 +120,7 @@ export const SEED_POSTS: BirdyPost[] = [
         liked:     true,
         views:     231,
         images:    [seedPhoto3],
+        repostedBy: { handle: MARCUS.handle, name: MARCUS.name },
     },
     {
         id:        'seed-2',

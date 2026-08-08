@@ -6,6 +6,12 @@ import { fmtTime, type AdminBirdyPost } from '../types';
 import { Badge, Btn, Card, CenterNote, ConfirmModal, Input, LoadMore, OnlineDot, Spinner } from '../ui';
 import { usePaged } from '../usePaged';
 
+export const BADGE_TINT: Record<string, string> = {
+    blue: '#1d9bf0',
+    gold: '#e2b719',
+    grey: '#829aab',
+};
+
 export function PostCard({ post, onOpenPlayer, onDelete, showAuthorIdentity = true }: {
     post: AdminBirdyPost;
     onOpenPlayer?: (cid: string) => void;
@@ -18,7 +24,7 @@ export function PostCard({ post, onOpenPlayer, onDelete, showAuthorIdentity = tr
                 <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px]">
                         <span className="font-bold text-zinc-100">{post.display ?? 'Deleted profile'}</span>
-                        {post.verified && <BadgeCheck size={14} className="text-ios-blue" />}
+                        {post.verified && <BadgeCheck size={14} style={{ color: BADGE_TINT[post.verifiedType ?? 'blue'] ?? BADGE_TINT.blue }} />}
                         {post.handle && <span className="text-zinc-500">@{post.handle}</span>}
                         {post.parentId && <Badge tone="neutral">reply</Badge>}
                         <span className="text-zinc-600">·</span>

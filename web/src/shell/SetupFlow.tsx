@@ -328,7 +328,7 @@ function DoneStage({ onFinish }: { onFinish: () => void }) {
         <div className={`flex flex-1 flex-col items-center px-6 ${leaving ? 'animate-done-out' : ''}`}>
             <div className="flex flex-1 flex-col items-center justify-center">
                 <CheckBadge />
-                <h1 className="animate-done-rise mt-8 text-[37px] font-bold tracking-tight text-black dark:text-white" style={{ animationDelay: '0.12s' }}>
+                <h1 className="animate-done-rise mt-8 text-[37px] font-bold tracking-tight text-center text-black dark:text-white" style={{ animationDelay: '0.12s' }}>
                     {t('setup.allSet', 'You’re all set')}
                 </h1>
                 <p className="animate-done-rise mt-2.5 max-w-[300px] text-center text-[18px] leading-snug text-ios-gray" style={{ animationDelay: '0.2s' }}>
@@ -501,7 +501,7 @@ function PinStage({
                 className={phaseDir === 'forward' ? 'animate-pin-phase' : phaseDir === 'back' ? 'animate-pin-phase-back' : ''}
             >
                 <div className="flex flex-col items-center">
-                    <div className="mt-4 text-[37px] font-bold tracking-tight text-black dark:text-white">
+                    <div className="mt-4 text-[37px] font-bold leading-tight tracking-tight text-center text-black dark:text-white">
                         {confirming ? t('setup.confirmPasscode', 'Confirm your passcode') : t('setup.choosePasscode', 'Choose a passcode')}
                     </div>
                     <p className="mt-2.5 max-w-[300px] text-center text-[18px] leading-snug text-ios-gray">
@@ -567,7 +567,7 @@ function FaceStage({
         <div className="flex flex-1 flex-col px-6">
             <div className="flex flex-col items-center pt-2">
                 <ScanFace className="setup-icon-grad h-[68px] w-[68px]" strokeWidth={2.1} />
-                <div className="mt-4 text-[37px] font-bold tracking-tight text-black dark:text-white">
+                <div className="mt-4 text-[37px] font-bold tracking-tight text-center text-black dark:text-white">
                     {t('setup.faceScan', 'Face Scan')}
                 </div>
                 <p className="mt-2.5 max-w-[300px] text-center text-[18px] leading-snug text-ios-gray">
@@ -617,7 +617,7 @@ function ThemeStage({
         <div className="flex flex-1 flex-col px-6">
             <div className="flex flex-col items-center pt-2">
                 <ThemeCircle />
-                <div className="mt-4 text-[37px] font-bold tracking-tight text-black dark:text-white">
+                <div className="mt-4 text-[37px] font-bold tracking-tight text-center text-black dark:text-white">
                     {t('setup.theme', 'Theme')}
                 </div>
                 <p className="mt-2.5 max-w-[300px] text-center text-[18px] leading-snug text-ios-gray">
@@ -760,7 +760,7 @@ function WallpaperStage({
         <div className="flex flex-1 flex-col min-h-0 px-6">
             <div className="flex shrink-0 flex-col items-center pt-2">
                 <ImageIcon className="setup-icon-grad h-[68px] w-[68px]" strokeWidth={2.0} />
-                <div className="mt-4 text-[37px] font-bold tracking-tight text-black dark:text-white">
+                <div className="mt-4 text-[37px] font-bold tracking-tight text-center text-black dark:text-white">
                     {t('setup.wallpaper', 'Wallpaper')}
                 </div>
                 <p className="mt-2.5 max-w-[300px] text-center text-[18px] leading-snug text-ios-gray">
@@ -831,7 +831,7 @@ function OverviewStage({
         <div className="flex flex-1 flex-col min-h-0 px-6">
             <div className="flex shrink-0 flex-col items-center pt-2">
                 <ListChecks className="setup-icon-grad h-[68px] w-[68px]" strokeWidth={2.0} />
-                <div className="mt-4 text-[37px] font-bold tracking-tight text-black dark:text-white">
+                <div className="mt-4 text-[37px] font-bold tracking-tight text-center text-black dark:text-white">
                     {t('setup.review', 'Review')}
                 </div>
                 <p className="mt-2.5 max-w-[300px] text-center text-[18px] leading-snug text-ios-gray">

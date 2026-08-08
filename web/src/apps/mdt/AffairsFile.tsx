@@ -7,6 +7,7 @@ import { useAsyncData } from '@/hooks/useAsyncData';
 import { EmptyState } from '@/ui/EmptyState';
 import { Pill } from '@/ui/Pill';
 import { Scroller } from '@/ui/Scroller';
+import { Select } from '@/ui/Select';
 
 import {
     IA_CATEGORIES, IA_DISCIPLINE, IA_DISPOSITIONS, IA_SEVERITIES, IA_STATUSES,
@@ -23,7 +24,6 @@ import { MdtEvidence } from './ui/MdtEvidence';
 import { MdtField } from './ui/MdtField';
 import { MdtRichField } from './ui/MdtRichField';
 import { MdtRichText } from './ui/MdtRichText';
-import { MdtSelect } from './ui/MdtSelect';
 
 export function iaStatusLabel(status: string): string {
     if (status === 'investigating') return t('mdt.iaStatusInvestigating', 'Investigating');
@@ -69,6 +69,10 @@ export function iaDisciplineLabel(discipline: string): string {
         default:            return t('mdt.iaDiscNone', 'No action');
     }
 }
+
+const FIELD_PAIR_COLUMNS = 'repeat(auto-fit, minmax(260px, 1fr))';
+
+const SEVERITY_MAX_WIDTH = 'max(220px, (420px - 100%) * 999)';
 
 const DISPOSITION_TONE: Record<string, 'red' | 'orange' | 'green' | 'blue'> = {
     sustained:     'red',
@@ -184,7 +188,7 @@ export function AffairsFile({ fileRef, onSaved, onClose, onChanged }: {
                         </MdtButton>
                     </MdtCard>
 
-                    <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="mt-4 grid gap-4" style={{ gridTemplateColumns: FIELD_PAIR_COLUMNS }}>
                         <MdtField
                             label={t('mdt.title', 'Title')}
                             value={draft.title}
@@ -200,7 +204,7 @@ export function AffairsFile({ fileRef, onSaved, onClose, onChanged }: {
                         />
                     </div>
 
-                    <div className="mt-4 max-w-[220px]">
+                    <div className="mt-4" style={{ maxWidth: SEVERITY_MAX_WIDTH }}>
                         <MdtField
                             label={t('mdt.iaSeverity', 'Severity')}
                             value={draft.severity}
@@ -288,14 +292,14 @@ export function AffairsFile({ fileRef, onSaved, onClose, onChanged }: {
             <div className="mt-4 flex flex-wrap items-center gap-3">
                 {canWork ? (
                     <>
-                        <MdtSelect<IaStatus>
+                        <Select<IaStatus>
                             value={file.status}
                             onChange={status => void patch({ ref: file.ref, status })}
                             options={IA_STATUSES.filter(s => s !== 'closed').map((s: IaStatus) => ({ value: s, label: iaStatusLabel(s) }))}
                             size="sm"
                             ariaLabel={t('mdt.status', 'Status')}
                         />
-                        <MdtSelect<IaSeverity>
+                        <Select<IaSeverity>
                             value={file.severity}
                             onChange={severity => void patch({ ref: file.ref, severity })}
                             options={IA_SEVERITIES.map((s: IaSeverity) => ({ value: s, label: iaSeverityLabel(s) }))}
@@ -411,7 +415,7 @@ export function AffairsFile({ fileRef, onSaved, onClose, onChanged }: {
                     <span className="text-[15px] text-ios-gray">{t('mdt.iaOpenStill', 'This file has not been ruled on.')}</span>
                 ) : ruling ? (
                     <>
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="grid gap-4" style={{ gridTemplateColumns: FIELD_PAIR_COLUMNS }}>
                             <MdtField
                                 label={t('mdt.iaDisposition', 'Disposition')}
                                 value={disposition}

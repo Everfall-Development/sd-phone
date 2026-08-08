@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Eraser, Gavel, UserPlus } from 'lucide-react';
 
+import { device } from '@device';
 import { t } from '@/i18n';
 import { formatListDate, formatMediumDate } from '@/lib/time';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useSessionState } from '@/hooks/useSessionState';
 import { EmptyState } from '@/ui/EmptyState';
+import { ListColumn } from '@/ui/ListColumn';
+import { MasterDetail } from '@/ui/MasterDetail';
+import { Pager } from '@/ui/Pager';
 import { Pill } from '@/ui/Pill';
 import { Scroller } from '@/ui/Scroller';
 import { SegmentedControl } from '@/ui/SegmentedControl';
@@ -19,15 +23,14 @@ import { useMdtSession } from './useMdtSession';
 import { mdtPanePad, mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle, mdtSectionHeader, mdtSegmented } from './mdtTheme';
 import { MdtButton } from './ui/MdtButton';
 import { MdtCard } from './ui/MdtCard';
-import { MdtColumn } from './ui/MdtColumn';
-import { MdtMaster } from './ui/MdtMaster';
-import { MdtPager } from './ui/MdtPager';
 import { MdtRichField } from './ui/MdtRichField';
 import { MdtRichText } from './ui/MdtRichText';
 
 type StatusFilter = PetitionStatus | 'all';
 
 const NEW_PETITION = 'new';
+
+const isPhone = device.id === 'phone';
 
 export function petitionStatusLabel(status: string): string {
     if (status === 'granted') return t('mdt.exGranted', 'Granted');
@@ -160,7 +163,7 @@ function PetitionDetail({ petition, onRuled }: { petition: Petition; onRuled: (p
                             <MdtButton variant="destructive" disabled={saving} onClick={() => void rule(false)}>
                                 {t('mdt.exDeny', 'Deny')}
                             </MdtButton>
-                            <span className={`min-w-0 flex-1 ${mdtRowMeta}`}>
+                            <span className={`min-w-[220px] flex-1 ${mdtRowMeta}`}>
                                 {t('mdt.exGrantWarn', 'Granting seals the charge lines from every priors sheet at once.')}
                             </span>
                         </div>
@@ -312,7 +315,7 @@ export function ExpungePane() {
     );
 
     const master = (
-        <MdtColumn
+        <ListColumn
             className="flex-1"
             title={t('mdt.expunge', 'Petitions')}
             count={total}
@@ -326,7 +329,8 @@ export function ExpungePane() {
             ) : undefined}
             isEmpty={settled && rows.length === 0}
             empty={empty}
-            footer={<MdtPager page={data?.page ?? page} pageSize={data?.pageSize ?? 25} total={total} onPage={setPage} />}
+            minWidth={isPhone ? 0 : undefined}
+            footer={<Pager page={data?.page ?? page} pageSize={data?.pageSize ?? 25} total={total} onPage={setPage} />}
         >
             <div className="flex flex-col gap-2 px-3 pb-2">
                 <SegmentedControl<StatusFilter>
@@ -350,11 +354,11 @@ export function ExpungePane() {
                     />
                 ))}
             </div>
-        </MdtColumn>
+        </ListColumn>
     );
 
     return (
-        <MdtMaster
+        <MasterDetail
             master={master}
             hasDetail={selected !== null}
             detail={selected === NEW_PETITION ? (
@@ -371,6 +375,7 @@ export function ExpungePane() {
                 />
             }
             onCloseDetail={() => select(null)}
+            backLabel={t('mdt.expunge', 'Petitions')}
         />
     );
 }

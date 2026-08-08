@@ -74,7 +74,7 @@ export function Notes({ onClose }: { onClose: () => void }) {
 
     const open = openId ? state.notes.find(n => n.id === openId) : null;
 
-    const animateNav = useDidEnter(state.notes.length > 0);
+    const animateNav = useDidEnter();
 
     return (
         <div className="absolute inset-0 z-10 overflow-hidden bg-[#fbf9f3] dark:bg-base">

@@ -3,15 +3,15 @@ import { ScrollText } from 'lucide-react';
 
 import { t } from '@/i18n';
 import { EmptyState } from '@/ui/EmptyState';
+import { ListColumn } from '@/ui/ListColumn';
+import { MasterDetail } from '@/ui/MasterDetail';
+import { Pager } from '@/ui/Pager';
 import { Scroller } from '@/ui/Scroller';
 import { format12h, formatListDate } from '@/lib/time';
 import type { AuditRow, MdtSection } from './data';
 import { mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle, mdtRuleX } from './mdtTheme';
 import { mdtLogs } from './mdtApi';
-import { MdtColumn } from './ui/MdtColumn';
 import { MdtField } from './ui/MdtField';
-import { MdtMaster } from './ui/MdtMaster';
-import { MdtPager } from './ui/MdtPager';
 import { useDeckRefresh, useMdtSession } from './useMdtSession';
 
 const REF_RE = /^[A-Z]-\d{3,}$/;
@@ -155,7 +155,7 @@ export function LogsPane() {
     ];
 
     const master = (
-        <MdtColumn
+        <ListColumn
             title={t('mdt.activityLog', 'Activity')}
             count={total || undefined}
             search={{
@@ -168,7 +168,7 @@ export function LogsPane() {
                     value={entityType}
                     onChange={setEntityType}
                     options={typeOptions}
-                    className="w-[136px]"
+                    className="w-[136px] min-w-[104px]"
                     fieldClassName="py-[3px] text-[13px]"
                 />
             )}
@@ -181,7 +181,7 @@ export function LogsPane() {
                     subtitle={t('mdt.noActivitySub', 'Every write in the terminal lands here. Nothing matches these filters yet.')}
                 />
             )}
-            footer={<MdtPager page={page} pageSize={pageSize} total={total} onPage={setPage} />}
+            footer={<Pager page={page} pageSize={pageSize} total={total} onPage={setPage} />}
         >
             {rows.map((row, i) => {
                 const isSelected = String(row.id) === selected;
@@ -221,7 +221,7 @@ export function LogsPane() {
                     </button>
                 );
             })}
-        </MdtColumn>
+        </ListColumn>
     );
 
     const entitySection = current?.entityType ? ENTITY_SECTION[current.entityType] : undefined;
@@ -269,11 +269,12 @@ export function LogsPane() {
     ) : undefined;
 
     return (
-        <MdtMaster
+        <MasterDetail
             master={master}
             detail={detail}
             hasDetail={!!current}
             onCloseDetail={() => select(null)}
+            backLabel={t('mdt.activityLog', 'Activity')}
             placeholder={(
                 <div className="flex min-h-0 flex-1 items-center justify-center px-6">
                     <EmptyState
@@ -291,9 +292,9 @@ export function LogsPane() {
 function Entry({ label, value, onOpen }: { label: string; value: string; onOpen?: () => void }) {
     if (!value) return null;
     return (
-        <div className="flex items-start gap-4 border-b border-black/[0.06] py-2.5 last:border-b-0 dark:border-white/[0.08]">
+        <div className="flex flex-wrap items-start gap-x-4 gap-y-1 border-b border-black/[0.06] py-2.5 last:border-b-0 dark:border-white/[0.08]">
             <dt className="w-[160px] shrink-0 text-[13px] font-medium text-ios-gray">{label}</dt>
-            <dd className="min-w-0 flex-1 text-[14px] leading-snug text-black dark:text-white">
+            <dd className="min-w-[240px] flex-1 text-[14px] leading-snug text-black dark:text-white">
                 {onOpen ? (
                     <button
                         type="button"

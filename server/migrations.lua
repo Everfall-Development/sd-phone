@@ -20,6 +20,8 @@ local COLUMNS = {
         dark_theme        = 'dark_theme VARCHAR(16) NULL',
         light_theme       = 'light_theme VARCHAR(16) NULL',
         accent            = 'accent VARCHAR(16) NULL',
+        shell             = 'shell VARCHAR(16) NULL',
+        game_time         = 'game_time TINYINT(1) NULL',
         reopen_app        = 'reopen_app TINYINT(1) NULL',
         setup_done        = 'setup_done TINYINT(1) NULL',
         custom_wallpapers = 'custom_wallpapers TEXT NULL',
@@ -35,6 +37,12 @@ local COLUMNS = {
         show_app_names    = 'show_app_names TINYINT(1) NOT NULL DEFAULT 1',
         island_pet        = 'island_pet VARCHAR(16) NULL',
         device            = "device VARCHAR(16) NOT NULL DEFAULT 'phone'",
+    },
+
+    -- Verification tier shown next to a handle: blue (individual), gold (business), grey
+    -- (government). NULL means the legacy plain blue tick, so existing rows keep their badge.
+    phone_birdy_profiles = {
+        verified_type = 'verified_type VARCHAR(8) NULL',
     },
 
     phone_documents = {

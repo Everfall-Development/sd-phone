@@ -1,11 +1,13 @@
 import { useState } from 'react';
 
 import { t } from '@/i18n';
+import { ImageLightbox } from '@/ui/ImageLightbox';
+import { BLUE } from './data';
 
 export function Avatar({ size = 40, src }: { size?: number; src?: string }) {
     return (
         <div
-            className="shrink-0 overflow-hidden rounded-full bg-[#ccd6dd]"
+            className="shrink-0 overflow-hidden rounded-full bg-control"
             style={{ width: size, height: size }}
         >
             {src ? (
@@ -20,10 +22,25 @@ export function Avatar({ size = 40, src }: { size?: number; src?: string }) {
     );
 }
 
-export function VerifiedBadge({ size = 16 }: { size?: number }) {
+const BADGE_FILL: Record<string, string> = {
+    blue: '#1d9bf0',
+    gold: '#e2b719',
+    grey: '#829aab',
+};
+
+const BADGE_LABEL: Record<string, string> = {
+    blue: t('squawk.verified', 'Verified'),
+    gold: t('squawk.verifiedBusiness', 'Verified business'),
+    grey: t('squawk.verifiedGovernment', 'Verified government account'),
+};
+
+export function VerifiedBadge({ size = 16, type = 'blue' }: { size?: number; type?: string }) {
+    const fill = BADGE_FILL[type] ?? BADGE_FILL.blue;
     return (
-        <svg viewBox="0 0 24 24" width={size} height={size} aria-label={t('squawk.verified', 'Verified')} className="shrink-0">
-            <circle cx="12" cy="12" r="11" fill="#1d9bf0" />
+        <svg viewBox="0 0 24 24" width={size} height={size} aria-label={BADGE_LABEL[type] ?? BADGE_LABEL.blue} className="shrink-0">
+            {type === 'gold'
+                ? <rect x="1" y="1" width="22" height="22" rx="7" fill={fill} />
+                : <circle cx="12" cy="12" r="11" fill={fill} />}
             <path
                 d="M6.8 12.4 L10.2 15.7 L17.2 8.4"
                 fill="none"
@@ -53,7 +70,7 @@ export function RichText({ text }: { text: string }) {
     let m: RegExpExecArray | null;
     while ((m = re.exec(text)) !== null) {
         if (m.index > last) nodes.push(text.slice(last, m.index));
-        nodes.push(<span key={m.index} style={{ color: '#1d9bf0' }}>{m[0]}</span>);
+        nodes.push(<span key={m.index} style={{ color: BLUE }}>{m[0]}</span>);
         last = m.index + m[0].length;
     }
     if (last < text.length) nodes.push(text.slice(last));
@@ -65,7 +82,7 @@ export function RichText({ text }: { text: string }) {
 function FadeImg({ src, height }: { src: string; height: number }) {
     const [loaded, setLoaded] = useState(false);
     return (
-        <div className="w-full bg-black/[0.06]" style={{ height }}>
+        <div className="w-full bg-hairline/[0.06]" style={{ height }}>
             <img
                 src={src}
                 alt=""
@@ -78,15 +95,34 @@ function FadeImg({ src, height }: { src: string; height: number }) {
 }
 
 export function PostImages({ images }: { images?: string[] }) {
+    // The lightbox lives here rather than in the card, so tapping an image works identically in
+    // the feed and in an opened post without either of them knowing about it.
+    const [full, setFull] = useState<string | null>(null);
+
     if (!images || images.length === 0) return null;
     const n = images.length;
     const h = n === 1 ? 300 : n === 2 ? 220 : 150;
     return (
-        <div
-            className="mt-3 grid gap-0.5 overflow-hidden rounded-[16px] border border-black/10"
-            style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }}
-        >
-            {images.map((src, i) => <FadeImg key={`${src}-${i}`} src={src} height={h} />)}
-        </div>
+        <>
+            <div
+                className="mt-3 grid gap-0.5 overflow-hidden rounded-[16px] border border-hairline/10"
+                style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }}
+            >
+                {images.map((src, i) => (
+                    <button
+                        key={`${src}-${i}`}
+                        type="button"
+                        // Without this the tap also reaches the card and opens the post instead.
+                        onClick={e => { e.stopPropagation(); setFull(src); }}
+                        className="block min-w-0 active:opacity-90"
+                        aria-label={t('squawk.viewImage', 'View image')}
+                    >
+                        <FadeImg src={src} height={h} />
+                    </button>
+                ))}
+            </div>
+
+            {full && <ImageLightbox src={full} onClose={() => setFull(null)} />}
+        </>
     );
 }

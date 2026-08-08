@@ -18,11 +18,11 @@ import { logOutOrSwitch, switchTargetLabel } from '@/shared/logOutOrSwitch';
 import { toggleReactionLocal } from '@/shared/chat/messagesApi';
 import type { MessageDraft } from '@/shared/chat/ChatView';
 import {
-    apiCreate, apiDmList, apiDmMarkRead, apiDmReact, apiDmResolve, apiDmSend, apiDmThread, apiFeed, apiLogin, apiMe, apiPostDetail, apiProfile, apiRegister, apiNotificationCount, apiReply, apiToggleFollow, apiToggleLike, apiToggleRepost, apiWatch,
+    apiCreate, apiDeletePost, apiDmList, apiDmMarkRead, apiDmReact, apiDmResolve, apiDmSend, apiDmThread, apiFeed, apiLogin, apiMe, apiPostDetail, apiProfile, apiRegister, apiNotificationCount, apiReply, apiToggleFollow, apiToggleLike, apiToggleRepost, apiWatch,
 } from './birdyApi';
 import { ChatView } from './dms/ChatView';
 import { Composer } from './feed/Composer';
-import { BG, BLUE, CURRENT_USER, type BirdyAuthor, type BirdyConversation, type BirdyMessage, type BirdyPost, type BirdyProfile } from './data';
+import { BG, BLUE, CARD, CURRENT_USER, META, type BirdyAuthor, type BirdyConversation, type BirdyMessage, type BirdyPost, type BirdyProfile } from './data';
 import { EditProfile } from './profile/EditProfile';
 import { Feed } from './feed/Feed';
 import { MessagesList } from './dms/Messages';
@@ -169,6 +169,14 @@ export function Birdy({ onClose }: { onClose: () => void }) {
         setOpenConvoId(r.id);
     }
 
+    // Optimistic: the row leaves at once and the post detail closes if it was the one removed.
+    // A server refusal (not yours, already gone) is repaired by the refresh.
+    function deletePost(id: string) {
+        setPosts(prev => (prev ? prev.filter(p => p.id !== id) : prev));
+        if (openPostId === id) setOpenPostId(null);
+        void apiDeletePost(id).then(okDone => { if (!okDone) refreshFeed(); });
+    }
+
     function toggleLike(id: string) {
         const flip = (p: BirdyPost): BirdyPost =>
             p.id === id ? { ...p, liked: !p.liked, likes: p.likes + (p.liked ? -1 : 1) } : p;
@@ -287,13 +295,13 @@ export function Birdy({ onClose }: { onClose: () => void }) {
 
     let content: React.ReactNode;
     if (tab === 'home') {
-        content = <Feed posts={posts} me={me} feed={feed} onFeedChange={switchFeed} onRefresh={refreshNow} onToggleLike={toggleLike} onToggleRepost={toggleRepost} onOpenPost={setOpenPostId} onOpenProfile={openProfile} onOpenAuthor={openProfile} />;
+        content = <Feed posts={posts} me={me} feed={feed} onFeedChange={switchFeed} onRefresh={refreshNow} onToggleLike={toggleLike} onToggleRepost={toggleRepost} onOpenPost={setOpenPostId} onOpenProfile={openProfile} onOpenAuthor={openProfile} onDeletePost={deletePost} />;
     } else if (tab === 'search') {
         content = <Search me={me} onOpenProfile={openProfile} onOpenPost={setOpenPostId} onToggleLike={toggleLike} onToggleRepost={toggleRepost} />;
     } else if (tab === 'notifications') {
-        content = <Notifications onOpenProfile={openProfile} />;
+        content = <Notifications me={me} onOpenProfile={openProfile} onOpenPost={setOpenPostId} />;
     } else {
-        content = <MessagesList conversations={convos} onOpen={setOpenConvoId} onOpenProfile={openProfile} onCompose={openDmWith} />;
+        content = <MessagesList me={me} conversations={convos} onOpen={setOpenConvoId} onOpenProfile={openProfile} onCompose={openDmWith} />;
     }
 
     const postOverlay = openPostId ? (
@@ -328,7 +336,7 @@ export function Birdy({ onClose }: { onClose: () => void }) {
                 icon="birdy"
                 theme={{
                     accent:      BLUE,
-                    welcomeBg:   '#ffffff',
+                    welcomeBg:   CARD,
                     welcomeText: 'dark',
                 }}
                 myNumber={myNumber}
@@ -370,7 +378,7 @@ export function Birdy({ onClose }: { onClose: () => void }) {
     if (!authed) return authScreen;
 
     return (
-        <div className={`absolute inset-0 z-10 flex flex-col text-black ${justAuthed ? 'animate-swipe-in-left' : ''}`} style={{ background: BG }}>
+        <div className={`absolute inset-0 z-10 flex flex-col text-label ${justAuthed ? 'animate-swipe-in-left' : ''}`} style={{ background: BG }}>
             <div className="h-[54px] shrink-0" aria-hidden />
 
             <div key={tab} className="relative z-0 min-h-0 flex-1 overflow-hidden animate-swipe-in-left">
@@ -383,7 +391,7 @@ export function Birdy({ onClose }: { onClose: () => void }) {
                 {postOverlay}
             </div>
 
-            <nav className="shrink-0 border-t border-black/10 px-2 pb-12 pt-4" style={{ background: BG }}>
+            <nav className="shrink-0 border-t border-hairline/10 px-2 pb-12 pt-4" style={{ background: BG }}>
                 <div className="flex items-stretch justify-around">
                     <NavButton active={tab === 'home'} onClick={() => selectTab('home')}>
                         <House className="h-[34px] w-[34px]" strokeWidth={tab === 'home' ? 2.2 : 2} fill="none" />
@@ -415,14 +423,14 @@ export function Birdy({ onClose }: { onClose: () => void }) {
                         animateIn={animateNav}
                     />
                 ) : (
-                    <div className="absolute inset-0 z-20 flex flex-col" style={{ background: '#e5e5e5' }}>
+                    <div className="absolute inset-0 z-20 flex flex-col" style={{ background: BG }}>
                         <div className="h-[58px] shrink-0" aria-hidden />
                         <div className="flex shrink-0 items-center px-2 pb-3">
                             <button type="button" onClick={() => setOpenConvoId(null)} aria-label={t('squawk.back', 'Back')} className="active:opacity-60" style={{ color: BLUE }}>
                                 <ChevronLeft className="h-[38px] w-[38px]" strokeWidth={2.4} />
                             </button>
                         </div>
-                        <div className="flex flex-1 items-center justify-center text-[14px] text-black/40">{t('squawk.loading', 'Loading…')}</div>
+                        <div className="flex flex-1 items-center justify-center text-[14px] text-label/40">{t('squawk.loading', 'Loading…')}</div>
                     </div>
                 )
             )}
@@ -448,13 +456,22 @@ export function Birdy({ onClose }: { onClose: () => void }) {
                 </SlideOver>
             )}
 
-            {composing && <Composer onClose={() => setComposing(false)} onPost={addPost} />}
+            {composing && <Composer me={me} onClose={() => setComposing(false)} onPost={addPost} />}
 
             {editingProfile && profile && (
                 <EditProfile
                     profile={profile}
                     onCancel={() => setEditingProfile(false)}
-                    onSaved={p => { setProfile(p); setMe({ name: p.name, handle: p.handle, verified: p.verified }); setEditingProfile(false); }}
+                    // Re-read the author rather than rebuilding it from the profile: a hand-built
+                    // object drops avatar and verifiedType, which blanks the header picture until
+                    // the app is killed in the switcher. refreshFeed repaints posts already loaded,
+                    // which still carry the old avatar on their author.
+                    onSaved={p => {
+                        setProfile(p);
+                        void apiMe().then(s => { if (s.me) setMe(s.me); });
+                        refreshFeed();
+                        setEditingProfile(false);
+                    }}
                     switchTo={switchTargetLabel(savedAccounts[0])}
                     onSignOut={() => {
                         setEditingProfile(false);
@@ -509,10 +526,10 @@ export function Birdy({ onClose }: { onClose: () => void }) {
 function LoadingPane({ onBack }: { onBack: () => void }) {
     return (
         <div className="flex h-full flex-col" style={{ background: BG }}>
-            <header className="flex shrink-0 items-center border-b border-black/10 px-3 py-2.5">
+            <header className="flex shrink-0 items-center border-b border-hairline/10 px-3 py-2.5">
                 <button type="button" onClick={onBack} aria-label={t('squawk.back', 'Back')} style={{ color: BLUE }} className="text-[15px]">{t('squawk.back', 'Back')}</button>
             </header>
-            <div className="flex flex-1 items-center justify-center text-[13px]" style={{ color: '#536471' }}>{t('squawk.loading', 'Loading…')}</div>
+            <div className="flex flex-1 items-center justify-center text-[13px]" style={{ color: META }}>{t('squawk.loading', 'Loading…')}</div>
         </div>
     );
 }
@@ -536,8 +553,8 @@ function NavButton({ active, onClick, children, badge = 0 }: { active: boolean; 
         <button
             type="button"
             onClick={onClick}
-            className={`flex flex-1 items-center justify-center py-2 ${active ? 'text-black' : ''}`}
-            style={active ? undefined : { color: 'rgba(0,0,0,0.45)' }}
+            className={`flex flex-1 items-center justify-center py-2 ${active ? 'text-label' : ''}`}
+            style={active ? undefined : { color: META }}
         >
             <span className="relative inline-flex">
                 {children}

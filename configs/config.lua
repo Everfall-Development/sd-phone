@@ -45,11 +45,13 @@ local config = {
     WeazelNews  = require 'configs.weazelnews',     -- broadcast network: staff-published articles + breaking ticker
     Streaks     = require 'configs.streaks',        -- photo-a-day streaks: milestone cash + global gallery
     Mdt         = require 'configs.mdt',            -- police terminal: departments, permission grades, jail + dispatch limits
+    Racing      = require 'configs.racing',         -- Racing: tracks, races, MMR, the gate creator
     Migrate     = require 'configs.migrate',         -- one-time lb-phone -> sd-phone data import
     Sim         = require 'configs.uniqueandsim',    -- unique phones + SIM cards (see its pick-your-setup header)
     CellTowers  = require 'configs.celltowers',   -- degradable service by distance to a mast
     Wifi        = require 'configs.wifi',          -- local networks that carry data off the towers
     Bluetooth   = require 'configs.bluetooth',     -- devices other resources register for phones to pair with
+    Shells      = require 'configs.shells',        -- selectable phone chassis, and whether players may pick
 }
 
 -- Server-only secrets: third-party API keys live in configs/server/apikeys.lua, which is NOT in

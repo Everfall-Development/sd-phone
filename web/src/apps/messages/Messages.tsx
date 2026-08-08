@@ -120,7 +120,7 @@ export function Messages({ onClose }: { onClose: () => void }) {
 
     const conv = openId ? resolvedConversations.find(c => c.id === openId) ?? null : null;
     const totalUnread = resolvedConversations.reduce((n, c) => n + unreadCount(c), 0);
-    const animateNav = useDidEnter(conversations.length > 0);
+    const animateNav = useDidEnter();
 
     const openConversation = useCallback((id: string) => {
         setOpenId(id);

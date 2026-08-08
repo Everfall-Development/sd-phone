@@ -82,6 +82,12 @@ export async function apiToggleLike(id: string): Promise<void> {
     await fetchNui('sd-phone:birdy:toggleLike', { id });
 }
 
+export async function apiDeletePost(id: string): Promise<boolean> {
+    if (!isFiveM) return true;
+    const res = await apiCall<{ id: string }>('sd-phone:birdy:deletePost', { id });
+    return !!res?.success;
+}
+
 export async function apiNotificationCount(): Promise<number> {
     if (!isFiveM) return SEED_NOTIFICATIONS.length;
     return (await call<{ count: number }>('sd-phone:birdy:notificationCount'))?.count ?? 0;
@@ -234,4 +240,23 @@ export async function apiUpdateProfile(input: { name: string; bio: string; prote
 export async function apiDeleteAccount(): Promise<void> {
     if (!isFiveM) { devLoggedIn = false; return; }
     await fetchNui('sd-phone:birdy:deleteAccount');
+}
+
+export interface VerificationOffer {
+    enabled:       boolean;
+    price:         number;
+    account:       string;
+    verified:      boolean;
+    verifiedType?: string | null;
+}
+
+export async function apiVerificationOffer(): Promise<VerificationOffer | null> {
+    if (!isFiveM) return { enabled: true, price: 25000, account: 'bank', verified: false };
+    return (await call<VerificationOffer>('sd-phone:birdy:verificationOffer')) ?? null;
+}
+
+export async function apiPurchaseVerification(): Promise<{ ok: boolean; me?: BirdyAuthor; message?: string }> {
+    if (!isFiveM) return { ok: true, me: { ...CURRENT_USER, verified: true, verifiedType: 'blue' } };
+    const res = await apiCall<{ me: BirdyAuthor }>('sd-phone:birdy:purchaseVerification');
+    return res.success ? { ok: true, me: res.data?.me } : { ok: false, message: res.message };
 }

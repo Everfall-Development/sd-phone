@@ -7,7 +7,7 @@ import { t } from '@/i18n';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { EmptyState } from '@/ui/EmptyState';
 import { apiProfilePosts } from '../birdyApi';
-import { BG, BLUE, META, type BirdyAuthor, type BirdyProfile } from '../data';
+import { BG, BLUE, META, postKey, type BirdyAuthor, type BirdyProfile} from '../data';
 import { compactCount } from '../polish/format';
 import { FeedSkeleton } from '../polish/Skeleton';
 import { FollowList } from './FollowList';
@@ -44,7 +44,9 @@ export function Profile({ profile, me, handle, onBack, onEdit, onOpenPost, onTog
     onOpenAuthor?:   (handle: string) => void;
     onMessage?:      (handle: string) => void;
 }) {
-    const isOther = !!handle;
+    const isOther = !!handle
+        && handle.toLowerCase() !== me.handle.toLowerCase()
+        && profile?.isMe !== true;
     const label = tabLabels();
     const empty = tabEmptyStates();
     const [tab, setTab] = useState<Tab>('posts');
@@ -70,6 +72,7 @@ export function Profile({ profile, me, handle, onBack, onEdit, onOpenPost, onTog
     const name          = profile?.name ?? me.name;
     const displayHandle = profile?.handle ?? handle ?? me.handle;
     const verified      = profile?.verified ?? me.verified;
+    const verifiedType  = profile?.verifiedType ?? me.verifiedType;
     const banner        = profile?.banner;
 
     return (
@@ -121,7 +124,7 @@ export function Profile({ profile, me, handle, onBack, onEdit, onOpenPost, onTog
                             <button
                                 type="button"
                                 onClick={onEdit}
-                                className="mt-2 rounded-full px-5 py-2 text-[15px] font-bold transition-colors hover:bg-[#1d9bf0]/10 active:bg-[#1d9bf0]/15"
+                                className="mt-2 rounded-full px-5 py-2 text-[15px] font-bold transition-colors hover:bg-ios-blue/10 active:bg-ios-blue/15"
                                 style={{ border: `1.5px solid ${BLUE}`, color: BLUE }}
                             >
                                 {t('squawk.editProfileButton', 'Edit Profile')}
@@ -131,23 +134,23 @@ export function Profile({ profile, me, handle, onBack, onEdit, onOpenPost, onTog
 
                     {headerLoading ? (
                         <div className="mt-3 flex flex-col gap-2" aria-hidden>
-                            <div className="h-6 w-40 animate-shimmer rounded-full bg-black/[0.07]"
+                            <div className="h-6 w-40 animate-shimmer rounded-full bg-hairline/[0.07]"
                                 style={{ backgroundImage: 'linear-gradient(90deg, rgba(0,0,0,0) 35%, rgba(255,255,255,0.55) 50%, rgba(0,0,0,0) 65%)', backgroundSize: '200% 100%' }} />
-                            <div className="h-4 w-28 animate-shimmer rounded-full bg-black/[0.07]"
+                            <div className="h-4 w-28 animate-shimmer rounded-full bg-hairline/[0.07]"
                                 style={{ backgroundImage: 'linear-gradient(90deg, rgba(0,0,0,0) 35%, rgba(255,255,255,0.55) 50%, rgba(0,0,0,0) 65%)', backgroundSize: '200% 100%' }} />
                         </div>
                     ) : (
                         <>
                             <div className="mt-2 flex items-center gap-1.5">
-                                <span className="text-[22px] font-extrabold text-black">{name}</span>
-                                {verified && <VerifiedBadge size={20} />}
+                                <span className="text-[22px] font-extrabold text-label">{name}</span>
+                                {verified && <VerifiedBadge size={20} type={verifiedType} />}
                             </div>
                             <div className="text-[16px]" style={{ color: META }}>@{displayHandle}</div>
                         </>
                     )}
 
                     {profile?.bio ? (
-                        <p className="mt-2 whitespace-pre-wrap text-[16px] leading-snug text-black">{profile.bio}</p>
+                        <p className="mt-2 whitespace-pre-wrap text-[16px] leading-snug text-label">{profile.bio}</p>
                     ) : null}
 
                     {profile?.joined ? (
@@ -159,15 +162,15 @@ export function Profile({ profile, me, handle, onBack, onEdit, onOpenPost, onTog
 
                     <div className="mt-2 flex gap-4 text-[16px]" style={{ color: META }}>
                         <button type="button" onClick={() => setFollowView('following')} className="hover:underline">
-                            <span className="font-bold tabular-nums text-black">{compactCount(profile?.following ?? 0)}</span> {t('squawk.following', 'Following')}
+                            <span className="font-bold tabular-nums text-label">{compactCount(profile?.following ?? 0)}</span> {t('squawk.following', 'Following')}
                         </button>
                         <button type="button" onClick={() => setFollowView('followers')} className="hover:underline">
-                            <span className="font-bold tabular-nums text-black">{compactCount(profile?.followers ?? 0)}</span> {t('squawk.followers', 'Followers')}
+                            <span className="font-bold tabular-nums text-label">{compactCount(profile?.followers ?? 0)}</span> {t('squawk.followers', 'Followers')}
                         </button>
                     </div>
                 </div>
 
-                <div className="relative mt-3 flex border-b border-black/10">
+                <div className="relative mt-3 flex border-b border-hairline/10">
                     {TABS.map(tabId => (
                         <ProfileTab key={tabId} label={label[tabId]} active={tab === tabId} onClick={() => setTab(tabId)} />
                     ))}
@@ -185,23 +188,23 @@ export function Profile({ profile, me, handle, onBack, onEdit, onOpenPost, onTog
                 ) : locked ? (
                     <EmptyState
                         icon={<Lock className="h-7 w-7" strokeWidth={1.8} />}
-                        circleClassName="bg-black/[0.06] text-black/35"
+                        circleClassName="bg-hairline/[0.06] text-label/35"
                         title={t('squawk.postsArePrivate', 'This account keeps its posts private')}
                         subtitle={t('squawk.protectedSubtitle', 'Only followers can see {name}’s posts.', { name })}
-                        subtitleClassName="text-[#536471]"
+                        subtitleClassName="text-ios-gray"
                     />
                 ) : posts.length === 0 ? (
                     <EmptyState
                         icon={empty[tab].icon}
-                        circleClassName="bg-black/[0.06] text-black/35"
+                        circleClassName="bg-hairline/[0.06] text-label/35"
                         title={empty[tab].title}
                         subtitle={empty[tab].subtitle}
-                        subtitleClassName="text-[#536471]"
+                        subtitleClassName="text-ios-gray"
                     />
                 ) : (
                     posts.map(post => (
                         <PostCard
-                            key={post.id}
+                            key={postKey(post)}
                             post={post}
                             isOwn={post.author.handle === me.handle}
                             onToggleLike={() => onToggleLike(post.id)}
@@ -233,7 +236,7 @@ export function Profile({ profile, me, handle, onBack, onEdit, onOpenPost, onTog
 function ProfileTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
     return (
         <button type="button" onClick={onClick} className="relative flex-1 py-3.5 text-[16px]">
-            <span className={`transition-colors duration-200 ${active ? 'font-bold text-black' : 'font-medium'}`} style={active ? undefined : { color: META }}>
+            <span className={`transition-colors duration-200 ${active ? 'font-bold text-label' : 'font-medium'}`} style={active ? undefined : { color: META }}>
                 {label}
             </span>
         </button>

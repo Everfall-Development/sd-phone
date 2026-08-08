@@ -4,6 +4,8 @@
     if (globalThis.componentsLoaded) return;
 
     const settingsListeners = new Set();
+    const openListeners     = new Set();
+    const closeListeners    = new Set();
     const nuiListeners      = new Map();
     const quietEndpoints    = new Set();
 
@@ -84,6 +86,8 @@
     }
 
     function handleMessage(event) {
+        if (event.source !== globalThis.parent && event.source !== globalThis) return;
+
         const message = event.data;
         if (!message || typeof message !== 'object') return;
 
@@ -92,6 +96,10 @@
             notifyAll(settingsListeners, message.settings, 'onSettingsChange');
         } else if (message.type === 'popUpInputChanged' && popUpInput) {
             popUpInput(message.value);
+        } else if (message.type === 'appOpen') {
+            notifyAll(openListeners, message.data, 'onAppOpen');
+        } else if (message.type === 'appClose') {
+            notifyAll(closeListeners, message.data, 'onAppClose');
         }
 
         if (typeof message.action === 'string') {
@@ -129,7 +137,13 @@
         }
 
         return callPhone('SetPopUp', payload).then(function (index) {
+            popUpInput = null;
             runCallback(buttons, index);
+            return index;
+        }, function (err) {
+            popUpInput = null;
+            console.error(`[${appLabel()}] pop-up failed:`, err);
+            return undefined;
         });
     }
 
@@ -141,6 +155,10 @@
 
         return callPhone('SetContextMenu', data).then(function (index) {
             runCallback(buttons, index);
+            return index;
+        }, function (err) {
+            console.error(`[${appLabel()}] context menu failed:`, err);
+            return undefined;
         });
     }
 
@@ -153,11 +171,14 @@
 
         return callPhone('ShowComponent', data).then(
             function (result) {
-                if (done) done(result === undefined ? null : result);
+                const value = result === undefined ? null : result;
+                if (done) done(value);
+                return value;
             },
             function (err) {
                 console.error(`[useComponent] "${data && data.component}" failed:`, err);
                 if (done) done(null);
+                return null;
             },
         );
     }
@@ -228,6 +249,70 @@
         return callPhone('OpenMedia', typeof data === 'string' ? { src: data } : data);
     }
 
+    function readPhoneNumber() {
+        return callPhone('GetPhoneNumber').then(function (n) {
+            return typeof n === 'string' && n !== '' ? n : null;
+        });
+    }
+
+    function readStorage(key, fallback) {
+        if (typeof key !== 'string' || key === '') return Promise.resolve(fallback === undefined ? null : fallback);
+
+        return callPhone('GetStorage', { key: key }).then(function (raw) {
+            if (raw === undefined || raw === null) return fallback === undefined ? null : fallback;
+            try {
+                return JSON.parse(raw);
+            } catch (err) {
+                return fallback === undefined ? null : fallback;
+            }
+        });
+    }
+
+    function writeStorage(key, value) {
+        if (typeof key !== 'string' || key === '') return Promise.resolve(false);
+
+        if (value === undefined || value === null) {
+            return callPhone('SetStorage', { key: key, value: null }).then(function (ok) { return ok === true; });
+        }
+
+        let encoded;
+        try {
+            encoded = JSON.stringify(value);
+        } catch (err) {
+            console.error(`[${appLabel()}] SetStorage("${key}") value is not serialisable:`, err);
+            return Promise.resolve(false);
+        }
+
+        return callPhone('SetStorage', { key: key, value: encoded }).then(function (ok) { return ok === true; });
+    }
+
+    function confirmDialog(data) {
+        const opts = typeof data === 'string' ? { title: data } : Object.assign({}, data || {});
+        const cancelText = opts.cancelText || 'Cancel';
+        const confirmText = opts.confirmText || 'Confirm';
+
+        delete opts.cancelText;
+        delete opts.confirmText;
+
+        return openPopUp(Object.assign(opts, {
+            buttons: [{ title: cancelText }, { title: confirmText, color: opts.color }],
+        })).then(function (index) {
+            return index === 1;
+        });
+    }
+
+    function watchAppOpen(cb) {
+        if (typeof cb !== 'function') return function () {};
+        openListeners.add(cb);
+        return function () { openListeners.delete(cb); };
+    }
+
+    function watchAppClose(cb) {
+        if (typeof cb !== 'function') return function () {};
+        closeListeners.add(cb);
+        return function () { closeListeners.delete(cb); };
+    }
+
     const API = {
         SetPopUp:                     openPopUp,
         SetContextMenu:               openContextMenu,
@@ -247,6 +332,12 @@
         ToggleInput:                  captureKeyboard,
         CreateCall:                   startCall,
         OpenMedia:                    viewMedia,
+        GetPhoneNumber:               readPhoneNumber,
+        GetStorage:                   readStorage,
+        SetStorage:                   writeStorage,
+        ShowConfirm:                  confirmDialog,
+        OnAppOpen:                    watchAppOpen,
+        OnAppClose:                   watchAppClose,
     };
 
     Object.keys(API).forEach(function (name) {
@@ -259,9 +350,22 @@
     globalThis.onNuiEvent  = subscribeNuiEvent;
     globalThis.useNuiEvent = subscribeNuiEvent;
 
+    globalThis.componentsVersion = 3;
+
+    globalThis.componentsUnsupported = Object.freeze(['UseCamera', 'SetContactModal']);
+
+    globalThis.componentsSupports = function (name) {
+        if (typeof name !== 'string' || typeof globalThis[name] !== 'function') return false;
+        return globalThis.componentsUnsupported.indexOf(name) === -1;
+    };
+
     globalThis.addEventListener('message', handleMessage);
 
     const boundFields = new WeakSet();
+    const TEXT_FIELDS = 'input, textarea, [contenteditable]:not([contenteditable="false"])';
+    const NON_TYPING = new Set([
+        'range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'color', 'image',
+    ]);
 
     function onFieldFocus() {
         captureKeyboard(true);
@@ -272,7 +376,7 @@
     }
 
     function bindField(field) {
-        if (field.type === 'range') return;
+        if (NON_TYPING.has(field.type)) return;
         if (boundFields.has(field)) return;
 
         boundFields.add(field);
@@ -282,8 +386,8 @@
 
     function bindFieldsWithin(node) {
         if (!node || node.nodeType !== 1) return;
-        if (node.matches('input, textarea')) bindField(node);
-        node.querySelectorAll('input, textarea').forEach(bindField);
+        if (node.matches(TEXT_FIELDS)) bindField(node);
+        node.querySelectorAll(TEXT_FIELDS).forEach(bindField);
     }
 
     const appRoot = document.body || document.documentElement;
@@ -292,9 +396,18 @@
 
     new MutationObserver(function (records) {
         records.forEach(function (record) {
+            if (record.type === 'attributes') {
+                bindFieldsWithin(record.target);
+                return;
+            }
             record.addedNodes.forEach(bindFieldsWithin);
         });
-    }).observe(appRoot, { childList: true, subtree: true });
+    }).observe(appRoot, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['contenteditable'],
+    });
 
     globalThis.componentsLoaded = true;
 

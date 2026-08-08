@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react';
 import { ShieldQuestion } from 'lucide-react';
 
+import { device } from '@device';
 import { t } from '@/i18n';
 import { formatListDate } from '@/lib/time';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useSessionState } from '@/hooks/useSessionState';
 import { EmptyState } from '@/ui/EmptyState';
+import { ListColumn } from '@/ui/ListColumn';
+import { MasterDetail } from '@/ui/MasterDetail';
+import { Pager } from '@/ui/Pager';
 import { Pill } from '@/ui/Pill';
 import { SegmentedControl } from '@/ui/SegmentedControl';
+import { Select } from '@/ui/Select';
 
 import { AffairsFile, iaCategoryLabel, iaSeverityLabel, iaStatusLabel } from './AffairsFile';
 import { IA_STATUSES, type IaStatus, type IaSummary } from './data';
@@ -15,13 +20,12 @@ import { mdtAffairs } from './mdtApi';
 import { useMdtSession } from './useMdtSession';
 import { mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle, mdtSegmented, STATUS_TONE } from './mdtTheme';
 import { MdtButton } from './ui/MdtButton';
-import { MdtColumn } from './ui/MdtColumn';
-import { MdtMaster } from './ui/MdtMaster';
-import { MdtPager } from './ui/MdtPager';
 
 type StatusFilter = IaStatus | 'all';
 
 const NEW_FILE = 'new';
+
+const isPhone = device.id === 'phone';
 
 const IA_TONE: Record<string, 'red' | 'orange' | 'blue' | 'green'> = {
     open:          'blue',
@@ -81,6 +85,11 @@ export function AffairsPane() {
     const rows = data?.rows ?? [];
     const total = data?.total ?? 0;
 
+    const statusOptions = [
+        { value: 'all' as StatusFilter, label: isPhone ? t('mdt.anyStatus', 'Any status') : t('common.all', 'All') },
+        ...IA_STATUSES.map((s: IaStatus) => ({ value: s as StatusFilter, label: iaStatusLabel(s) })),
+    ];
+
     const empty = (
         <EmptyState
             center
@@ -95,7 +104,7 @@ export function AffairsPane() {
     );
 
     const master = (
-        <MdtColumn
+        <ListColumn
             className="flex-1"
             title={t('mdt.affairs', 'Internal Affairs')}
             count={total}
@@ -109,19 +118,29 @@ export function AffairsPane() {
             ) : undefined}
             isEmpty={settled && rows.length === 0}
             empty={empty}
-            footer={<MdtPager page={data?.page ?? page} pageSize={data?.pageSize ?? 25} total={total} onPage={setPage} />}
+            minWidth={isPhone ? 0 : undefined}
+            footer={<Pager page={data?.page ?? page} pageSize={data?.pageSize ?? 25} total={total} onPage={setPage} />}
         >
-            <div className="flex flex-col gap-2 px-3 pb-2">
-                <SegmentedControl<StatusFilter>
-                    className={mdtSegmented}
-                    value={status}
-                    onChange={setStatus}
-                    options={[
-                        { value: 'all', label: t('common.all', 'All') },
-                        ...IA_STATUSES.map((s: IaStatus) => ({ value: s as StatusFilter, label: iaStatusLabel(s) })),
-                    ]}
-                />
-            </div>
+            {isPhone ? (
+                <div className="px-3 pb-2">
+                    <Select<StatusFilter>
+                        value={status}
+                        onChange={setStatus}
+                        size="sm"
+                        ariaLabel={t('mdt.status', 'Status')}
+                        options={statusOptions}
+                    />
+                </div>
+            ) : (
+                <div className="flex flex-col gap-2 px-3 pb-2">
+                    <SegmentedControl<StatusFilter>
+                        className={mdtSegmented}
+                        value={status}
+                        onChange={setStatus}
+                        options={statusOptions}
+                    />
+                </div>
+            )}
 
             <div className="mdt-stagger flex flex-col gap-0.5 px-1">
                 {rows.map(row => (
@@ -133,11 +152,11 @@ export function AffairsPane() {
                     />
                 ))}
             </div>
-        </MdtColumn>
+        </ListColumn>
     );
 
     return (
-        <MdtMaster
+        <MasterDetail
             master={master}
             hasDetail={selected !== null}
             detail={selected ? (
@@ -158,6 +177,7 @@ export function AffairsPane() {
                 />
             }
             onCloseDetail={() => select(null)}
+            backLabel={t('mdt.affairs', 'Internal Affairs')}
         />
     );
 }

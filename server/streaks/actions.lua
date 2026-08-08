@@ -36,16 +36,16 @@ local function posInt(v)
 end
 
 ---"$1,500" style for the bank notification line.
+---
+---The amount comes from configs/streaks.lua milestone rewards, so it is server-owner input.
+---lib.math.groupdigits matches on a digit and indexes the capture, meaning an infinity or a NaN
+---raises rather than formatting; util.finite keeps a mistyped reward to a wrong number instead of
+---a failed payout.
 ---@param n number whole-dollar amount
 ---@return string formatted
 local function fmtMoney(n)
-    local s = tostring(math.floor(tonumber(n) or 0))
-    while true do
-        local next_s, count = s:gsub('^(-?%d+)(%d%d%d)', '%1,%2')
-        s = next_s
-        if count == 0 then break end
-    end
-    return '$' .. s
+    local v = tonumber(n)
+    return '$' .. lib.math.groupdigits(util.finite(v) and math.floor(v) or 0, ',')
 end
 
 ---config.Streaks.Milestones (a sparse day -> reward map) sorted ascending into the { day, reward }
@@ -157,7 +157,7 @@ function actions.post(src, payload)
     if not cid then return fail('Not signed in') end
 
     local imageUrl = trim(payload.imageUrl)
-    if imageUrl:sub(1, 4) ~= 'http' then return fail('Invalid image') end
+    if not lib.string.startsWith(imageUrl, 'http') then return fail('Invalid image') end
     imageUrl = imageUrl:sub(1, 512)
 
     local caption = trim(payload.caption):sub(1, CFG.MaxCaptionLength)

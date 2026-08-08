@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react';
 import { FileText } from 'lucide-react';
 
+import { device } from '@device';
 import { t } from '@/i18n';
 import { formatListDate } from '@/lib/time';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useSessionState } from '@/hooks/useSessionState';
 import { EmptyState } from '@/ui/EmptyState';
+import { ListColumn } from '@/ui/ListColumn';
+import { MasterDetail } from '@/ui/MasterDetail';
+import { Pager } from '@/ui/Pager';
 import { Pill } from '@/ui/Pill';
 import { SegmentedControl } from '@/ui/SegmentedControl';
+import { Select } from '@/ui/Select';
 
 import type { ReportSummary, ReportType } from './data';
 import { mdtReports } from './mdtApi';
@@ -15,13 +20,12 @@ import { REPORT_TYPES, ReportEditor, reportTypeLabel, reportTypeTone } from './R
 import { useMdtSession } from './useMdtSession';
 import { mdtRef, mdtRowHover, mdtRowMeta, mdtRowTitle, mdtSegmentedDense } from './mdtTheme';
 import { MdtButton } from './ui/MdtButton';
-import { MdtColumn } from './ui/MdtColumn';
-import { MdtMaster } from './ui/MdtMaster';
-import { MdtPager } from './ui/MdtPager';
 
 type TypeFilter = ReportType | 'All';
 
 const NEW_REPORT = 'new';
+
+const isPhone = device.id === 'phone';
 
 function ReportListRow({ report, selected, onPress }: {
     report:   ReportSummary;
@@ -82,6 +86,11 @@ export function ReportsPane() {
     const total = data?.total ?? 0;
     const pageSize = data?.pageSize ?? 25;
 
+    const typeOptions = [
+        { value: 'All' as TypeFilter, label: isPhone ? t('mdt.anyType', 'Any type') : t('common.all', 'All') },
+        ...REPORT_TYPES.map((type: ReportType) => ({ value: type as TypeFilter, label: reportTypeLabel(type) })),
+    ];
+
     const empty = (
         <EmptyState
             center
@@ -96,7 +105,7 @@ export function ReportsPane() {
     );
 
     const master = (
-        <MdtColumn
+        <ListColumn
             className="flex-1"
             title={t('mdt.reports', 'Reports')}
             count={total}
@@ -110,19 +119,29 @@ export function ReportsPane() {
             ) : undefined}
             isEmpty={settled && rows.length === 0}
             empty={empty}
-            footer={<MdtPager page={data?.page ?? page} pageSize={pageSize} total={total} onPage={setPage} />}
+            minWidth={isPhone ? 0 : undefined}
+            footer={<Pager page={data?.page ?? page} pageSize={pageSize} total={total} onPage={setPage} />}
         >
-            <div className="px-3 pb-2">
-                <SegmentedControl<TypeFilter>
-                    className={mdtSegmentedDense}
-                    value={filter}
-                    onChange={setFilter}
-                    options={[
-                        { value: 'All', label: t('common.all', 'All') },
-                        ...REPORT_TYPES.map((type: ReportType) => ({ value: type as TypeFilter, label: reportTypeLabel(type) })),
-                    ]}
-                />
-            </div>
+            {isPhone ? (
+                <div className="px-3 pb-2">
+                    <Select<TypeFilter>
+                        value={filter}
+                        onChange={setFilter}
+                        size="sm"
+                        ariaLabel={t('mdt.type', 'Type')}
+                        options={typeOptions}
+                    />
+                </div>
+            ) : (
+                <div className="px-3 pb-2">
+                    <SegmentedControl<TypeFilter>
+                        className={mdtSegmentedDense}
+                        value={filter}
+                        onChange={setFilter}
+                        options={typeOptions}
+                    />
+                </div>
+            )}
 
             <div className="mdt-stagger flex flex-col gap-0.5 px-1">
                 {rows.map(row => (
@@ -134,11 +153,11 @@ export function ReportsPane() {
                     />
                 ))}
             </div>
-        </MdtColumn>
+        </ListColumn>
     );
 
     return (
-        <MdtMaster
+        <MasterDetail
             master={master}
             hasDetail={selected !== null}
             detail={selected ? (
@@ -159,6 +178,7 @@ export function ReportsPane() {
                 />
             }
             onCloseDetail={() => select(null)}
+            backLabel={t('mdt.reports', 'Reports')}
         />
     );
 }

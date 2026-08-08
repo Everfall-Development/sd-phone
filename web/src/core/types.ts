@@ -1,8 +1,12 @@
 
+import type { GameClock } from '@/stores/gameClockStore';
 import type { BirdyMessage } from '@/apps/birdy/data';
 import type { DocFile } from '@/apps/documents/data';
 import type { Bulletin, Call, ChatMsg, Unit } from '@/apps/mdt/data';
 import type { DMsg as PhotogramDM, User as PhotogramUser } from '@/apps/photogram/data';
+import type {
+    HudMarker, HudPosition, HudState, HudStyle, LineupState, RaceResult, StartBoard, Standing,
+} from '@/apps/racing/data';
 import type { VUser as VibezUser } from '@/apps/vibez/data';
 import type { Reaction } from '@/shared/chat/data';
 
@@ -269,6 +273,7 @@ export type NuiMessage =
     | { action: 'sd-phone:wifi'; data: WifiState }
     | { action: 'sd-phone:weather'; data: WeatherPayload }
     | { action: 'sd-phone:session'; data: SessionPayload }
+    | { action: 'sd-phone:gameClock'; data: GameClock }
     | { action: 'sd-phone:health';  data: HealthPayload }
     | { action: 'sd-phone:bank:received'; data: { amount: number; from: string } }
     | { action: 'sd-phone:bank:txAdded' }
@@ -383,8 +388,21 @@ export type NuiMessage =
     | { action: 'sd-phone:mdt:chat';     data: { message: ChatMsg } }
     | { action: 'sd-phone:mdt:bulletin'; data: { bulletins: Bulletin[] } }
     | { action: 'sd-phone:mdt:warrant';  data: { citizenid: string; wanted: boolean } }
+    | { action: 'sd-phone:racing:racesChanged' }
+    | { action: 'sd-phone:racing:standings';  data: { raceId: string; entries: Standing[] } }
+    | { action: 'sd-phone:racing:raceResult'; data: RaceResult }
+    | { action: 'sd-phone:racing:hud:show';   data: { style: HudStyle; position: HudPosition; scale: number } }
+    | { action: 'sd-phone:racing:hud:hide' }
+    | { action: 'sd-phone:racing:hud:state';  data: Partial<HudState> }
+    | { action: 'sd-phone:racing:hud:countdown'; data: { from: number } }
+    | { action: 'sd-phone:racing:hud:dnf';    data: { seconds: number } }
+    | { action: 'sd-phone:racing:markers';    data: { markers: HudMarker[]; color: string; colorClosest: string } }
+    | { action: 'sd-phone:racing:board:show'; data: StartBoard }
+    | { action: 'sd-phone:racing:board:pos';  data: { on: boolean; x: number; y: number; joined: boolean } }
+    | { action: 'sd-phone:racing:board:hide' }
+    | { action: 'sd-phone:racing:board:lineup'; data: { state: LineupState | null } }
     | { action: 'sd-phone:wipe' }
-    | { action: 'sd-phone:admin:open'; data: { adminName?: string; sim?: boolean } }
+    | { action: 'sd-phone:admin:open'; data: { adminName?: string; sim?: boolean; racing?: boolean } }
     | { action: 'chess:invited';  data: { fromSrc: string; fromName: string; lobbyId: string } }
     | { action: 'chess:lobby';    data: { id: string; host: string; public: boolean; wager: number; isHost: boolean; canStart: boolean; members: { name: string; you: boolean; host: boolean; color: 'w' | 'b' | 'random'; canAfford: boolean; ready: boolean; returned: boolean }[] } }
     | { action: 'chess:lobbyClosed'; data: Record<string, never> }
@@ -409,7 +427,7 @@ export type NuiMessage =
     | { action: 'wordle:start';        data: { gameId: string; color: string; opponent: string; pot: number } }
     | { action: 'wordle:move';         data: { gameId: string; move: { rows: string[][]; solved: boolean; failed: boolean; tries: number; finishMs: number } } }
     | { action: 'wordle:ended';        data: { reason: string } }
-    | { action: 'sd-phone:notification';       data: { id?: string; app?: string; image?: string; title: string; body?: string; time?: string; appId?: string; quietInApp?: boolean; otherPhone?: boolean; phoneColor?: string; profileKey?: string } }
+    | { action: 'sd-phone:notification';       data: { id?: string; app?: string; image?: string; title: string; body?: string; time?: string; appId?: string; quietInApp?: boolean; otherPhone?: boolean; phoneColor?: string; profileKey?: string; link?: Record<string, unknown> } }
     | { action: 'sd-phone:badges';             data: Record<string, number> }
     | { action: 'sd-phone:badges:patch';       data: Record<string, number> }
     | { action: 'sd-phone:airshare';           data: { id: string; kind: string; fromName: string } }

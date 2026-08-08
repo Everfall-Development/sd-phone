@@ -2,19 +2,25 @@ import { useEffect, useRef, useState } from 'react';
 import { Image as ImageIcon, Smile, X } from 'lucide-react';
 
 import { t } from '@/i18n';
+import { useTheme } from '@/stores/themeStore';
 import { useSessionState } from '@/hooks/useSessionState';
 import { EmojiPanel } from '@/shared/chat/EmojiPanel';
 import { GifPickerSheet } from '@/shared/chat/GifPickerSheet';
 import { MediaPickerSheet } from '@/shared/MediaPickerSheet';
-import { BG, BLUE, MAX_POST_LENGTH } from '../data';
+import { BG, BLUE, LINE, MAX_POST_LENGTH } from '../data';
 import { Avatar } from '../ui';
+import type { BirdyAuthor } from '../data';
 
 const MAX_IMAGES = 3;
 
-export function Composer({ onClose, onPost }: {
+export function Composer({ me, onClose, onPost }: {
+    me:      BirdyAuthor;
     onClose: () => void;
     onPost:  (body: string, images: string[]) => void;
 }) {
+    const { theme } = useTheme('theme');
+    const isDark = theme === 'dark';
+
     const [text, setText] = useSessionState('birdy:composerDraft', '');
     const [images, setImages] = useState<string[]>([]);
     const [picking, setPicking] = useState(false);
@@ -90,7 +96,7 @@ export function Composer({ onClose, onPost }: {
             </header>
 
             <div className="flex min-h-0 flex-1 gap-3 overflow-y-auto no-scrollbar px-4 pt-3">
-                <Avatar size={40} />
+                <Avatar size={40} src={me.avatar} />
                 <div className="flex min-w-0 flex-1 flex-col">
                     <textarea
                         ref={taRef}
@@ -99,7 +105,7 @@ export function Composer({ onClose, onPost }: {
                         onFocus={() => setEmojiOpen(false)}
                         maxLength={MAX_POST_LENGTH}
                         placeholder={t('squawk.whatsHappening', "What's on your mind?")}
-                        className="min-h-[110px] flex-none resize-none bg-transparent pt-1 text-[17px] leading-snug text-black outline-none placeholder:font-semibold placeholder:text-[#536471]"
+                        className="min-h-[110px] flex-none resize-none bg-transparent pt-1 text-[17px] leading-snug text-label outline-none placeholder:font-semibold placeholder:text-ios-gray"
                         style={{ caretColor: BLUE }}
                     />
 
@@ -123,7 +129,7 @@ export function Composer({ onClose, onPost }: {
                 </div>
             </div>
 
-            {emojiOpen && <EmojiPanel isDark={false} onSelect={e => setText(t => t + e)} />}
+            {emojiOpen && <EmojiPanel isDark={isDark} onSelect={e => setText(t => t + e)} />}
 
             <div className="flex items-center gap-1 px-3 pb-8 pt-1.5" style={{ background: BG }}>
                 <button
@@ -131,7 +137,7 @@ export function Composer({ onClose, onPost }: {
                     aria-label={t('squawk.addImage', 'Add image')}
                     disabled={atImageLimit}
                     onClick={() => setPicking(true)}
-                    className="flex h-10 w-10 items-center justify-center rounded-full active:bg-black/5 disabled:opacity-40"
+                    className="flex h-10 w-10 items-center justify-center rounded-full active:bg-hairline/5 disabled:opacity-40"
                 >
                     <ImageIcon className="h-[26px] w-[26px]" style={{ color: BLUE }} strokeWidth={2} />
                 </button>
@@ -140,7 +146,7 @@ export function Composer({ onClose, onPost }: {
                     aria-label={t('squawk.addGif', 'Add GIF')}
                     disabled={atImageLimit}
                     onClick={() => setPickingGif(true)}
-                    className="flex h-10 w-10 items-center justify-center rounded-full active:bg-black/5 disabled:opacity-40"
+                    className="flex h-10 w-10 items-center justify-center rounded-full active:bg-hairline/5 disabled:opacity-40"
                 >
                     <span className="rounded-[6px] border-2 px-[4px] py-[2px] text-[11px] font-extrabold leading-none" style={{ borderColor: BLUE, color: BLUE }}>GIF</span>
                 </button>
@@ -148,7 +154,7 @@ export function Composer({ onClose, onPost }: {
                     type="button"
                     aria-label={t('squawk.addEmoji', 'Add emoji')}
                     onClick={toggleEmoji}
-                    className="flex h-10 w-10 items-center justify-center rounded-full active:bg-black/5"
+                    className="flex h-10 w-10 items-center justify-center rounded-full active:bg-hairline/5"
                 >
                     <Smile className="h-[26px] w-[26px]" style={{ color: BLUE }} strokeWidth={2} />
                 </button>
@@ -190,7 +196,7 @@ function CounterRing({ len }: { len: number }) {
                 </span>
             )}
             <svg width="22" height="22" viewBox="0 0 22 22" className="-rotate-90" aria-hidden>
-                <circle cx="11" cy="11" r={R} fill="none" stroke="#eff3f4" strokeWidth="2.5" />
+                <circle cx="11" cy="11" r={R} fill="none" stroke={LINE} strokeWidth="2.5" />
                 <circle
                     cx="11" cy="11" r={R} fill="none"
                     stroke={color} strokeWidth="2.5" strokeLinecap="round"

@@ -32,6 +32,12 @@ module.exports = {
                 // Dark-mode surface ramp. Only used behind the `dark:` variant;
                 // the selectable dark palette (Graphite/Black/Warm) swaps the
                 // channels in index.css by data-dark-theme.
+                // Primary text and hairlines, flipped by the `dark` class rather
+                // than by palette: black-on-light, white-on-dark. Lets a light-only
+                // app adopt dark mode by swapping text-black -> text-label and
+                // border-black/10 -> border-hairline/10, alpha suffixes intact.
+                label:    'rgb(var(--label) / <alpha-value>)',
+                hairline: 'rgb(var(--hairline) / <alpha-value>)',
                 base:     'rgb(var(--base) / <alpha-value>)',
                 surface:  'rgb(var(--surface) / <alpha-value>)',
                 elevated: 'rgb(var(--elevated) / <alpha-value>)',

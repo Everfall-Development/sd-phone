@@ -265,11 +265,21 @@ function actions.deliver(pushes)
             local msg  = pushes[i].message
             local from = msg.from or {}
             TriggerClientEvent('sd-phone:client:mail:received', src, msg)
+            -- `link.mail` names the message this banner is about. The UI routes it through Mail's
+            -- deeplink channel rather than seeding state, because the app is kept mounted between
+            -- opens and would otherwise ignore anything handed to it after its first mount.
             TriggerClientEvent('sd-phone:client:notify', src, {
                 app = 'mail', appId = 'mail',
                 title = (from.name and from.name ~= '') and from.name or (from.email or 'Mail'),
                 body  = (msg.subject and msg.subject ~= '') and msg.subject or 'New email',
                 time  = 'now', quietInApp = true,
+                link  = msg.id and {
+                    mail = {
+                        folder    = msg.folder or 'inbox',
+                        msgId     = msg.id,
+                        accountId = msg.accountId,
+                    },
+                } or nil,
             })
             badges.push(src)
         end
@@ -455,11 +465,9 @@ function actions.send(source, payload)
     local sender = store.getAccount(fromEmail)
     if not sender then return fail('Sender account not found') end
 
-    local owns = false
-    for i = 1, #sender.logged_in_citizens do
-        if sender.logged_in_citizens[i] == me.cid then owns = true; break end
+    if not lib.table.contains(sender.logged_in_citizens, me.cid) then
+        return fail('You are not signed into that account')
     end
-    if not owns then return fail('You are not signed into that account') end
 
     local toRaw = payload.to or {}
     if type(toRaw) ~= 'table' or #toRaw == 0 then return fail('At least one recipient is required') end
@@ -659,11 +667,9 @@ function actions.saveDraft(source, payload)
     local sender = store.getAccount(fromEmail)
     if not sender then return fail('Sender account not found') end
 
-    local owns = false
-    for i = 1, #sender.logged_in_citizens do
-        if sender.logged_in_citizens[i] == me.cid then owns = true; break end
+    if not lib.table.contains(sender.logged_in_citizens, me.cid) then
+        return fail('You are not signed into that account')
     end
-    if not owns then return fail('You are not signed into that account') end
 
     local recipients = {}
     local seen = {}
@@ -715,9 +721,7 @@ local function requireOwnership(source, accountEmail)
         return nil, fail('Slow down')
     end
     local acc = store.getAccount(accountEmail); if not acc then return nil, fail('Account not found') end
-    for i = 1, #acc.logged_in_citizens do
-        if acc.logged_in_citizens[i] == me.cid then return me.cid, nil end
-    end
+    if lib.table.contains(acc.logged_in_citizens, me.cid) then return me.cid, nil end
     return nil, fail('You are not signed into that account')
 end
 

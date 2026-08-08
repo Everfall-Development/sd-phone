@@ -1,13 +1,15 @@
-import { useState } from 'react';
-import { Camera } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Camera, ChevronRight } from 'lucide-react';
 
 import { t } from '@/i18n';
+import { formatMoney } from '@/lib/money';
 import { MediaPickerSheet } from '@/shared/MediaPickerSheet';
 import { AlertDialog } from '@/ui/AlertDialog';
 import { Toggle } from '@/ui/Toggle';
-import { apiDeleteAccount, apiUpdateProfile } from '../birdyApi';
+import { apiDeleteAccount, apiPurchaseVerification, apiUpdateProfile, apiVerificationOffer, type VerificationOffer } from '../birdyApi';
 import { ChangePasswordPage } from '@/shared/ChangePasswordPage';
-import { BG, BLUE, type BirdyProfile } from '../data';
+import { AVATAR_EMPTY, BG, BLUE, CARD, LINE_STRONG, META, TEXT, type BirdyProfile } from '../data';
+import { VerifiedBadge } from '../ui';
 
 const RED = '#ff3b30';
 
@@ -33,6 +35,11 @@ export function EditProfile({ profile, onCancel, onSaved, onSignOut, onSignOutAl
     const [confirmDel,     setConfirmDel]     = useState(false);
     const [closing,        setClosing]        = useState(false);
     const [pwOpen,         setPwOpen]         = useState(false);
+    const [offer,          setOffer]          = useState<VerificationOffer | null>(null);
+    const [confirmVerify,  setConfirmVerify]  = useState(false);
+    const [verifyError,    setVerifyError]    = useState<string | null>(null);
+
+    useEffect(() => { void apiVerificationOffer().then(setOffer); }, []);
 
     function dismiss(after: () => void) {
         if (closing) return;
@@ -57,9 +64,19 @@ export function EditProfile({ profile, onCancel, onSaved, onSignOut, onSignOutAl
         onDeleted();
     }
 
+    async function buyVerification() {
+        if (busy || closing) return;
+        setBusy(true);
+        const res = await apiPurchaseVerification();
+        setBusy(false);
+        setConfirmVerify(false);
+        if (res.ok) dismiss(() => onSaved({ ...profile, verified: true, verifiedType: 'blue' }));
+        else setVerifyError(res.message ?? t('squawk.verifyFailed', 'Something went wrong. Please try again.'));
+    }
+
     return (
         <div
-            className="absolute inset-0 z-40 flex flex-col text-black"
+            className="absolute inset-0 z-40 flex flex-col text-label"
             style={{
                 background: BG,
                 animation: closing
@@ -71,17 +88,17 @@ export function EditProfile({ profile, onCancel, onSaved, onSignOut, onSignOutAl
             <div className="h-[54px] shrink-0" aria-hidden />
             <header className="flex items-center justify-between px-4 py-2.5">
                 <button type="button" onClick={() => dismiss(onCancel)} className="text-[17px]" style={{ color: BLUE }}>{t('squawk.cancel', 'Cancel')}</button>
-                <div className="text-[18px] font-bold">{t('squawk.editProfile', 'Edit profile')}</div>
+                <div className="text-[17px] font-semibold">{t('squawk.editProfile', 'Edit profile')}</div>
                 <button type="button" onClick={save} disabled={busy} className="text-[17px] font-bold disabled:opacity-50" style={{ color: BLUE }}>{t('squawk.save', 'Save')}</button>
             </header>
 
             <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
-                <div className="relative h-32 bg-black/10">
+                <div className="relative h-32 bg-hairline/10">
                     {banner && <img src={banner} alt="" draggable={false} className="h-full w-full object-cover" />}
                     <button type="button" onClick={() => setPicking('banner')} aria-label={t('squawk.changeCover', 'Change cover')} className="absolute left-1/2 top-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full text-white" style={{ background: 'rgba(0,0,0,0.4)' }}>
                         <Camera className="h-[22px] w-[22px]" />
                     </button>
-                    <button type="button" onClick={() => setPicking('avatar')} aria-label={t('squawk.changeAvatar', 'Change avatar')} className="absolute -bottom-10 left-4 flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border-4 text-white" style={{ borderColor: BG, background: '#5b6671' }}>
+                    <button type="button" onClick={() => setPicking('avatar')} aria-label={t('squawk.changeAvatar', 'Change avatar')} className="absolute -bottom-10 left-4 flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border-4 text-white" style={{ borderColor: BG, background: AVATAR_EMPTY }}>
                         {avatar
                             ? <img src={avatar} alt="" draggable={false} className="h-full w-full object-cover" />
                             : <Camera className="h-7 w-7" />}
@@ -89,40 +106,59 @@ export function EditProfile({ profile, onCancel, onSaved, onSignOut, onSignOutAl
                 </div>
                 <div className="h-14" aria-hidden />
 
-                <div className="mx-4 overflow-hidden rounded-[12px] bg-white">
-                    <Row label={t('squawk.name', 'Name')}>
-                        <input value={name} onChange={e => setName(e.target.value)} className="w-full bg-transparent text-right text-[17px] text-black outline-none" style={{ caretColor: BLUE }} />
-                    </Row>
+                <div className="flex flex-col gap-6 px-4 pb-8">
+                    <Group>
+                        <FieldRow label={t('squawk.name', 'Name')} divider>
+                            <input value={name} onChange={e => setName(e.target.value)} className="w-full bg-transparent text-[17px] text-label outline-none" style={{ caretColor: BLUE }} />
+                        </FieldRow>
 
-                    <div className="border-b border-black/10 px-4 py-3.5">
-                        <div className="text-[17px] font-bold text-black">{t('squawk.bio', 'Bio')}</div>
-                        <textarea
-                            value={bio}
-                            onChange={e => setBio(e.target.value)}
-                            rows={3}
-                            placeholder={t('squawk.bioPlaceholder', 'Tell people about yourself')}
-                            className="mt-1 w-full resize-none bg-transparent text-[17px] leading-snug text-black outline-none placeholder:text-black/35"
-                            style={{ caretColor: BLUE }}
-                        />
-                    </div>
+                        <FieldRow label={t('squawk.bio', 'Bio')} align="top" divider>
+                            <textarea
+                                value={bio}
+                                onChange={e => setBio(e.target.value)}
+                                rows={3}
+                                placeholder={t('squawk.bioPlaceholder', 'Tell people about yourself')}
+                                className="w-full resize-none bg-transparent text-[17px] leading-snug text-label outline-none placeholder:text-label/30"
+                                style={{ caretColor: BLUE }}
+                            />
+                        </FieldRow>
 
-                    <Row label={t('squawk.joinDate', 'Join Date')}>
-                        <span className="block w-full text-right text-[17px] text-black/45">{profile.joined}</span>
-                    </Row>
+                        <FieldRow label={t('squawk.joinDate', 'Join Date')} divider>
+                            <span className="block text-[17px]" style={{ color: META }}>{profile.joined}</span>
+                        </FieldRow>
 
-                    <div className="flex items-center justify-between px-4 py-3.5">
-                        <span className="text-[17px] font-bold">{t('squawk.privateAccount', 'Private account')}</span>
-                        <Toggle on={protect} onChange={setProtect} activeColor={BLUE} />
-                    </div>
+                        <div className="flex items-center px-4 py-3">
+                            <span className="flex-1 text-[17px] text-label">{t('squawk.privateAccount', 'Private account')}</span>
+                            <div className="-my-1"><Toggle on={protect} onChange={setProtect} activeColor={BLUE} /></div>
+                        </div>
+                    </Group>
+
+                    {offer?.enabled && !offer.verified && (
+                        <Group footer={t('squawk.getVerifiedFooter', 'A blue check tells people this account is the real one. Business and government badges are issued by staff.')}>
+                            <ActionRow
+                                label={t('squawk.getVerified', 'Get Verified')}
+                                left={<VerifiedBadge size={22} type="blue" />}
+                                value={offer.price > 0 ? formatMoney(offer.price, { whole: true }) : undefined}
+                                onPress={() => setConfirmVerify(true)}
+                            />
+                        </Group>
+                    )}
+
+                    <Group>
+                        <ActionRow label={t('squawk.changePassword', 'Change Password')} divider onPress={() => setPwOpen(true)} />
+                        <ActionRow label={t('accounts.switchAccount', 'Switch account')} onPress={() => dismiss(onSwitchAccount)} />
+                    </Group>
+
+                    <Group>
+                        <ActionRow label={t('squawk.signOut', 'Sign Out')} tint={RED} chevron={false} divider onPress={() => setConfirmSignOut(true)} />
+                        <ActionRow label={t('accounts.signOutAll', 'Log Out of All Accounts')} tint={RED} chevron={false} onPress={() => setConfirmAll(true)} />
+                    </Group>
+
+                    <Group>
+                        <ActionRow label={t('squawk.deleteAccount', 'Delete Account')} tint={RED} chevron={false} onPress={() => setConfirmDel(true)} />
+                    </Group>
                 </div>
 
-                <div className="flex flex-col gap-3 px-4 py-6">
-                    <button type="button" onClick={() => setPwOpen(true)} className="w-full rounded-[12px] bg-white py-4 text-[18px] font-semibold active:opacity-70" style={{ color: BLUE }}>{t('squawk.changePassword', 'Change Password')}</button>
-                    <button type="button" onClick={() => dismiss(onSwitchAccount)} className="w-full rounded-[12px] bg-white py-4 text-[18px] font-semibold active:opacity-70" style={{ color: BLUE }}>{t('accounts.switchAccount', 'Switch account')}</button>
-                    <button type="button" onClick={() => setConfirmSignOut(true)} className="w-full rounded-[12px] bg-white py-4 text-[18px] font-semibold active:opacity-70" style={{ color: RED }}>{t('squawk.signOut', 'Sign Out')}</button>
-                    <button type="button" onClick={() => setConfirmAll(true)} className="w-full rounded-[12px] bg-white py-4 text-[18px] font-semibold active:opacity-70" style={{ color: RED }}>{t('accounts.signOutAll', 'Log Out of All Accounts')}</button>
-                    <button type="button" onClick={() => setConfirmDel(true)} className="w-full rounded-[12px] bg-white py-4 text-[18px] font-semibold active:opacity-70" style={{ color: RED }}>{t('squawk.deleteAccount', 'Delete Account')}</button>
-                </div>
             </div>
 
             {confirmSignOut && (
@@ -157,12 +193,33 @@ export function EditProfile({ profile, onCancel, onSaved, onSignOut, onSignOutAl
                 />
             )}
 
+            {confirmVerify && offer && (
+                <AlertDialog
+                    title={t('squawk.getVerifiedTitle', 'Get verified?')}
+                    message={offer.price > 0
+                        ? t('squawk.getVerifiedMessage', 'A blue check will be added to your profile. {price} will be taken from your {account} balance.', { price: formatMoney(offer.price, { whole: true }), account: offer.account })
+                        : t('squawk.getVerifiedFree', 'A blue check will be added to your profile.')}
+                    confirmLabel={t('squawk.getVerifiedConfirm', 'Verify')}
+                    onCancel={() => setConfirmVerify(false)}
+                    onConfirm={buyVerification}
+                />
+            )}
+            {verifyError && (
+                <AlertDialog
+                    title={t('squawk.getVerifiedFailed', 'Could not verify')}
+                    message={verifyError}
+                    hideCancel
+                    onCancel={() => setVerifyError(null)}
+                    onConfirm={() => setVerifyError(null)}
+                />
+            )}
+
             {pwOpen && (
                 <ChangePasswordPage
                     app="birdy"
                     appName="Quip"
                     icon="birdy"
-                    theme={{ accent: BLUE, welcomeBg: '#f2f3f5', welcomeText: 'dark' }}
+                    theme={{ accent: BLUE, welcomeBg: CARD, welcomeText: 'dark' }}
                     onClose={() => setPwOpen(false)}
                 />
             )}
@@ -178,11 +235,49 @@ export function EditProfile({ profile, onCancel, onSaved, onSignOut, onSignOutAl
     );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+const HAIRLINE = 'pointer-events-none absolute inset-x-0 bottom-0 bg-hairline/[0.08]';
+
+function Group({ children, footer }: { children: React.ReactNode; footer?: string }) {
     return (
-        <div className="flex gap-4 border-b border-black/10 px-4 py-3.5">
-            <div className="w-24 shrink-0 pt-0.5 text-[17px] font-bold text-black">{label}</div>
-            <div className="flex-1">{children}</div>
+        <div>
+            <div className="overflow-hidden rounded-[12px] bg-surface">{children}</div>
+            {footer && <p className="px-3 pt-2 text-[13px] leading-snug" style={{ color: META }}>{footer}</p>}
         </div>
     );
 }
+
+function FieldRow({ label, children, align = 'center', divider }: {
+    label:     string;
+    children:  React.ReactNode;
+    align?:    'center' | 'top';
+    divider?:  boolean;
+}) {
+    return (
+        <div className={`relative flex gap-4 px-4 py-3 ${align === 'top' ? 'items-start' : 'items-center'}`}>
+            <div className="w-[86px] shrink-0 text-[17px] text-label">{label}</div>
+            <div className="min-w-0 flex-1">{children}</div>
+            {divider && <span className={HAIRLINE} style={{ height: '0.5px' }} />}
+        </div>
+    );
+}
+
+function ActionRow({ label, tint, left, value, chevron = true, divider, onPress }: {
+    label:    string;
+    tint?:    string;
+    left?:    React.ReactNode;
+    value?:   string;
+    chevron?: boolean;
+    divider?: boolean;
+    onPress:  () => void;
+}) {
+    return (
+        <button type="button" onClick={onPress} className="relative flex w-full items-center gap-3 px-4 py-3 text-left active:bg-hairline/[0.04]">
+            {left}
+            <span className="flex-1 text-[17px]" style={{ color: tint ?? TEXT }}>{label}</span>
+            {value && <span className="shrink-0 text-[17px]" style={{ color: META }}>{value}</span>}
+            {chevron && <ChevronRight className="h-[17px] w-[17px] shrink-0" style={{ color: LINE_STRONG }} strokeWidth={2.5} />}
+            {divider && <span className={HAIRLINE} style={{ height: '0.5px' }} />}
+        </button>
+    );
+}
+

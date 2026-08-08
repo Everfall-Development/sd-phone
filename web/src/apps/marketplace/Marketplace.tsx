@@ -28,7 +28,7 @@ export function Marketplace({ onClose: _onClose }: { onClose: () => void }) {
     const open = listings.find(l => l.id === openId) ?? null;
     const contact = useContactActions();
 
-    const animateNav = useDidEnter(listings.length > 0);
+    const animateNav = useDidEnter();
 
     function addListing(draft: ListingDraft) {
         setCreating(false);

@@ -19,6 +19,8 @@ import type { CustomTone, ToneKind } from '@/apps/settings/tones';
 import { warmYouTube } from '@/apps/settings/tonePlayer';
 import { clampRecipe, isCustomPaletteId, MAX_CUSTOM_PALETTES, PALETTE_NAME_MAX } from '@/apps/settings/appearance/paletteRamp';
 import { DEFAULT_ACCENT, isAccentChoice } from '@/apps/settings/appearance/accentRamp';
+import { DEFAULT_SHELL, isShellId, SHELLS, shellFor } from '@/shell/shells';
+import { shellHostsPet } from '@/shell/chassis';
 import type { PaletteMode, PaletteRecipe } from '@/apps/settings/appearance/paletteRamp';
 
 export type Theme = 'light' | 'dark';
@@ -79,6 +81,23 @@ function savePaletteChoiceLocal(key: string, v: string) {
 }
 const DARK_THEME_KEY = 'sd-phone:darkTheme';
 const LIGHT_THEME_KEY = 'sd-phone:lightTheme';
+const SHELL_KEY = 'sd-phone:shell';
+function loadShellLocal(): string {
+    try {
+        const v = window.localStorage.getItem(SHELL_KEY);
+        return isShellId(v) ? v : DEFAULT_SHELL;
+    } catch { return DEFAULT_SHELL; }
+}
+function saveShellLocal(v: string) {
+    try { window.localStorage.setItem(SHELL_KEY, v); } catch { /* ignore */ }
+}
+const GAME_TIME_KEY = 'sd-phone:gameTime';
+function loadGameTimeLocal(): boolean {
+    try { return window.localStorage.getItem(GAME_TIME_KEY) === '1'; } catch { return false; }
+}
+function saveGameTimeLocal(v: boolean) {
+    try { window.localStorage.setItem(GAME_TIME_KEY, v ? '1' : '0'); } catch { /* ignore */ }
+}
 const ACCENT_KEY = 'sd-phone:accent';
 function loadAccentLocal(): string {
     try {
@@ -203,8 +222,8 @@ const clampPhoneScale = (n: number) => Math.min(100, Math.max(0, Math.round(n)))
 function loadPhoneScaleLocal(): number {
     try {
         const n = parseFloat(window.localStorage.getItem(PHONE_SCALE_KEY) ?? '');
-        return Number.isFinite(n) ? clampPhoneScale(n) : 50;
-    } catch { return 50; }
+        return Number.isFinite(n) ? clampPhoneScale(n) : device.defaultScale;
+    } catch { return device.defaultScale; }
 }
 function savePhoneScaleLocal(v: number) {
     try { window.localStorage.setItem(PHONE_SCALE_KEY, String(v)); } catch { /* ignore */ }
@@ -237,6 +256,10 @@ interface ThemeState {
     setLightTheme:     (t: LightThemeChoice) => void;
     accent:            string;
     setAccent:         (a: string) => void;
+    shell:             string;
+    setShell:          (s: string) => void;
+    shellChoice:       boolean;
+    shellsAllowed:     string[];
     customPalettes:      CustomPalette[];
     saveCustomPalette:   (p: CustomPalette) => Promise<string | null>;
     deleteCustomPalette: (id: CustomPaletteId) => void;
@@ -268,6 +291,8 @@ interface ThemeState {
     setAirplaneMode:   (on: boolean) => void;
     hour24:            boolean;
     setHour24:         (on: boolean) => void;
+    gameTime:          boolean;
+    setGameTime:       (on: boolean) => void;
     reopenLastApp:     boolean;
     setReopenLastApp:  (on: boolean) => void;
     ringtone:            string;
@@ -344,6 +369,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     darkTheme: isFiveM ? 'graphite' : loadDarkThemeLocal(),
     lightTheme: isFiveM ? 'silver' : loadLightThemeLocal(),
     accent: isFiveM ? DEFAULT_ACCENT : loadAccentLocal(),
+    shell: isFiveM ? DEFAULT_SHELL : loadShellLocal(),
+    shellChoice: true,
+    shellsAllowed: SHELLS.map(s => s.id),
     customPalettes: isFiveM ? [] : loadPalettesLocal(),
     wallpaperLock: isFiveM ? lockscreenAsset : (loadWallpaperLocal() ?? devDefaultAsset),
     wallpaperHome: isFiveM ? lockscreenAsset : (loadWallpaperHomeLocal() ?? loadWallpaperLocal() ?? devDefaultAsset),
@@ -352,13 +380,14 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     blurHome: isFiveM ? false : loadBlurLocal(BLUR_HOME_KEY),
     islandPet: isFiveM ? 'none' : loadIslandPetLocal(),
     brightness: 100,
-    phoneScale: isFiveM ? 50 : loadPhoneScaleLocal(),
+    phoneScale: isFiveM ? device.defaultScale : loadPhoneScaleLocal(),
     chatTextScale: isFiveM ? 1 : loadChatScaleLocal(),
     phoneAlign: isFiveM && device.id === 'phone' ? device.defaultAlign : loadPhoneAlignLocal(),
     ringtoneVol: 40,
     callVol: 60,
     airplaneMode: false,
     hour24: false,
+    gameTime: isFiveM ? false : loadGameTimeLocal(),
     reopenLastApp: false,
     ringtone: DEFAULT_RINGTONE,
     // The website demo opens on Chime, which carries better than the stock
@@ -448,6 +477,19 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         set({ accent: next });
         if (isFiveM) void fetchNui('sd-phone:settings:setAccent', { accent: next }).catch(() => {});
         else saveAccentLocal(next);
+    },
+
+    // Only a shell whose cutout is big enough to hold the whole island pill can carry a pet. On
+    // any other chassis the pill floats below the status bar, where a pet reads as a loose sprite,
+    // so switching to one puts the pet away rather than leaving it somewhere it does not belong.
+    setShell: (next) => {
+        if (!isShellId(next)) return;
+        set({ shell: next });
+        if (isFiveM) void fetchNui('sd-phone:settings:setShell', { shell: next }).catch(() => {});
+        else saveShellLocal(next);
+        if (get().islandPet !== 'none' && !shellHostsPet(shellFor(next, device.id))) {
+            get().setIslandPet('none');
+        }
     },
 
     saveCustomPalette: async (palette) => {
@@ -544,6 +586,12 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     setHour24: (on) => {
         set({ hour24: on });
         void fetchNui('sd-phone:settings:setHour24', { on }).catch(() => {});
+    },
+
+    setGameTime: (on) => {
+        set({ gameTime: on });
+        if (isFiveM) void fetchNui('sd-phone:settings:setGameTime', { on }).catch(() => {});
+        else saveGameTimeLocal(on);
     },
 
     setReopenLastApp: (on) => {
@@ -647,7 +695,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
             }
         };
         const keyAtRequest = wallpaperProfileKey;
-        void fetchNui<{ data?: { ringtone?: string; notificationTone?: string; customRingtones?: CustomTone[]; customNotificationTones?: CustomTone[]; airplaneMode?: boolean; hour24?: boolean; reopenApp?: boolean; setupDone?: boolean; lockClock?: Partial<LockClock>; passcode?: string | null; faceId?: boolean; wallpaper?: string; wallpaperHome?: string; blurLock?: boolean; blurHome?: boolean; islandPet?: string; customWallpapers?: string[]; chatTextScale?: number; phoneScale?: number; brightness?: number; phoneAlign?: string; ringtoneVol?: number; callVol?: number; theme?: string; darkTheme?: string; lightTheme?: string; accent?: string; customPalettes?: unknown; iconTheme?: string; showAppNames?: boolean; customIconThemes?: unknown } }>('sd-phone:settings:get')
+        void fetchNui<{ data?: { ringtone?: string; notificationTone?: string; customRingtones?: CustomTone[]; customNotificationTones?: CustomTone[]; airplaneMode?: boolean; hour24?: boolean; gameTime?: boolean; reopenApp?: boolean; setupDone?: boolean; lockClock?: Partial<LockClock>; passcode?: string | null; faceId?: boolean; wallpaper?: string; wallpaperHome?: string; blurLock?: boolean; blurHome?: boolean; islandPet?: string; customWallpapers?: string[]; chatTextScale?: number; phoneScale?: number; brightness?: number; phoneAlign?: string; ringtoneVol?: number; callVol?: number; theme?: string; darkTheme?: string; lightTheme?: string; accent?: string; shell?: string; shellChoice?: boolean; shellsAllowed?: unknown[]; customPalettes?: unknown; iconTheme?: string; showAppNames?: boolean; customIconThemes?: unknown } }>('sd-phone:settings:get')
             .then(res => {
                 if (!res?.data) { retry(); return; }
                 const d = res.data;
@@ -670,6 +718,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
                 if (d.notificationTone) patch.notificationTone = d.notificationTone;
                 if (typeof d.airplaneMode === 'boolean') patch.airplaneMode = d.airplaneMode;
                 if (typeof d.hour24 === 'boolean') patch.hour24 = d.hour24;
+                if (typeof d.gameTime === 'boolean') patch.gameTime = d.gameTime;
                 if (typeof d.reopenApp === 'boolean') patch.reopenLastApp = d.reopenApp;
                 // Always assigned (true/false, never left null) - the per-profile answer is
                 // what lets the Hello gate decide, and a stale previous-profile value may not leak.
@@ -681,6 +730,10 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
                 if (isCustomPaletteId(d.darkTheme)) patch.darkTheme = d.darkTheme as CustomPaletteId;
                 if (isCustomPaletteId(d.lightTheme)) patch.lightTheme = d.lightTheme as CustomPaletteId;
                 if (isAccentChoice(d.accent)) patch.accent = d.accent;
+                if (isShellId(d.shell)) patch.shell = d.shell;
+                if (typeof d.shellChoice === 'boolean') patch.shellChoice = d.shellChoice;
+                if (Array.isArray(d.shellsAllowed)) patch.shellsAllowed = d.shellsAllowed.filter(isShellId);
+                if (isShellId(d.shell)) patch.shell = d.shell;
                 if (typeof d.chatTextScale === 'number') patch.chatTextScale = clampChatScale(d.chatTextScale);
                 if (typeof d.phoneScale === 'number') patch.phoneScale = clampPhoneScale(d.phoneScale);
                 if (typeof d.brightness === 'number') patch.brightness = clampPhoneScale(d.brightness);

@@ -33,6 +33,9 @@ local CID_SINGLE = {
     { 'phone_timer_recents',         'citizenid' },
     { 'phone_stock_holdings',        'citizenid' },
     { 'phone_stock_wallet',          'citizenid' },
+    { 'phone_racing_tracks',         'citizenid' },
+    { 'phone_racing_profiles',       'citizenid' },
+    { 'phone_racing_results',        'citizenid' },
     { 'phone_service_prefs',         'citizenid' },
     { 'marketplace_listings',        'citizenid' },
     { 'pages_posts',                 'citizenid' },
@@ -59,6 +62,12 @@ local CID_PAIR = {
 
 ---Deletes one character's entire phone footprint: citizenid-keyed rows, social-app rows keyed by
 ---account username, mail logins, and the global app accounts + sessions the character used.
+---
+---Accounts are found by the creator COLUMN as well as by session. A session alone is not proof of
+---ownership and its absence is not proof of the opposite: signing out deletes the session row, so a
+---session-only lookup silently skips every account the character made and then logged out of,
+---leaving both the account and its content behind. phone_app_accounts.created_by is added by
+---util.ensureColumns rather than the CREATE TABLE, which is why it is easy to miss.
 ---@param cid string|nil citizenid whose footprint is wiped
 ---@return string|nil cid wiped citizenid, nil when unresolvable
 ---@return integer|nil rows counted rows deleted (nil only alongside a nil cid)
@@ -66,13 +75,15 @@ local function wipeCid(cid)
     if not cid or cid == '' then return nil end
 
     local userFor, accountIds = {}, {}
-    local sessions = MySQL.query.await([[
-        SELECT s.app, s.account_id, a.username
+    local owned = MySQL.query.await([[
+        SELECT app, username, id AS account_id FROM phone_app_accounts WHERE created_by = ?
+        UNION
+        SELECT a.app, a.username, a.id
         FROM phone_app_sessions s
         JOIN phone_app_accounts a ON a.id = s.account_id
         WHERE s.citizenid = ?
-    ]], { cid }) or {}
-    for _, r in ipairs(sessions) do
+    ]], { cid, cid }) or {}
+    for _, r in ipairs(owned) do
         userFor[r.app] = r.username
         accountIds[#accountIds + 1] = r.account_id
     end
@@ -82,6 +93,9 @@ local function wipeCid(cid)
     local rows = 0
 
     rows = rows + del('DELETE FROM phone_photo_album_items WHERE album_id IN (SELECT id FROM phone_photo_albums WHERE citizenid = ?)', { cid })
+    -- Every racer's results on a track this character built, since the track row itself goes below
+    -- and a leaderboard pointing at a track that no longer exists is unreadable.
+    rows = rows + del('DELETE FROM phone_racing_results WHERE track_id IN (SELECT id FROM phone_racing_tracks WHERE citizenid = ?)', { cid })
 
     for _, t in ipairs(CID_SINGLE) do
         rows = rows + del(('DELETE FROM %s WHERE %s = ?'):format(t[1], t[2]), { cid })
@@ -172,6 +186,22 @@ local function wipeCid(cid)
     -- pass or mail.listAccountsForCitizen keeps reading rows this wipe just signed out of.
     del('DELETE FROM phone_mail_sessions WHERE citizenid = ?', { cid })
 
+    -- Signing out above is not enough: the per-character mail cap counts rows by created_by_cid,
+    -- so an account left standing keeps its slot and its address forever, and a "wiped" character
+    -- cannot re-register the same email. Deleted after the sign-out pass, so an account shared with
+    -- someone else has already had this character removed from it and is then left alone.
+    local owned = MySQL.query.await(
+        'SELECT email, logged_in_citizens FROM phone_mail_accounts WHERE created_by_cid = ?', { cid }) or {}
+    for _, m in ipairs(owned) do
+        local signedIn = json.decode(m.logged_in_citizens or '[]') or {}
+        local others = 0
+        for _, c in ipairs(signedIn) do if c ~= cid then others = others + 1 end end
+        if others == 0 then
+            del('DELETE FROM phone_mail_sessions WHERE email = ?', { m.email })
+            rows = rows + del('DELETE FROM phone_mail_accounts WHERE email = ?', { m.email })
+        end
+    end
+
     if #accountIds > 0 then
         local ph = {}
         for i = 1, #accountIds do ph[i] = '?' end
@@ -210,4 +240,110 @@ lib.addCommand('wipemyphone', {
     })
 end)
 
-return { wipeCid = wipeCid }
+---Deletes only the login identities one character owns, leaving the rest of their phone intact.
+---
+---Narrower than wipeCid on purpose, and safer in the one place wipeCid is not: an account another
+---character is still signed into is SKIPPED rather than deleted, because both of these are shared
+---objects.
+---
+---Ownership is read from the creator COLUMN on both tables, never inferred from a session. Signing
+---out drops the session row, so a session join finds nothing and would leave the account behind
+---forever while it still counts against the per-app cap - which is the whole reason a signed-out
+---account looks unwipeable. phone_app_accounts.created_by is added by util.ensureColumns rather
+---than the CREATE TABLE, so it is easy to miss when reading the schema. Sessions are still unioned
+---in, to catch an account this character uses but did not create.
+---
+---App CONTENT keyed to the handle (posts, photos, matches) is deliberately left alone so this stays
+---predictable; /wipemyphone is the full reset.
+---@param cid string|nil citizenid whose accounts are removed
+---@return table|nil result { mail: string[], apps: string[], skipped: string[] }, nil when unresolvable
+local function wipeAccountsFor(cid)
+    if not cid or cid == '' then return nil end
+
+    local result = { mail = {}, apps = {}, skipped = {} }
+
+    local mails = MySQL.query.await(
+        'SELECT email, logged_in_citizens FROM phone_mail_accounts WHERE created_by_cid = ?', { cid }) or {}
+    for _, m in ipairs(mails) do
+        local signedIn = json.decode(m.logged_in_citizens or '[]') or {}
+        local others = 0
+        for _, c in ipairs(signedIn) do if c ~= cid then others = others + 1 end end
+
+        if others > 0 then
+            result.skipped[#result.skipped + 1] = ('%s (%d other session(s))'):format(m.email, others)
+        else
+            del('DELETE FROM phone_mail_sessions WHERE email = ?', { m.email })
+            del('DELETE FROM phone_mail_accounts WHERE email = ?', { m.email })
+            result.mail[#result.mail + 1] = m.email
+        end
+    end
+
+    local apps = MySQL.query.await([[
+        SELECT id, app, username FROM phone_app_accounts WHERE created_by = ?
+        UNION
+        SELECT a.id, a.app, a.username
+        FROM phone_app_sessions s
+        JOIN phone_app_accounts a ON a.id = s.account_id
+        WHERE s.citizenid = ?
+    ]], { cid, cid }) or {}
+    for _, a in ipairs(apps) do
+        local shared = tonumber(MySQL.scalar.await(
+            'SELECT COUNT(*) FROM phone_app_sessions WHERE account_id = ? AND citizenid <> ?',
+            { a.id, cid })) or 0
+
+        if shared > 0 then
+            result.skipped[#result.skipped + 1] = ('%s:%s (%d other session(s))'):format(a.app, a.username, shared)
+        else
+            del('DELETE FROM phone_app_sessions WHERE account_id = ?', { a.id })
+            del('DELETE FROM phone_app_accounts WHERE id = ?', { a.id })
+            result.apps[#result.apps + 1] = ('%s:%s'):format(a.app, a.username)
+        end
+    end
+
+    del('DELETE FROM phone_app_sessions WHERE citizenid = ?', { cid })
+
+    return result
+end
+
+---/wipemyaccounts: deletes the caller's OWN mail and app accounts, then refreshes their phone so
+---the apps drop back to their signed-out state. Console is refused, since the command resolves the
+---target from the caller's own character and there is none behind the console.
+---
+---Restricted to group.admin to match /wipemyphone. Drop the `restricted` field to let any player
+---clear their own accounts, which is safe: the target is always the caller.
+---@param source integer player server id
+lib.addCommand('wipemyaccounts', {
+    help = 'Delete YOUR OWN mail and app accounts (logins only, not your phone settings or content).',
+    restricted = 'group.admin',
+}, function(source)
+    if not source or source <= 0 then
+        lib.print.error('wipemyaccounts must be run by a player, not the console.')
+        return
+    end
+
+    local cid = player.getIdentifier(source)
+    local result = cid and wipeAccountsFor(cid)
+    if not result then
+        TriggerClientEvent('ox_lib:notify', source, {
+            title = 'Phone', description = 'Could not resolve your character.', type = 'error',
+        })
+        return
+    end
+
+    local removed = #result.mail + #result.apps
+    TriggerClientEvent('sd-phone:client:profileReset', source)
+
+    lib.print.info(('wiped %d account(s) for %s%s'):format(
+        removed, cid,
+        #result.skipped > 0 and (', skipped ' .. table.concat(result.skipped, ', ')) or ''))
+
+    TriggerClientEvent('ox_lib:notify', source, {
+        title = 'Accounts cleared',
+        description = removed > 0
+            and ('Removed %d account(s). Reopen the phone to sign in fresh.'):format(removed)
+            or 'You had no accounts of your own to remove.',
+        type = removed > 0 and 'success' or 'inform',
+    })
+end)
+
+return { wipeCid = wipeCid, wipeAccountsFor = wipeAccountsFor }

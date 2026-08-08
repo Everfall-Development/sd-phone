@@ -217,7 +217,7 @@ export function MailboxList({
                                         )}
                                     </div>
                                     {i < folderOrder.length - 1 && (
-                                        <div className="pointer-events-none bg-black/12 dark:bg-white/10" style={{ marginLeft: 60, height: '0.5px' }} />
+                                        <div className="pointer-events-none bg-black/12 dark:bg-white/10" style={{ height: '0.5px' }} />
                                     )}
                                 </div>
                             );
@@ -272,12 +272,12 @@ export function MailboxList({
                                 )}
                             </div>
                             {i < accounts.length - 1 && (
-                                <div className="pointer-events-none bg-black/12 dark:bg-white/10" style={{ marginLeft: 60, height: '0.5px' }} />
+                                <div className="pointer-events-none bg-black/12 dark:bg-white/10" style={{ height: '0.5px' }} />
                             )}
                         </div>
                     ))}
                     {accounts.length > 0 && (
-                        <div className="pointer-events-none bg-black/12 dark:bg-white/10" style={{ marginLeft: 60, height: '0.5px' }} />
+                        <div className="pointer-events-none bg-black/12 dark:bg-white/10" style={{ height: '0.5px' }} />
                     )}
                     <button
                         type="button"
@@ -289,7 +289,7 @@ export function MailboxList({
                     </button>
                     {editing && accounts.length > 0 && (
                         <>
-                            <div className="pointer-events-none bg-black/12 dark:bg-white/10" style={{ marginLeft: 60, height: '0.5px' }} />
+                            <div className="pointer-events-none bg-black/12 dark:bg-white/10" style={{ height: '0.5px' }} />
                             <button
                                 type="button"
                                 onClick={() => setConfirmOutAll(true)}

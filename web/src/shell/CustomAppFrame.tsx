@@ -25,11 +25,24 @@ import type { Contact } from '@/apps/phone/data';
 // sd-phone's own files.
 const COMPONENTS_URL = `https://cfx-nui-${hostResource}/web/build/components.js`;
 
+const STORAGE_MAX_BYTES = 64 * 1024;
+const STORAGE_MAX_KEYS = 64;
+
 const warned = new Set<string>();
 function warnOnce(name: string): void {
     if (warned.has(name)) return;
     warned.add(name);
     console.warn(`[sd-phone] custom-app bridge: "${name}" is not implemented; resolving null`);
+}
+
+function warnQuota(id: string): void {
+    const key = `quota:${id}`;
+    if (warned.has(key)) return;
+    warned.add(key);
+    console.warn(
+        `[sd-phone] custom app "${id}" hit its storage budget `
+        + `(${STORAGE_MAX_BYTES} bytes / ${STORAGE_MAX_KEYS} keys); the write was refused`,
+    );
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -205,6 +218,27 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
         }
     }, []);
 
+    const storageKey = useCallback((key: unknown): string | null => {
+        const id = defRef.current?.id;
+        if (!id || typeof key !== 'string' || key === '') return null;
+        return `sd-phone:customapp:${id}:${key}`;
+    }, []);
+
+    const storageUsage = useCallback((): { bytes: number; keys: number } => {
+        const id = defRef.current?.id;
+        if (!id) return { bytes: 0, keys: 0 };
+        const prefix = `sd-phone:customapp:${id}:`;
+        let bytes = 0;
+        let keys = 0;
+        for (let i = 0; i < window.localStorage.length; i++) {
+            const k = window.localStorage.key(i);
+            if (!k || !k.startsWith(prefix)) continue;
+            keys += 1;
+            bytes += k.length + (window.localStorage.getItem(k)?.length ?? 0);
+        }
+        return { bytes, keys };
+    }, []);
+
     const fetchPhone = useCallback((event: string, data?: any): Promise<unknown> => {
         switch (event) {
             case 'SetPopUp':
@@ -234,11 +268,63 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
             case 'SetContactModal':
                 warnOnce('SetContactModal');
                 return Promise.resolve(null);
+            case 'GetPhoneNumber':
+                return apiData<{ number?: string }>('sd-phone:accounts:myNumber')
+                    .then(r => r?.number ?? null)
+                    .catch(() => null);
+            case 'GetStorage': {
+                const k = storageKey(data?.key);
+                if (!k) return Promise.resolve(null);
+                try {
+                    return Promise.resolve(window.localStorage.getItem(k));
+                } catch {
+                    return Promise.resolve(null);
+                }
+            }
+            case 'SetStorage': {
+                const k = storageKey(data?.key);
+                if (!k) return Promise.resolve(false);
+                try {
+                    if (data?.value == null) {
+                        window.localStorage.removeItem(k);
+                        return Promise.resolve(true);
+                    }
+
+                    const value = String(data.value);
+                    const previous = window.localStorage.getItem(k);
+                    const used = storageUsage();
+                    const nextBytes = used.bytes
+                        - (previous === null ? 0 : k.length + previous.length)
+                        + k.length + value.length;
+                    const nextKeys = used.keys + (previous === null ? 1 : 0);
+
+                    if (nextBytes > STORAGE_MAX_BYTES || nextKeys > STORAGE_MAX_KEYS) {
+                        warnQuota(defRef.current?.id ?? appId);
+                        return Promise.resolve(false);
+                    }
+
+                    window.localStorage.setItem(k, value);
+                    return Promise.resolve(true);
+                } catch {
+                    warnOnce('SetStorage');
+                    return Promise.resolve(false);
+                }
+            }
             default:
                 warnOnce(event);
                 return Promise.resolve(null);
         }
-    }, [showComponent, notify, createCall]);
+    }, [showComponent, notify, createCall, storageKey, storageUsage, appId]);
+
+    useEffect(() => {
+        if (!loadedRef.current) return;
+        try {
+            iframeRef.current?.contentWindow?.postMessage(
+                { type: active ? 'appOpen' : 'appClose', data: { id: defRef.current?.id } },
+                '*',
+            );
+        } catch { /* cross-origin */ }
+    }, [active, ready]);
 
     const bridge = useMemo(() => {
         const withCallbackIds = (data: PopupData | undefined) => {

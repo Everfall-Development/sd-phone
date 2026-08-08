@@ -7,7 +7,7 @@ import { useIosPush } from '@/hooks/useIosPush';
 import { SearchBar } from '@/ui/SearchBar';
 import { EmptyState } from '@/ui/EmptyState';
 import { apiSearch } from '../birdyApi';
-import { BG, BLUE, META, PILL, type BirdyAuthor, type BirdyConversation, type BirdyMessage } from '../data';
+import { BG, BLUE, META, PILL, TEXT, type BirdyAuthor, type BirdyConversation, type BirdyMessage } from '../data';
 import { Avatar, VerifiedBadge } from '../ui';
 
 function previewText(m?: BirdyMessage): string {
@@ -22,7 +22,8 @@ function previewText(m?: BirdyMessage): string {
     }
 }
 
-export function MessagesList({ conversations, onOpen, onOpenProfile, onCompose }: {
+export function MessagesList({ me, conversations, onOpen, onOpenProfile, onCompose }: {
+    me:            BirdyAuthor;
     conversations: BirdyConversation[];
     onOpen:        (id: string) => void;
     onOpenProfile: () => void;
@@ -38,8 +39,8 @@ export function MessagesList({ conversations, onOpen, onOpenProfile, onCompose }
     return (
         <div className="flex h-full flex-col" style={{ background: BG }}>
             <header className="flex shrink-0 items-center px-4 py-2">
-                <button type="button" onClick={onOpenProfile} aria-label={t('squawk.yourProfile', 'Your profile')}><Avatar size={44} /></button>
-                <h1 className="flex-1 text-center text-[22px] font-extrabold text-black">{t('squawk.messages', 'Messages')}</h1>
+                <button type="button" onClick={onOpenProfile} aria-label={t('squawk.yourProfile', 'Your profile')}><Avatar size={44} src={me.avatar} /></button>
+                <h1 className="flex-1 text-center text-[22px] font-extrabold text-label">{t('squawk.messages', 'Messages')}</h1>
                 {onCompose ? (
                     <button type="button" onClick={() => setComposing(true)} aria-label={t('squawk.newMessage', 'New message')} className="flex h-11 w-11 items-center justify-center" style={{ color: BLUE }}>
                         <PenSquare className="h-[24px] w-[24px]" strokeWidth={2} />
@@ -56,7 +57,8 @@ export function MessagesList({ conversations, onOpen, onOpenProfile, onCompose }
                     placeholder={t('squawk.findAConversation', 'Find a conversation')}
                     pillClassName="min-w-0 flex-1 gap-2 rounded-[12px] px-3.5 py-[10px]"
                     pillStyle={{ background: PILL }}
-                    textClassName="text-[17px] font-medium text-black placeholder:text-black/55"
+                    iconClassName="h-[18px] w-[18px] text-label/55"
+                    textClassName="text-[17px] font-medium text-label placeholder:text-label/55"
                     caretColor={BLUE}
                 />
             </div>
@@ -66,18 +68,18 @@ export function MessagesList({ conversations, onOpen, onOpenProfile, onCompose }
                     <EmptyState
                         center
                         icon={<Mail className="h-7 w-7" strokeWidth={1.8} />}
-                        circleClassName="bg-black/[0.06] text-black/35"
+                        circleClassName="bg-hairline/[0.06] text-label/35"
                         title={t('squawk.noMessagesYet', 'No messages yet')}
                         subtitle={t('squawk.messagesEmptySubtitle', 'Your direct messages will show up here.')}
-                        subtitleClassName="text-[#536471]"
+                        subtitleClassName="text-ios-gray"
                     />
                 ) : filtered.length === 0 ? (
                     <div className="flex h-full flex-col items-center justify-center px-12 text-center">
-                        <div className="mb-5 flex h-24 w-24 items-center justify-center rounded-full bg-black/[0.06] text-black/35">
+                        <div className="mb-5 flex h-24 w-24 items-center justify-center rounded-full bg-hairline/[0.06] text-label/35">
                             <SearchIcon className="h-12 w-12" strokeWidth={1.8} />
                         </div>
-                        <div className="text-[24px] font-bold text-black">{t('squawk.noResults', 'No results')}</div>
-                        <div className="mt-2 text-[17px] leading-snug" style={{ color: '#536471' }}>{t('squawk.noConversationsMatch', 'No conversations match "{query}".', { query: query.trim() })}</div>
+                        <div className="text-[24px] font-bold text-label">{t('squawk.noResults', 'No results')}</div>
+                        <div className="mt-2 text-[17px] leading-snug" style={{ color: META }}>{t('squawk.noConversationsMatch', 'No conversations match "{query}".', { query: query.trim() })}</div>
                     </div>
                 ) : (
                     <div className="flex flex-col gap-2 pt-1">
@@ -89,19 +91,19 @@ export function MessagesList({ conversations, onOpen, onOpenProfile, onCompose }
                                     key={c.id}
                                     type="button"
                                     onClick={() => onOpen(c.id)}
-                                    className="flex w-full items-center gap-3.5 px-4 py-[14px] text-left active:bg-black/5"
+                                    className="flex w-full items-center gap-3.5 px-4 py-[14px] text-left active:bg-hairline/5"
                                 >
                                     <Avatar size={64} src={c.user.avatar} />
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-1.5">
-                                            <span className="truncate text-[21px] font-bold text-black">{c.user.name}</span>
-                                            {c.user.verified && <VerifiedBadge size={18} />}
+                                            <span className="truncate text-[21px] font-bold text-label">{c.user.name}</span>
+                                            {c.user.verified && <VerifiedBadge size={18} type={c.user.verifiedType} />}
                                             <span className="truncate text-[16px]" style={{ color: META }}>@{c.user.handle}</span>
                                             <span className="ml-auto shrink-0 text-[15px]" style={{ color: META }}>{c.updated}</span>
                                         </div>
                                         <div
                                             className={`mt-0.5 truncate text-[19px] ${unread ? 'font-semibold' : ''}`}
-                                            style={{ color: unread ? '#0f1419' : META }}
+                                            style={{ color: unread ? TEXT : META }}
                                         >
                                             {previewText(last)}
                                         </div>
@@ -130,10 +132,10 @@ function NewDm({ onSelect, onBack }: { onSelect: (handle: string) => void; onBac
     return (
         <div className="absolute inset-0 z-20 flex flex-col" style={{ background: BG, ...pageStyle }}>
             <header className="flex shrink-0 items-center px-2 py-2">
-                <button type="button" onClick={goBack} aria-label={t('squawk.back', 'Back')} className="flex h-11 w-11 items-center justify-center text-black active:opacity-60">
+                <button type="button" onClick={goBack} aria-label={t('squawk.back', 'Back')} className="flex h-11 w-11 items-center justify-center text-label active:opacity-60">
                     <ArrowLeft className="h-6 w-6" strokeWidth={2.2} />
                 </button>
-                <h1 className="flex-1 text-center text-[22px] font-extrabold text-black">{t('squawk.newMessage', 'New message')}</h1>
+                <h1 className="flex-1 text-center text-[22px] font-extrabold text-label">{t('squawk.newMessage', 'New message')}</h1>
                 <div className="w-11" aria-hidden />
             </header>
 
@@ -144,19 +146,20 @@ function NewDm({ onSelect, onBack }: { onSelect: (handle: string) => void; onBac
                     placeholder={t('squawk.searchPeople', 'Search people')}
                     pillClassName="min-w-0 flex-1 gap-2 rounded-[12px] px-3.5 py-[10px]"
                     pillStyle={{ background: PILL }}
-                    textClassName="text-[17px] font-medium text-black placeholder:text-black/55"
+                    iconClassName="h-[18px] w-[18px] text-label/55"
+                    textClassName="text-[17px] font-medium text-label placeholder:text-label/55"
                     caretColor={BLUE}
                 />
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
                 {users.map(u => (
-                    <button key={u.handle} type="button" onClick={() => onSelect(u.handle)} className="flex w-full items-center gap-3.5 px-4 py-3 text-left active:bg-black/5">
+                    <button key={u.handle} type="button" onClick={() => onSelect(u.handle)} className="flex w-full items-center gap-3.5 px-4 py-3 text-left active:bg-hairline/5">
                         <Avatar size={48} src={u.avatar} />
                         <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">
-                                <span className="truncate text-[18px] font-bold text-black">{u.name}</span>
-                                {u.verified && <VerifiedBadge size={16} />}
+                                <span className="truncate text-[18px] font-bold text-label">{u.name}</span>
+                                {u.verified && <VerifiedBadge size={16} type={u.verifiedType} />}
                             </div>
                             <div className="truncate text-[15px]" style={{ color: META }}>@{u.handle}</div>
                         </div>

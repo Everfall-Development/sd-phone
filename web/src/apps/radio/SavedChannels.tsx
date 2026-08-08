@@ -95,7 +95,7 @@ export function SavedChannels({ saved, currentFreq, canSave, activeFreq, onTune,
                                         <Trash2 className="h-[20px] w-[20px]" strokeWidth={2} />
                                     </button>
                                 </div>
-                                {i < saved.length - 1 && <div className="ml-4 h-px bg-black/[0.08] dark:bg-white/[0.08]" />}
+                                {i < saved.length - 1 && <div className="h-px bg-black/[0.08] dark:bg-white/[0.08]" />}
                             </div>
                         ))}
                     </div>

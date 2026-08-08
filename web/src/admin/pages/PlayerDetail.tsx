@@ -17,7 +17,7 @@ import {
 } from '../types';
 import { Badge, Btn, Card, CenterNote, ConfirmModal, LoadMore, OnlineDot, PromptModal, Spinner } from '../ui';
 import { usePaged } from '../usePaged';
-import { PostCard } from './BirdyPage';
+import { BADGE_TINT, PostCard } from './BirdyPage';
 import { QuipMark } from '@/apps/birdy/QuipMark';
 import { MuteForm } from './MutesPage';
 
@@ -273,7 +273,7 @@ function OverviewTab({ ov, toast, reload, onOpenTab, onOpenGallery }: {
                         <InfoRow key={b.handle} label={`@${b.handle}`}>
                             <span className="inline-flex items-center gap-1.5">
                                 {b.displayName}
-                                {b.verified && <BadgeCheck size={14} className="text-ios-blue" />}
+                                {b.verified && <BadgeCheck size={14} style={{ color: BADGE_TINT[b.verifiedType ?? 'blue'] ?? BADGE_TINT.blue }} />}
                                 <span className="text-zinc-500">
                                     {b.loggedIn ? 'signed in' : fmtTime(b.createdAt)}
                                 </span>
@@ -483,6 +483,13 @@ function AccountsTab({ ov, toast, onReset }: {
     );
 }
 
+const BADGE_OPTIONS: { key: string | null; label: string }[] = [
+    { key: null,   label: 'None' },
+    { key: 'blue', label: 'Blue' },
+    { key: 'gold', label: 'Business' },
+    { key: 'grey', label: 'Government' },
+];
+
 function BirdyTab({ ov, onChanged, toast }: {
     ov: AdminOverview;
     onChanged: () => void;
@@ -499,9 +506,9 @@ function BirdyTab({ ov, onChanged, toast }: {
 
     const { items, loading, hasMore, loadMore, setItems } = usePaged<AdminBirdyPost, string>(fetchPage, `birdy-player:${cid}`);
 
-    const toggleVerified = async (profile: AdminBirdyProfile) => {
-        const res = await adminBirdySetVerified(profile.handle, !profile.verified);
-        if (res.success) { toast(profile.verified ? 'Verification removed' : 'Profile verified'); onChanged(); }
+    const setVerified = async (profile: AdminBirdyProfile, type: string | null) => {
+        const res = await adminBirdySetVerified(profile.handle, type);
+        if (res.success) { toast(type ? 'Badge updated' : 'Verification removed'); onChanged(); }
         else toast(res.message ?? 'Failed', true);
     };
 
@@ -515,18 +522,29 @@ function BirdyTab({ ov, onChanged, toast }: {
 
     return (
         <div className="space-y-4">
-            {ov.birdy.map(b => (
-                <Card key={b.handle} className="flex items-center justify-between px-4 py-3">
-                    <div className="flex items-center gap-2 text-[13px]">
-                        <span className="font-bold text-zinc-100">{b.displayName}</span>
-                        {b.verified && <BadgeCheck size={14} className="text-ios-blue" />}
-                        <span className="text-zinc-500">@{b.handle}</span>
-                    </div>
-                    <Btn variant={b.verified ? 'ghost' : 'primary'} onClick={() => void toggleVerified(b)}>
-                        <BadgeCheck size={14} /> {b.verified ? 'Remove verification' : 'Verify profile'}
-                    </Btn>
-                </Card>
-            ))}
+            {ov.birdy.map(b => {
+                const current = b.verified ? (b.verifiedType ?? 'blue') : null;
+                return (
+                    <Card key={b.handle} className="flex items-center justify-between gap-3 px-4 py-3">
+                        <div className="flex min-w-0 items-center gap-2 text-[13px]">
+                            <span className="truncate font-bold text-zinc-100">{b.displayName}</span>
+                            {current && <BadgeCheck size={14} style={{ color: BADGE_TINT[current] ?? BADGE_TINT.blue }} />}
+                            <span className="truncate text-zinc-500">@{b.handle}</span>
+                        </div>
+                        <div className="flex shrink-0 gap-1">
+                            {BADGE_OPTIONS.map(o => (
+                                <Btn
+                                    key={o.label}
+                                    variant={current === o.key ? 'primary' : 'ghost'}
+                                    onClick={() => void setVerified(b, o.key)}
+                                >
+                                    {o.label}
+                                </Btn>
+                            ))}
+                        </div>
+                    </Card>
+                );
+            })}
 
             <Card title={`Posts (${ov.counts?.birdyPosts ?? items.length})`}>
                 {items.map(p => (

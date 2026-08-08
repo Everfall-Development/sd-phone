@@ -6,7 +6,7 @@ import { AlertDialog } from '@/ui/AlertDialog';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useIosPush } from '@/hooks/useIosPush';
 import { apiFollowList, apiToggleFollow } from '../birdyApi';
-import { BG, BLUE, type BirdyFollowUser } from '../data';
+import { BG, BLUE, LINE_STRONG, META, PILL, TEXT, type BirdyFollowUser } from '../data';
 import { Avatar, RichText, VerifiedBadge } from '../ui';
 
 export function FollowList({ kind, handle, onBack }: {
@@ -20,11 +20,11 @@ export function FollowList({ kind, handle, onBack }: {
     return (
         <div className="absolute inset-0 z-20 flex flex-col" style={{ background: BG, ...pageStyle }}>
             <div className="h-[54px] shrink-0" aria-hidden />
-            <header className="flex shrink-0 items-center border-b border-black/10 px-2 pb-2.5 pt-2">
-                <button type="button" onClick={goBack} aria-label={t('squawk.back', 'Back')} className="flex h-9 w-9 items-center justify-center text-black active:opacity-60">
+            <header className="flex shrink-0 items-center border-b border-hairline/10 px-2 pb-2.5 pt-2">
+                <button type="button" onClick={goBack} aria-label={t('squawk.back', 'Back')} className="flex h-9 w-9 items-center justify-center text-label active:opacity-60">
                     <ArrowLeft className="h-6 w-6" strokeWidth={2.2} />
                 </button>
-                <div className="flex-1 text-center text-[19px] font-bold text-black">
+                <div className="flex-1 text-center text-[19px] font-bold text-label">
                     {kind === 'following' ? t('squawk.following', 'Following') : t('squawk.followers', 'Followers')}
                 </div>
                 <div className="w-9" aria-hidden />
@@ -54,22 +54,22 @@ function FollowRow({ user }: { user: BirdyFollowUser }) {
 
     return (
         <>
-        <div className="flex items-start gap-4 border-b border-black/10 px-4 py-4">
+        <div className="flex items-start gap-4 border-b border-hairline/10 px-4 py-4">
             <Avatar size={64} src={user.avatar} />
 
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                    <span className="truncate text-[19px] font-bold text-black">{user.name}</span>
-                    {user.verified && <VerifiedBadge size={19} />}
+                    <span className="truncate text-[19px] font-bold text-label">{user.name}</span>
+                    {user.verified && <VerifiedBadge size={19} type={user.verifiedType} />}
                     {user.followsYou && (
-                        <span className="shrink-0 rounded-md border px-2 py-[3px] text-[14px] font-semibold leading-none" style={{ background: '#eeeeee', borderColor: 'rgba(0,0,0,0.2)', color: '#0f1419' }}>
+                        <span className="shrink-0 rounded-md border px-2 py-[3px] text-[14px] font-semibold leading-none" style={{ background: PILL, borderColor: LINE_STRONG, color: TEXT }}>
                             {t('squawk.followsYou', 'Follows you')}
                         </span>
                     )}
                 </div>
                 <div className="truncate text-[17px]" style={{ color: BLUE }}>@{user.handle}</div>
                 {user.bio && (
-                    <div className="mt-0.5 truncate text-[17px]" style={{ color: '#536471' }}>
+                    <div className="mt-0.5 truncate text-[17px]" style={{ color: META }}>
                         <RichText text={user.bio} />
                     </div>
                 )}
@@ -80,7 +80,7 @@ function FollowRow({ user }: { user: BirdyFollowUser }) {
                 onClick={onButton}
                 className="mt-1 shrink-0 rounded-full px-5 py-2 text-[16px] font-bold transition-colors active:opacity-80"
                 style={following
-                    ? { border: '1px solid rgba(0,0,0,0.2)', color: '#0f1419' }
+                    ? { border: `1px solid ${LINE_STRONG}`, color: TEXT }
                     : { background: BLUE, color: '#fff' }}
             >
                 {following ? t('squawk.following', 'Following') : t('squawk.follow', 'Follow')}

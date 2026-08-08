@@ -3,6 +3,7 @@ import { ArrowUp, ChevronLeft, Mic, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 import { t } from '@/i18n';
+import { useTheme } from '@/stores/themeStore';
 import { fetchNui, isFiveM } from '@/core/nui';
 import { apiData } from '@/core/api';
 import { requestOpenMaps } from '@/shell/deeplink';
@@ -22,7 +23,7 @@ import { VoicePanel } from '@/shared/chat/VoicePanel';
 import type { MessageDraft } from '@/shared/chat/ChatView';
 import { MediaPickerSheet } from '@/shared/MediaPickerSheet';
 import { warmPhotos, apiSavePhotoFromUrl } from '@/core/photosApi';
-import { BLUE, type BirdyConversation, type BirdyMessage } from '../data';
+import { BG, BLUE, CARD, LINE, PILL, type BirdyConversation, type BirdyMessage } from '../data';
 import { Avatar } from '../ui';
 
 type Panel = 'emoji' | 'money' | 'voice' | null;
@@ -36,9 +37,9 @@ function actionBtns(): { id: string; label: string; emoji?: string; Icon?: Lucid
     ];
 }
 
-const RECEIVED_BG   = '#c6c6c6';
-const SURFACE       = '#e5e5e5';
-const ACTION_BAR_BG = '#d4d4d4';
+const RECEIVED_BG   = PILL;
+const SURFACE       = BG;
+const ACTION_BAR_BG = CARD;
 
 export function ChatView({ convo, onBack, onSend, onReact, onPayRequest, animateIn = true }: {
     convo:        BirdyConversation;
@@ -48,6 +49,9 @@ export function ChatView({ convo, onBack, onSend, onReact, onPayRequest, animate
     onPayRequest: (messageId: string, amount: number) => void;
     animateIn?:   boolean;
 }) {
+    const { theme } = useTheme('theme');
+    const isDark = theme === 'dark';
+
     const [draft,      setDraft]      = useState('');
     const [panel,      setPanel]      = useState<Panel>(null);
     const [pickerId,   setPickerId]   = useState<string | null>(null);
@@ -182,18 +186,18 @@ export function ChatView({ convo, onBack, onSend, onReact, onPayRequest, animate
                     </button>
                     <div className="flex min-w-0 items-center gap-2">
                         <Avatar size={46} src={convo.user.avatar} />
-                        <span className="ml-1 min-w-0 truncate text-[24px] font-semibold text-black">{name}</span>
+                        <span className="ml-1 min-w-0 truncate text-[24px] font-semibold text-label">{name}</span>
                     </div>
                 </div>
-                <div className="mx-[6%] h-[0.5px] bg-black/15" />
+                <div className="mx-[6%] h-[0.5px] bg-hairline/15" />
             </div>
 
             <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto no-scrollbar px-4 py-2">
                 {messages.length === 0 ? (
                     <div className="flex h-full flex-col items-center justify-center px-8 pb-10 text-center">
                         <Avatar size={104} src={convo.user.avatar} />
-                        <p className="mt-4 text-[21px] font-semibold text-black/85">{name}</p>
-                        <p className="mt-1.5 text-[16px] font-medium leading-snug text-black/65">{t('squawk.sayHello', 'Say hello to @{handle}', { handle: convo.user.handle })}</p>
+                        <p className="mt-4 text-[21px] font-semibold text-label/85">{name}</p>
+                        <p className="mt-1.5 text-[16px] font-medium leading-snug text-label/65">{t('squawk.sayHello', 'Say hello to @{handle}', { handle: convo.user.handle })}</p>
                     </div>
                 ) : null}
                 {items.map((item, i) => {
@@ -201,8 +205,8 @@ export function ChatView({ convo, onBack, onSend, onReact, onPayRequest, animate
                         const { lead, time } = fmtChatSeparator(item.ts);
                         return (
                             <div key={`sep-${i}`} className="flex justify-center pb-3 pt-4">
-                                <span className="text-[13px] tracking-wide text-black/40">
-                                    <span className="font-semibold text-black/55">{lead}</span> {time}
+                                <span className="text-[13px] tracking-wide text-label/40">
+                                    <span className="font-semibold text-label/55">{lead}</span> {time}
                                 </span>
                             </div>
                         );
@@ -216,7 +220,7 @@ export function ChatView({ convo, onBack, onSend, onReact, onPayRequest, animate
                                     msg={bubbleMsg}
                                     sent={sent}
                                     isLast={isLast}
-                                    isDark={false}
+                                    isDark={isDark}
                                     receivedBg={RECEIVED_BG}
                                     sentBg={BLUE}
                                     pickerOpen={pickerId === msg.id}
@@ -239,7 +243,7 @@ export function ChatView({ convo, onBack, onSend, onReact, onPayRequest, animate
             <div className="relative shrink-0">
                 {panel === 'emoji' && (
                     <div className="absolute inset-x-0 bottom-full z-20">
-                        <EmojiPanel isDark={false} onSelect={e => setDraft(d => d + e)} />
+                        <EmojiPanel isDark={isDark} onSelect={e => setDraft(d => d + e)} />
                     </div>
                 )}
 
@@ -248,14 +252,14 @@ export function ChatView({ convo, onBack, onSend, onReact, onPayRequest, animate
                         <div className="w-[3px] self-stretch rounded-full" style={{ background: BLUE }} />
                         <div className="min-w-0 flex-1">
                             <div className="text-[12px] font-semibold" style={{ color: BLUE }}>{t('squawk.replyTo', 'In reply to {name}', { name: replyName(replyTo) })}</div>
-                            <div className="truncate text-[13px] text-black/55">{msgPreview(replyTo)}</div>
+                            <div className="truncate text-[13px] text-label/55">{msgPreview(replyTo)}</div>
                         </div>
                         <button
                             type="button"
                             onClick={() => setReplyTo(null)}
-                            className="flex h-6 w-6 items-center justify-center rounded-full bg-black/10 active:opacity-60"
+                            className="flex h-6 w-6 items-center justify-center rounded-full bg-hairline/10 active:opacity-60"
                         >
-                            <X className="h-[14px] w-[14px] text-black/55" strokeWidth={2.5} />
+                            <X className="h-[14px] w-[14px] text-label/55" strokeWidth={2.5} />
                         </button>
                     </div>
                 )}
@@ -279,7 +283,7 @@ export function ChatView({ convo, onBack, onSend, onReact, onPayRequest, animate
                 )}
 
                 <div className="px-3 pb-2 pt-1.5">
-                    <div className={`flex items-center gap-1 rounded-[22px] bg-[#d4d4d4] py-[9px] pl-4 ${draft.trim() || attachments.length ? 'pr-[5px]' : 'pr-4'}`}>
+                    <div className={`flex items-center gap-1 rounded-[22px] bg-control py-[9px] pl-4 ${draft.trim() || attachments.length ? 'pr-[5px]' : 'pr-4'}`}>
                         <input
                             ref={inputRef}
                             type="text"
@@ -288,7 +292,7 @@ export function ChatView({ convo, onBack, onSend, onReact, onPayRequest, animate
                             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); } }}
                             onFocus={() => setPanel(null)}
                             placeholder={t('squawk.textMessage', 'Text Message')}
-                            className="min-w-0 flex-1 bg-transparent py-[5px] text-[18px] text-black placeholder-black/35 outline-none"
+                            className="min-w-0 flex-1 bg-transparent py-[5px] text-[18px] text-label placeholder-black/35 outline-none"
                         />
                         {(draft.trim() || attachments.length > 0) && (
                             <button
@@ -305,7 +309,7 @@ export function ChatView({ convo, onBack, onSend, onReact, onPayRequest, animate
 
                 <div
                     className="flex items-center justify-around px-4 pb-11 pt-2.5"
-                    style={{ background: ACTION_BAR_BG, borderTop: '0.5px solid rgba(0,0,0,0.10)' }}
+                    style={{ background: ACTION_BAR_BG, borderTop: `0.5px solid ${LINE}` }}
                 >
                     {btns.map(btn => {
                         const Icon = btn.Icon;
@@ -319,7 +323,7 @@ export function ChatView({ convo, onBack, onSend, onReact, onPayRequest, animate
                                     : btn.id === 'location' ? (setConfirmLocation(true), setPanel(null))
                                     : togglePanel(btn.id as Panel)
                                 )}
-                                className="flex h-[48px] w-[54px] items-center justify-center rounded-[16px] bg-white transition-opacity active:opacity-60"
+                                className="flex h-[48px] w-[54px] items-center justify-center rounded-[16px] bg-surface transition-opacity active:opacity-60"
                                 style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
                             >
                                 {btn.id === 'photos' ? (
@@ -327,9 +331,9 @@ export function ChatView({ convo, onBack, onSend, onReact, onPayRequest, animate
                                         <PhotosIcon />
                                     </span>
                                 ) : Icon ? (
-                                    <Icon className={`text-black ${btn.id === 'location' ? 'h-[27px] w-[27px]' : 'h-[25px] w-[25px]'}`} strokeWidth={2} />
+                                    <Icon className={`text-label ${btn.id === 'location' ? 'h-[27px] w-[27px]' : 'h-[25px] w-[25px]'}`} strokeWidth={2} />
                                 ) : btn.emoji ? (
-                                    <span className="text-[23px] leading-none text-black">{btn.emoji}</span>
+                                    <span className="text-[23px] leading-none text-label">{btn.emoji}</span>
                                 ) : (
                                     <span className="text-[15px] font-black tracking-tight" style={{ color: BLUE }}>
                                         {btn.label}
@@ -365,7 +369,7 @@ export function ChatView({ convo, onBack, onSend, onReact, onPayRequest, animate
 
             {panel === 'money' && (
                 <MoneyPanel
-                    isDark={false}
+                    isDark={isDark}
                     peerName={name}
                     onSend={amt => send({ kind: 'money', amount: amt, body: `$${amt}` })}
                     onRequest={amt => send({ kind: 'money', amount: amt, body: `$${amt}`, requested: true })}

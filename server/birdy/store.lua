@@ -2,6 +2,8 @@
 local store = {}
 
 local util = require 'server.util'
+---@type table Column back-fills for tables that predate a column (server.migrations).
+local migrations = require 'server.migrations'
 local isTruthy = util.truthy
 local function newId() return util.newId(9) end
 
@@ -205,6 +207,7 @@ function store.ensureSchema()
             password     VARCHAR(64)  NOT NULL DEFAULT '',
             bio          VARCHAR(200) NOT NULL DEFAULT '',
             verified     TINYINT(1)   NOT NULL DEFAULT 0,
+            verified_type VARCHAR(8)   NULL,
             logged_in    TINYINT(1)   NOT NULL DEFAULT 0,
             join_label   VARCHAR(32)  NOT NULL DEFAULT '',
             protected    TINYINT(1)   NOT NULL DEFAULT 0,
@@ -213,6 +216,10 @@ function store.ensureSchema()
             INDEX idx_birdy_profiles_creator (citizenid)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]])
+
+    -- The CREATE above is the current shape for fresh installs; anything added to this table since
+    -- it first shipped is back-filled here for databases that already have it.
+    migrations.apply('phone_birdy_profiles')
 
     MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_birdy_posts (
@@ -365,6 +372,7 @@ local function hydrateProfile(row)
         password    = row.password,
         bio         = row.bio,
         verified    = isTruthy(row.verified),
+        verifiedType = row.verified_type,
         loggedIn    = isTruthy(row.logged_in),
         joinLabel   = row.join_label,
         avatar      = row.avatar,
@@ -381,7 +389,7 @@ end
 function store.getProfileByHandle(handle)
     if not handle or handle == '' then return nil end
     return hydrateProfile(MySQL.single.await(
-        'SELECT handle, citizenid, display_name, password, bio, verified, logged_in, join_label, protected, avatar, banner, UNIX_TIMESTAMP(created_at) AS created_ts FROM phone_birdy_profiles WHERE handle = ?',
+        'SELECT handle, citizenid, display_name, password, bio, verified, verified_type, logged_in, join_label, protected, avatar, banner, UNIX_TIMESTAMP(created_at) AS created_ts FROM phone_birdy_profiles WHERE handle = ?',
         { handle }
     ))
 end
@@ -396,14 +404,14 @@ end
 function store.searchProfiles(query, viewerHandle, limit)
     local like = '%' .. escapeLike(query) .. '%'
     local rows = MySQL.query.await([[
-        SELECT handle, display_name, verified, avatar FROM phone_birdy_profiles
+        SELECT handle, display_name, verified, verified_type, avatar FROM phone_birdy_profiles
         WHERE (handle LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\') AND handle <> ?
         ORDER BY created_at DESC LIMIT ?
     ]], { like, like, viewerHandle or '', limit }) or {}
     local out = {}
     for i = 1, #rows do
         local r = rows[i]
-        out[i] = { handle = r.handle, displayName = r.display_name, verified = isTruthy(r.verified), avatar = r.avatar }
+        out[i] = { handle = r.handle, displayName = r.display_name, verified = isTruthy(r.verified), verifiedType = r.verified_type, avatar = r.avatar }
     end
     return out
 end
@@ -437,6 +445,17 @@ function store.updateProfileFields(handle, displayName, bio, joinLabel, protecte
         SET display_name = ?, bio = ?, join_label = ?, protected = ?, avatar = ?, banner = ?
         WHERE handle = ?
     ]], { displayName, bio, joinLabel, protected and 1 or 0, avatar, banner, handle })
+end
+
+---Sets the verified badge on one account. Only ever called with a type that came back from
+---verify.parse, so an unrenderable badge cannot reach the column.
+---@param handle string account handle
+---@param vtype string|nil badge type, or nil to clear the badge
+---@return integer affected
+function store.setVerified(handle, vtype)
+    return tonumber(MySQL.update.await(
+        'UPDATE phone_birdy_profiles SET verified = ?, verified_type = ? WHERE handle = ?',
+        { vtype and 1 or 0, vtype, handle })) or 0
 end
 
 ---Replace an account's legacy profile-row password hash (kept in sync with the engine hash).
@@ -475,6 +494,7 @@ local function hydratePost(row)
         handle      = row.handle,
         displayName = row.display_name,
         verified    = isTruthy(row.verified),
+        verifiedType = row.verified_type,
         avatar      = row.avatar,
         body        = row.body,
         parentId    = row.parent_id,
@@ -486,25 +506,71 @@ local function hydratePost(row)
         liked       = (tonumber(row.liked) or 0) > 0,
         reposts     = tonumber(row.repost_count) or 0,
         reposted    = (tonumber(row.reposted) or 0) > 0,
+        repostedBy     = row.reposter,
+        repostedByName = row.reposter_name,
+        repostedByAvatar = row.reposter_avatar,
     }
 end
 
----@type string SELECT prefix producing hydratePost-shaped rows. The viewer handle is params #1 AND
----#2 (the `liked` and `reposted` flags), so every caller must pass it twice, ahead of its own
----parameters.
-local POST_SELECT = [[
-    SELECT
+---@type string Columns shared by the authored and reposted halves of a timeline. Both halves
+---project the same shape so their rows can be merged and sorted together. The viewer handle is
+---params #1 AND #2 (the `liked` and `reposted` flags) in either half.
+local POST_COLS = [[
         p.id, p.author, p.body, p.parent_id, p.images, p.views,
         UNIX_TIMESTAMP(p.created_at) AS created_s,
-        pr.handle, pr.display_name, pr.verified, pr.avatar,
+        pr.handle, pr.display_name, pr.verified, pr.verified_type, pr.avatar,
         (SELECT COUNT(*) FROM phone_birdy_likes l  WHERE l.post_id   = p.id) AS like_count,
         (SELECT COUNT(*) FROM phone_birdy_posts r  WHERE r.parent_id = p.id) AS reply_count,
         (SELECT COUNT(*) FROM phone_birdy_reposts rp WHERE rp.post_id = p.id) AS repost_count,
         (SELECT COUNT(*) FROM phone_birdy_likes lv WHERE lv.post_id  = p.id AND lv.handle = ?) AS liked,
         (SELECT COUNT(*) FROM phone_birdy_reposts rv WHERE rv.post_id = p.id AND rv.handle = ?) AS reposted
+]]
+
+---@type string SELECT prefix producing hydratePost-shaped rows. The viewer handle is params #1 AND
+---#2 (the `liked` and `reposted` flags), so every caller must pass it twice, ahead of its own
+---parameters. `surfaced_s` is what orders a timeline: for an authored post it is simply its own
+---creation time.
+local POST_SELECT = [[
+    SELECT
+]] .. POST_COLS .. [[,
+        NULL AS reposter, NULL AS reposter_name,
+        UNIX_TIMESTAMP(p.created_at) AS surfaced_s
     FROM phone_birdy_posts p
     JOIN phone_birdy_profiles pr ON pr.handle = p.author
 ]]
+
+---@type string The reposted half of a timeline: the same post, surfaced at the moment somebody
+---reposted it rather than when it was written, carrying who did so. Outer alias is rp2 because
+---POST_COLS already uses rp for the repost-count subquery. Same leading two params as POST_SELECT.
+local REPOST_SELECT = [[
+    SELECT
+]] .. POST_COLS .. [[,
+        rp2.handle AS reposter, rpr.display_name AS reposter_name, rpr.avatar AS reposter_avatar,
+        UNIX_TIMESTAMP(rp2.created_at) AS surfaced_s
+    FROM phone_birdy_reposts rp2
+    JOIN phone_birdy_posts p ON p.id = rp2.post_id
+    JOIN phone_birdy_profiles pr ON pr.handle = p.author
+    JOIN phone_birdy_profiles rpr ON rpr.handle = rp2.handle
+]]
+
+---Merges an authored and a reposted result set into one timeline, newest-surfaced first, capped
+---to `limit`. Done in Lua rather than as a SQL UNION so each half keeps its own readable WHERE
+---and its own positional parameters; at feed-sized limits the sort is free.
+---@param a table[] authored rows
+---@param b table[] reposted rows
+---@param limit integer
+---@return table[] hydrated posts
+local function mergeTimeline(a, b, limit)
+    local all = {}
+    for i = 1, #a do all[#all + 1] = a[i] end
+    for i = 1, #b do all[#all + 1] = b[i] end
+    table.sort(all, function(x, y)
+        return (tonumber(x.surfaced_s) or 0) > (tonumber(y.surfaced_s) or 0)
+    end)
+    local out = {}
+    for i = 1, math.min(#all, limit) do out[i] = hydratePost(all[i]) end
+    return out
+end
 
 ---Lists a single author's posts for a profile tab, newest first. 'replies' = posts with a
 ---parent; 'media' = any post carrying images; anything else = top-level only.
@@ -522,12 +588,25 @@ function store.listPostsBy(author, kind, viewerHandle, limit)
     else
         clause = 'p.parent_id IS NULL'
     end
-    local rows = MySQL.query.await(
+    local authored = MySQL.query.await(
         POST_SELECT .. (' WHERE p.author = ? AND %s ORDER BY p.created_at DESC LIMIT ?'):format(clause),
         { viewerHandle, viewerHandle, author, limit }
     ) or {}
-    for i = 1, #rows do rows[i] = hydratePost(rows[i]) end
-    return rows
+
+    if kind == 'replies' or kind == 'media' then
+        local out = {}
+        for i = 1, #authored do out[i] = hydratePost(authored[i]) end
+        return out
+    end
+
+    local reposted = MySQL.query.await(REPOST_SELECT .. [[
+        WHERE rp2.handle = ?
+          AND rp2.handle <> p.author
+          AND p.parent_id IS NULL
+        ORDER BY rp2.created_at DESC LIMIT ?
+    ]], { viewerHandle, viewerHandle, author, limit }) or {}
+
+    return mergeTimeline(authored, reposted, limit)
 end
 
 ---List posts an account has liked, most-recently-liked first.
@@ -582,7 +661,7 @@ function store.getProfilesByHandles(handles)
     local marks = {}
     for i = 1, #handles do marks[i] = '?' end
     local rows = MySQL.query.await(
-        ('SELECT handle, citizenid, display_name, verified, avatar FROM phone_birdy_profiles WHERE handle IN (%s)')
+        ('SELECT handle, citizenid, display_name, verified, verified_type, avatar FROM phone_birdy_profiles WHERE handle IN (%s)')
             :format(table.concat(marks, ',')),
         handles
     ) or {}
@@ -636,24 +715,42 @@ end
 ---@param onlyFollowing boolean
 ---@return table[]
 function store.listFeed(viewerHandle, limit, onlyFollowing)
-    local rows
+    local authored, reposted
     if onlyFollowing then
-        rows = MySQL.query.await(POST_SELECT .. [[
+        authored = MySQL.query.await(POST_SELECT .. [[
             WHERE p.parent_id IS NULL
               AND p.author IN (SELECT target FROM phone_birdy_follows WHERE follower = ?)
             ORDER BY p.created_at DESC LIMIT ?
         ]], { viewerHandle, viewerHandle, viewerHandle, limit }) or {}
+
+        reposted = MySQL.query.await(REPOST_SELECT .. [[
+            WHERE p.parent_id IS NULL
+              AND rp2.handle <> p.author
+              AND rp2.handle IN (SELECT target FROM phone_birdy_follows WHERE follower = ?)
+              AND (pr.protected = 0 OR p.author = ?
+                   OR p.author IN (SELECT target FROM phone_birdy_follows WHERE follower = ?))
+            ORDER BY rp2.created_at DESC LIMIT ?
+        ]], { viewerHandle, viewerHandle, viewerHandle, viewerHandle, viewerHandle, limit }) or {}
     else
         -- Protected authors are visible only to themselves and their followers.
-        rows = MySQL.query.await(POST_SELECT .. [[
+        authored = MySQL.query.await(POST_SELECT .. [[
             WHERE p.parent_id IS NULL
               AND (pr.protected = 0 OR p.author = ?
                    OR p.author IN (SELECT target FROM phone_birdy_follows WHERE follower = ?))
             ORDER BY p.created_at DESC LIMIT ?
         ]], { viewerHandle, viewerHandle, viewerHandle, viewerHandle, limit }) or {}
+
+        reposted = MySQL.query.await(REPOST_SELECT .. [[
+            WHERE p.parent_id IS NULL
+              AND rp2.handle <> p.author
+              AND (pr.protected = 0 OR p.author = ?
+                   OR p.author IN (SELECT target FROM phone_birdy_follows WHERE follower = ?))
+              AND (rpr.protected = 0 OR rp2.handle = ?
+                   OR rp2.handle IN (SELECT target FROM phone_birdy_follows WHERE follower = ?))
+            ORDER BY rp2.created_at DESC LIMIT ?
+        ]], { viewerHandle, viewerHandle, viewerHandle, viewerHandle, viewerHandle, viewerHandle, limit }) or {}
     end
-    for i = 1, #rows do rows[i] = hydratePost(rows[i]) end
-    return rows
+    return mergeTimeline(authored, reposted, limit)
 end
 
 ---@param parentId string
@@ -800,6 +897,25 @@ function store.getPostAuthor(id)
     return MySQL.scalar.await('SELECT author FROM phone_birdy_posts WHERE id = ?', { id })
 end
 
+---Deletes a post and everything hanging off it: its replies, and the likes, reposts and
+---notifications belonging to the post or any of those replies. There is no ON DELETE CASCADE on
+---these tables, so orphans would otherwise sit in the likes and notifications tables forever and
+---keep counting toward reply totals.
+---@param id string post id
+---@return integer removed how many rows the posts table lost
+function store.deletePost(id)
+    local replies = MySQL.query.await('SELECT id FROM phone_birdy_posts WHERE parent_id = ?', { id }) or {}
+
+    local ids = { id }
+    for i = 1, #replies do ids[#ids + 1] = replies[i].id end
+
+    local marks = string.rep('?', #ids, ',')
+    MySQL.query.await(('DELETE FROM phone_birdy_likes WHERE post_id IN (%s)'):format(marks), ids)
+    MySQL.query.await(('DELETE FROM phone_birdy_reposts WHERE post_id IN (%s)'):format(marks), ids)
+    MySQL.query.await(('DELETE FROM phone_birdy_notifications WHERE post_id IN (%s)'):format(marks), ids)
+    return MySQL.update.await(('DELETE FROM phone_birdy_posts WHERE id IN (%s)'):format(marks), ids) or 0
+end
+
 ---Adds a like. INSERT IGNORE makes replays a no-op.
 ---@param postId string
 ---@param handle string
@@ -880,7 +996,7 @@ function store.followList(viewerHandle, target, kind)
     end
 
     return MySQL.query.await(([[
-        SELECT pr.handle, pr.display_name, pr.bio, pr.verified, pr.avatar,
+        SELECT pr.handle, pr.display_name, pr.bio, pr.verified, pr.verified_type, pr.avatar,
                EXISTS(SELECT 1 FROM phone_birdy_follows x
                       WHERE x.follower = pr.handle AND x.target = ?)   AS follows_you,
                EXISTS(SELECT 1 FROM phone_birdy_follows y

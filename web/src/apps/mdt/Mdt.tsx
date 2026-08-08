@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ShieldAlert } from 'lucide-react';
 
+import { device } from '@device';
 import { t } from '@/i18n';
 import { EmptyState } from '@/ui/EmptyState';
+import { MenuRootProvider } from '@/ui/menuRoot';
 import { NavContext } from '@/hooks/useIosPush';
 import type { DepartmentType, MdtSection } from './data';
 import { AffairsPane } from './AffairsPane';
@@ -19,6 +21,7 @@ import { JailPane } from './JailPane';
 import { PhonePane } from './PhonePane';
 import { LogsPane } from './LogsPane';
 import { MdtHeader } from './MdtHeader';
+import { MdtPhone } from './MdtPhone';
 import { MdtTabs } from './MdtTabs';
 import { MdtSidebar } from './MdtSidebar';
 import { OffencesPane } from './OffencesPane';
@@ -28,7 +31,6 @@ import { ProtocolsPane } from './ProtocolsPane';
 import { ReportsPane } from './ReportsPane';
 import { VehiclesPane } from './VehiclesPane';
 import { WarrantsPane } from './WarrantsPane';
-import { MdtRootProvider } from './mdtRoot';
 import { MDT_ACCENT, MDT_STATUS_RESERVE, mdtBackdrop } from './mdtTheme';
 import { MdtSessionProvider, useMdtSession, useMdtSessionState } from './useMdtSession';
 
@@ -61,7 +63,7 @@ const COMPACT_WIDTH = 900;
 function MdtTerminal() {
     const { ready, me, department, section, canOpen, activeTab } = useMdtSession();
 
-    const accent = department?.accent ?? MDT_ACCENT;
+    const accent = MDT_ACCENT;
     const signedIn = ready && !!me && !!department;
 
     const active: MdtSection = section !== 'home' && !canOpen(section) ? 'home' : section;
@@ -87,7 +89,7 @@ function MdtTerminal() {
     }, []);
 
     return (
-        <MdtRootProvider value={root}>
+        <MenuRootProvider value={root}>
         <div
             ref={attachRoot}
             data-mdt-root=""
@@ -124,7 +126,7 @@ function MdtTerminal() {
                 </>
             )}
         </div>
-        </MdtRootProvider>
+        </MenuRootProvider>
     );
 }
 
@@ -133,7 +135,7 @@ function Terminal({ devDomain }: { devDomain?: DepartmentType }) {
     return (
         <MdtSessionProvider value={session}>
             <NavContext.Provider value={{ onWillBack: () => {} }}>
-                <MdtTerminal />
+                {device.id === 'phone' ? <MdtPhone renderPane={pane} /> : <MdtTerminal />}
             </NavContext.Provider>
         </MdtSessionProvider>
     );

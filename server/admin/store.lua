@@ -297,7 +297,7 @@ function store.playerOverview(cid)
     -- logged_in is derived from live sessions, not the profile column: that column is a legacy
     -- per-account flag and cannot say which characters are in the account right now.
     local birdy = MySQL.query.await(([[
-        SELECT p.handle, p.display_name, p.bio, p.verified, p.protected,
+        SELECT p.handle, p.display_name, p.bio, p.verified, p.verified_type, p.protected,
                UNIX_TIMESTAMP(p.created_at) AS created_at,
                EXISTS(SELECT 1 FROM phone_app_sessions s
                       JOIN phone_app_accounts a ON a.id = s.account_id
@@ -350,6 +350,7 @@ function store.playerOverview(cid)
             displayName = b.display_name,
             bio         = b.bio,
             verified    = util.truthy(b.verified),
+            verifiedType = b.verified_type,
             loggedIn    = util.truthy(b.logged_in),
             protected   = util.truthy(b.protected),
             createdAt   = tonumber(b.created_at),
@@ -414,6 +415,7 @@ local function shapePosts(rows, limit)
             handle    = r.handle,
             display   = r.display_name,
             verified  = util.truthy(r.verified),
+            verifiedType = r.verified_type,
             createdAt = tonumber(r.ts),
         }
     end
@@ -434,7 +436,7 @@ function store.listBirdyPosts(cursor, limit, query, authorCid)
     local rows = MySQL.query.await(([[
         SELECT p.id, p.author, p.body, p.parent_id, p.images, p.views,
                UNIX_TIMESTAMP(p.created_at) AS ts,
-               pr.handle, pr.display_name, pr.verified,
+               pr.handle, pr.display_name, pr.verified, pr.verified_type,
                %s AS author_cid,
                (SELECT COUNT(*) FROM phone_birdy_likes l WHERE l.post_id = p.id) AS likes,
                (SELECT COUNT(*) FROM phone_birdy_posts c WHERE c.parent_id = p.id) AS replies
@@ -470,14 +472,16 @@ function store.deleteBirdyPost(id)
     return removed
 end
 
----Sets the verified flag on one Birdy profile.
+---Sets the verified badge on one Birdy profile. The type is written as-is, so callers must have
+---checked it against verify.TYPES first - an unknown string would store fine and then render as
+---the blue fallback, which is exactly the wrong badge to hand out by accident.
 ---@param handle string profile handle
----@param verified boolean
+---@param vtype string|nil badge type, or nil to clear the badge
 ---@return integer affected
-function store.setBirdyVerified(handle, verified)
+function store.setBirdyVerified(handle, vtype)
     return tonumber(MySQL.update.await(
-        'UPDATE phone_birdy_profiles SET verified = ? WHERE handle = ?',
-        { verified and 1 or 0, handle })) or 0
+        'UPDATE phone_birdy_profiles SET verified = ?, verified_type = ? WHERE handle = ?',
+        { vtype and 1 or 0, vtype, handle })) or 0
 end
 
 ---Clears the legacy logged_in flag on whichever Birdy profile this character is signed into, so
@@ -781,7 +785,7 @@ function store.listContent(app, cursor, limit, query)
             label     = r.room_id and ('#' .. r.room_id .. ' as ' .. tostring(r.author))
                 or (r.author and ('@' .. r.author))
                 or (r.username and ('@' .. r.username .. (r.name and (' · ' .. r.name .. ', ' .. tostring(r.age)) or '')))
-                or (r.conversation and ((r.conversation:sub(1, 2) == 'g-') and ('group ' .. r.conversation) or ('to ' .. util.formatNumber(r.conversation))))
+                or (r.conversation and ((lib.string.startsWith(r.conversation, 'g-')) and ('group ' .. r.conversation) or ('to ' .. util.formatNumber(r.conversation))))
                 or nil,
         }
     end

@@ -3,8 +3,18 @@
 -- resource start.
 return {
     -- New profiles start unverified. Flip to true to hand everyone the blue
-    -- check, or set verified = 1 per-citizenid in phone_birdy_profiles.
+    -- check, or set a badge per-account with /birdyverify <handle> <type>.
     DefaultVerified = false,
+
+    -- Buying the blue check from inside the app (Profile > Edit profile).
+    -- Only blue is ever purchasable: the gold business and grey government
+    -- badges assert who someone is, so they stay staff-granted through the
+    -- admin panel or /birdyverify. Set Enabled = false to hide the row.
+    Verification = {
+        Enabled = true,
+        Price   = 25000,
+        Account = 'bank',
+    },
 
     -- Max length of a post / reply body. Mirrors the React composer's
     -- maxLength so client and server agree.

@@ -4,7 +4,7 @@ import { t } from '@/i18n';
 import { useRefreshOnReconnect } from '@/hooks/useRefreshOnReconnect';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { useSessionState } from '@/hooks/useSessionState';
-import { takeMailTarget } from '@/shell/deeplink';
+import { onOpenMail, takeMailTarget } from '@/shell/deeplink';
 import { AppAuth } from '@/shared/AppAuth';
 import { ChangePasswordPage } from '@/shared/ChangePasswordPage';
 import { MAIL_DOMAIN, accountsConfirmReset, accountsMyNumber, accountsRequestReset, accountsSavePassword, accountsSavedLogin, accountsSavedLogins, accountsSuggestCode } from '@/core/accountsApi';
@@ -68,11 +68,26 @@ export function Mail({ onClose }: { onClose: () => void }) {
     useEffect(() => { void accountsMyNumber().then(setMyNumber); }, []);
     useEffect(() => { void listSavedEmails().then(applySavedState); }, [applySavedState]);
 
-    useLayoutEffect(() => {
+    // Consumed on mount AND on every later request. The AppDeck keeps this component alive, so a
+    // notification tapped while Mail is already mounted never re-runs a mount-only effect: that is
+    // why opening a mail banner used to land on whatever the app was last showing.
+    const applyMailTarget = useCallback(() => {
         const t = takeMailTarget();
-        if (t?.to) setComposeFor({ to: t.to });
+        if (!t) return;
+        if (t.to) setComposeFor({ to: t.to });
+        if (t.message) {
+            setNav({
+                stage:     'detail',
+                folder:    t.message.folder as Folder,
+                msgId:     t.message.msgId,
+                accountId: t.message.accountId,
+            });
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useLayoutEffect(applyMailTarget, [applyMailTarget]);
+    useEffect(() => onOpenMail(applyMailTarget), [applyMailTarget]);
     useEffect(() => { void accountsSavedLogin('mail').then(setSavedLogin); }, []);
     useEffect(() => { void accountsSavedLogins('mail').then(setSavedMailLogins); }, [accounts.length]);
 

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-    Clapperboard, Flame, Hash, Images, LayoutDashboard, MessageSquare, Newspaper,
+    Clapperboard, Flag, Flame, Hash, Images, LayoutDashboard, MessageSquare, Newspaper,
     ScrollText, Search, ShieldCheck, ShoppingBag, Skull, VolumeX, X,
 } from 'lucide-react';
 import clsx from 'clsx';
 
+import { isDemo } from '@/core/demo';
 import { fetchNui } from '@/core/nui';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { QuipMark } from '@/apps/birdy/QuipMark';
@@ -15,13 +16,14 @@ import { ContentPage } from './pages/ContentPage';
 import { Dashboard } from './pages/Dashboard';
 import { MutesPage } from './pages/MutesPage';
 import { NumbersPage } from './pages/NumbersPage';
+import { RacingPage } from './pages/RacingPage';
 import { PlayerDetail } from './pages/PlayerDetail';
 import { PlayersPage } from './pages/PlayersPage';
 import { ToastHost, useToasts } from './ui';
 
 type PageId =
     | 'dashboard' | 'players' | 'numbers' | 'birdy' | 'mutes' | 'audit'
-    | 'messages' | 'darkchat' | 'photogram' | 'vibez' | 'cherry' | 'marketplace' | 'pages' | 'gallery';
+    | 'messages' | 'darkchat' | 'photogram' | 'vibez' | 'cherry' | 'marketplace' | 'pages' | 'gallery' | 'racing';
 
 interface NavItem { id: PageId; label: string; icon: React.ReactNode }
 
@@ -43,6 +45,7 @@ const NAV_APPS: NavItem[] = [
     { id: 'marketplace', label: 'Marketplace', icon: <ShoppingBag size={15} /> },
     { id: 'pages',       label: 'Pages',       icon: <Newspaper size={15} /> },
     { id: 'gallery',     label: 'Gallery',     icon: <Images size={15} /> },
+    { id: 'racing',      label: 'Racing',      icon: <Flag size={15} /> },
 ];
 
 const PAGE_TITLE: Record<PageId, string> = {
@@ -60,6 +63,7 @@ const PAGE_TITLE: Record<PageId, string> = {
     marketplace: 'Marketplace moderation',
     pages:       'Pages moderation',
     gallery:     'Gallery — player photos',
+    racing:      'Racing — track board',
 };
 
 // Per-app config for the generic content browser.
@@ -78,6 +82,7 @@ export function AdminPanel() {
     const [open, setOpen] = useState(false);
     const [adminName, setAdminName] = useState<string | undefined>();
     const [simEnabled, setSimEnabled] = useState(false);
+    const [racingEnabled, setRacingEnabled] = useState(false);
     const [page, setPage] = useState<PageId>('dashboard');
     const [playerCid, setPlayerCid] = useState<string | null>(null);
     const [searchSeed, setSearchSeed] = useState('');
@@ -86,6 +91,7 @@ export function AdminPanel() {
     useNuiEvent('sd-phone:admin:open', useCallback((data) => {
         setAdminName(data?.adminName);
         setSimEnabled(data?.sim === true);
+        setRacingEnabled(data?.racing === true);
         setPage('dashboard');
         setPlayerCid(null);
         setSearchSeed('');
@@ -145,9 +151,17 @@ export function AdminPanel() {
     const contentCfg = CONTENT_PAGES[page];
 
     return (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center p-6 font-sf" onMouseDown={close}>
+        <div
+            className={`fixed inset-0 z-[400] flex items-center justify-center p-6 font-sf${
+                isDemo ? ' bg-[#07080a]' : ''
+            }`}
+            onMouseDown={close}
+        >
             {/* No backdrop-filter here: FiveM's CEF can't sample the game feed behind a
-                transparent NUI page, so backdrop-blur paints a huge black region instead. */}
+                transparent NUI page, so backdrop-blur paints a huge black region instead.
+                The demo build fills instead: on a website there is no game behind the panel,
+                only the phone itself, and a device standing behind a desktop window reads as
+                a bug rather than as context. */}
             <div
                 className="relative flex h-[min(780px,92vh)] w-[min(1180px,94vw)] overflow-hidden rounded-2xl bg-[#101114] shadow-2xl ring-1 ring-white/10"
                 onMouseDown={e => e.stopPropagation()}
@@ -166,7 +180,7 @@ export function AdminPanel() {
                     <nav className="admin-scroll flex-1 space-y-0.5 overflow-y-auto px-2.5">
                         {NAV_MAIN.filter(item => item.id !== 'numbers' || simEnabled).map(item => renderNavItem(item))}
                         <div className="px-3 pb-1 pt-3 text-[10.5px] font-bold uppercase tracking-widest text-zinc-600">Apps</div>
-                        {NAV_APPS.map(item => renderNavItem(item))}
+                        {NAV_APPS.filter(item => item.id !== 'racing' || racingEnabled).map(item => renderNavItem(item))}
                     </nav>
                     <div className="border-t border-white/[0.06] px-4 py-3 text-[11.5px] text-zinc-500">
                         Signed in as<br /><span className="font-semibold text-zinc-300">{adminName ?? 'Admin'}</span>
@@ -202,6 +216,7 @@ export function AdminPanel() {
                         {page === 'birdy' && <BirdyPage onOpenPlayer={openPlayer} toast={push} />}
                         {page === 'mutes' && <MutesPage onOpenPlayer={openPlayer} toast={push} />}
                         {page === 'audit' && <AuditPage onOpenPlayer={openPlayer} />}
+                        {page === 'racing' && <RacingPage onToast={push} />}
                         {contentCfg && (
                             <ContentPage
                                 key={page === 'gallery' ? `gallery:${gallerySeed}` : page}

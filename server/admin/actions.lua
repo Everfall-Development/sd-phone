@@ -14,6 +14,8 @@ local store      = require 'server.admin.store'
 local moderation = require 'server.admin.moderation'
 ---@type table Phone wipe (server.admin.wipe): full per-citizenid data wipe.
 local wipe       = require 'server.admin.wipe'
+---@type table Birdy badge vocabulary (server.birdy.verify): allowlist + input parsing.
+local verify     = require 'server.birdy.verify'
 local util       = require 'server.util'
 
 ---@type table Actions module; the table returned at end of file.
@@ -47,7 +49,10 @@ local simState = require 'server.sim.state'
 ---@param source number admin player server id
 ---@return string cid, string name
 local function adminIdent(source)
-    return player.getRealIdentifier(source) or ('src:' .. tostring(source)), player.getName(source)
+    -- admin_name is NOT NULL, and getName finds nothing for the console (or for a player who
+    -- dropped mid-action) - without the fallback the audit insert fails and only warns.
+    return player.getRealIdentifier(source) or ('src:' .. tostring(source)),
+           player.getName(source) or (source and source > 0 and 'unknown' or 'console')
 end
 
 ---The connected source playing a character, by REAL citizenid (the player bridge's
@@ -498,18 +503,24 @@ function actions.birdyDeletePost(source, payload)
     return ok()
 end
 
----Toggles the verified badge on one Birdy account, addressed by handle: a character can hold
----several, so a citizenid no longer names one.
+---Sets the verified badge on one Birdy account, addressed by handle: a character can hold
+---several, so a citizenid no longer names one. A missing or 'none' type clears the badge.
 ---@param source number admin player server id
----@param payload { handle?: string, verified?: boolean }|nil
+---@param payload { handle?: string, type?: string|false }|nil
 ---@return table envelope
 function actions.birdySetVerified(source, payload)
     local handle = util.trim(payload and payload.handle):lower()
     if handle == '' or #handle > 32 then return fail('Missing account') end
-    local verified = payload and payload.verified == true
-    if store.setBirdyVerified(handle, verified) == 0 then return fail('No Quip profile') end
+
+    -- Not named `ok`: that is the envelope helper this function returns through.
+    local vtype, valid = verify.parse(payload and payload.type)
+    if not valid then return fail('Badge type must be one of: ' .. verify.list()) end
+
+    if store.setBirdyVerified(handle, vtype) == 0 then return fail('No Quip profile') end
+
     local aCid, aName = adminIdent(source)
-    store.audit(aCid, aName, verified and 'birdy-verify' or 'birdy-unverify', nil, '@' .. handle)
+    store.audit(aCid, aName, vtype and 'birdy-verify' or 'birdy-unverify', nil,
+        vtype and ('@' .. handle .. ' (' .. vtype .. ')') or ('@' .. handle))
     return ok()
 end
 

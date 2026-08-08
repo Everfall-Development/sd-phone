@@ -21,7 +21,8 @@ export interface MessagesTarget {
 }
 
 export interface MailTarget {
-    to: string;
+    to?: string;
+    message?: { folder: string; msgId: string; accountId?: string };
 }
 
 interface DeeplinkState {

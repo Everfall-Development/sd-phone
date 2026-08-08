@@ -28,7 +28,7 @@ export function Pages({ onClose: _onClose }: { onClose: () => void }) {
     const open = posts.find(p => p.id === openId) ?? null;
     const contact = useContactActions();
 
-    const animateNav = useDidEnter(posts.length > 0);
+    const animateNav = useDidEnter();
 
     function addPost(draft: PostDraft) {
         setCreating(false);
