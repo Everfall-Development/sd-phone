@@ -42,6 +42,7 @@ local config = {
     Cookie      = require 'configs.cookie',        -- clicker mini-game + leaderboard
     Stocks      = require 'configs.stocks',         -- stock + crypto market, brokerage wallet
     Radio       = require 'configs.radio',          -- frequencies + job-restricted bands
+    Music       = require 'configs.music',          -- which URL sources the Music library accepts
     WeazelNews  = require 'configs.weazelnews',     -- broadcast network: staff-published articles + breaking ticker
     Streaks     = require 'configs.streaks',        -- photo-a-day streaks: milestone cash + global gallery
     Mdt         = require 'configs.mdt',            -- police terminal: departments, permission grades, jail + dispatch limits

@@ -1,22 +1,32 @@
-import { device } from '@device';
+import { getGrid } from '@/device/grid';
 import { freeCellNear } from '../dockMoves';
-import type { WidgetSize, WidgetPlacement } from '@/apps/appstore/appsApi';
+import type { Density, DeviceGrid } from '@/device/types';
+import type { SavedLayout, WidgetSize, WidgetPlacement } from '@/apps/appstore/appsApi';
 
-// The same destructure the homescreen does. A widget's cells have to index the SAME number space
-// the icons are drawn in, so both sides must read the grid from the profile rather than inline it.
-const { cols: COLS, rows: ROWS, icon: ICON, colStride: COL_STRIDE, rowStride: ROW_STRIDE } = device.screen.grid;
+type Placed = Pick<WidgetPlacement, 'size' | 'col' | 'row'>;
 
-export const SPAN: Record<WidgetSize, { w: number; h: number }> = {
+const BASE_SPAN: Record<WidgetSize, { w: number; h: number }> = {
     sm: { w: 2, h: 2 },
     md: { w: 4, h: 2 },
     lg: { w: 4, h: 4 },
 };
 
+export function spanFor(size: WidgetSize, cols: number, rows: number): { w: number; h: number } {
+    const base = BASE_SPAN[size];
+    return { w: Math.min(base.w, cols), h: Math.min(base.h, rows) };
+}
+
+export function spanOf(size: WidgetSize): { w: number; h: number } {
+    const g = getGrid();
+    return spanFor(size, g.cols, g.rows);
+}
+
 export function widgetPx(size: WidgetSize, scale = 1): { width: number; height: number } {
-    const { w, h } = SPAN[size];
+    const g = getGrid();
+    const { w, h } = spanFor(size, g.cols, g.rows);
     return {
-        width:  Math.round((w * ICON + (w - 1) * (COL_STRIDE - ICON)) * scale),
-        height: Math.round((h * ICON + (h - 1) * (ROW_STRIDE - ICON)) * scale),
+        width:  Math.round((w * g.icon + (w - 1) * (g.colStride - g.icon)) * scale),
+        height: Math.round((h * g.icon + (h - 1) * (g.rowStride - g.icon)) * scale),
     };
 }
 
@@ -29,15 +39,30 @@ export function jiggleDeg(size: WidgetSize): number {
     return Math.round(deg * 100) / 100;
 }
 
-export function coveredCells(w: Pick<WidgetPlacement, 'size' | 'col' | 'row'>): number[] {
-    const { w: sw, h: sh } = SPAN[w.size];
+function cellsIn(w: Placed, cols: number, rows: number): number[] {
+    const { w: sw, h: sh } = spanFor(w.size, cols, rows);
     const out: number[] = [];
     for (let r = w.row; r < w.row + sh; r++) {
         for (let c = w.col; c < w.col + sw; c++) {
-            if (r < ROWS && c < COLS) out.push(r * COLS + c);
+            if (r < rows && c < cols) out.push(r * cols + c);
         }
     }
     return out;
+}
+
+export function coveredCells(w: Placed): number[] {
+    const g = getGrid();
+    return cellsIn(w, g.cols, g.rows);
+}
+
+function fitIn(blocked: Set<number>, size: WidgetSize, cols: number, rows: number): { col: number; row: number } | null {
+    const { w: sw, h: sh } = spanFor(size, cols, rows);
+    for (let row = 0; row + sh <= rows; row++) {
+        for (let col = 0; col + sw <= cols; col++) {
+            if (cellsIn({ size, col, row }, cols, rows).every(c => !blocked.has(c))) return { col, row };
+        }
+    }
+    return null;
 }
 
 export function firstFit(
@@ -47,6 +72,7 @@ export function firstFit(
     widgets: WidgetPlacement[],
     itemsPerPage: number,
 ): { col: number; row: number } | null {
+    const g = getGrid();
     const blocked = new Set<number>();
 
     const base = page * itemsPerPage;
@@ -54,24 +80,20 @@ export function firstFit(
         if (slots[base + i]) blocked.add(i);
     }
     for (const w of widgets) {
-        if (w.page === page) coveredCells(w).forEach(c => blocked.add(c));
+        if (w.page === page) cellsIn(w, g.cols, g.rows).forEach(c => blocked.add(c));
     }
 
-    const { w: sw, h: sh } = SPAN[size];
-    for (let row = 0; row + sh <= ROWS; row++) {
-        for (let col = 0; col + sw <= COLS; col++) {
-            const cells = coveredCells({ size, col, row });
-            if (cells.every(c => !blocked.has(c))) return { col, row };
-        }
-    }
-    return null;
+    return fitIn(blocked, size, g.cols, g.rows);
 }
 
-type Placed = Pick<WidgetPlacement, 'size' | 'col' | 'row'>;
+export function fitsIn(w: Placed, cols: number, rows: number): boolean {
+    const { w: sw, h: sh } = spanFor(w.size, cols, rows);
+    return w.col >= 0 && w.row >= 0 && w.col + sw <= cols && w.row + sh <= rows;
+}
 
-export function fitsGrid(w: Placed): boolean {
-    const { w: sw, h: sh } = SPAN[w.size];
-    return w.col >= 0 && w.row >= 0 && w.col + sw <= COLS && w.row + sh <= ROWS;
+function fitsGrid(w: Placed): boolean {
+    const g = getGrid();
+    return fitsIn(w, g.cols, g.rows);
 }
 
 function overlaps(a: Placed, b: Placed): boolean {
@@ -108,6 +130,84 @@ export function trySwap(
         if (w.uid === partner.uid) return nextPartner;
         return w;
     });
+}
+
+export function refitWidgets(widgets: WidgetPlacement[], cols: number, rows: number): WidgetPlacement[] {
+    const taken = new Map<number, Set<number>>();
+    const claim = (page: number, w: Placed) => {
+        const set = taken.get(page) ?? new Set<number>();
+        for (const c of cellsIn(w, cols, rows)) set.add(c);
+        taken.set(page, set);
+    };
+
+    const order = [...widgets].sort((a, b) => a.page - b.page || a.row - b.row || a.col - b.col);
+    const out: WidgetPlacement[] = [];
+
+    for (const w of order) {
+        const { w: sw, h: sh } = spanFor(w.size, cols, rows);
+        let page = w.page;
+        let col  = Math.max(0, Math.min(cols - sw, w.col));
+        let row  = Math.max(0, Math.min(rows - sh, w.row));
+
+        for (;;) {
+            const blocked = taken.get(page) ?? new Set<number>();
+            if (cellsIn({ size: w.size, col, row }, cols, rows).every(c => !blocked.has(c))) break;
+            const spot = fitIn(blocked, w.size, cols, rows);
+            if (spot) { col = spot.col; row = spot.row; break; }
+            page += 1;
+            col = 0;
+            row = 0;
+        }
+
+        claim(page, { size: w.size, col, row });
+        out.push(w.page === page && w.col === col && w.row === row ? w : { ...w, page, col, row });
+    }
+
+    return out;
+}
+
+function flowIcons(ids: string[], widgets: WidgetPlacement[], cols: number, rows: number): (string | null)[] {
+    const perPage = cols * rows;
+    const covered = new Map<number, Set<number>>();
+    for (const w of widgets) {
+        const set = covered.get(w.page) ?? new Set<number>();
+        for (const c of cellsIn(w, cols, rows)) set.add(c);
+        covered.set(w.page, set);
+    }
+
+    const out: (string | null)[] = [];
+    const grow = (upto: number) => { while (out.length <= upto) out.push(null); };
+
+    let cell = 0;
+    for (const id of ids) {
+        while (covered.get(Math.floor(cell / perPage))?.has(cell % perPage)) {
+            grow(cell);
+            cell += 1;
+        }
+        grow(cell);
+        out[cell] = id;
+        cell += 1;
+    }
+
+    const lastWidgetPage = widgets.reduce((m, w) => Math.max(m, w.page), -1);
+    grow((lastWidgetPage + 1) * perPage - 1);
+    while (out.length % perPage !== 0) out.push(null);
+    return out;
+}
+
+export function refitLayout(layout: SavedLayout, from: DeviceGrid, to: DeviceGrid, density?: Density): SavedLayout {
+    const sameGrid = from.cols === to.cols && from.rows === to.rows;
+    if (sameGrid && (density === undefined || density === layout.density)) return layout;
+
+    const widgets = refitWidgets(layout.widgets ?? [], to.cols, to.rows);
+    const ids = layout.slots.filter((id): id is string => id !== null);
+
+    return {
+        ...layout,
+        slots: flowIcons(ids, widgets, to.cols, to.rows),
+        ...(widgets.length ? { widgets } : {}),
+        ...(density ? { density } : {}),
+    };
 }
 
 export function pageMoves(

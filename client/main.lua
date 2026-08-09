@@ -62,6 +62,44 @@ do
     NUMBER_FORMAT = { formats = formats, length = math.floor(tonumber(cfg.Length) or 10) }
 end
 
+-- Which URL sources the Music library accepts (configs/music.lua). Blanket YouTube is opt-in, so
+-- the default here has to be `false` for a server whose config predates this file. Hosts are
+-- lowercased once so the UI can compare them against a parsed hostname directly; video ids are
+-- NOT, because YouTube ids are case-sensitive and folding them would let 'AbC' match 'abc'.
+---@type { youtube: boolean, hosts: string[], videos: string[] }
+local MUSIC_SOURCES = {}
+do
+    local cfg = type(config.Music) == 'table' and config.Music or {}
+    local hosts = {}
+    for _, host in ipairs(type(cfg.AllowedHosts) == 'table' and cfg.AllowedHosts or {}) do
+        if type(host) == 'string' and host ~= '' then hosts[#hosts + 1] = host:lower() end
+    end
+    local videos = {}
+    for _, video in ipairs(type(cfg.AllowedVideos) == 'table' and cfg.AllowedVideos or {}) do
+        if type(video) == 'string' and video ~= '' then videos[#videos + 1] = video end
+    end
+    -- Curated tracks accept either a bare URL string or { url, title, artist }, so both are
+    -- normalised to the table form here and the UI only ever sees one shape.
+    local tracks = {}
+    for _, entry in ipairs(type(cfg.AllowedTracks) == 'table' and cfg.AllowedTracks or {}) do
+        local url = type(entry) == 'string' and entry or (type(entry) == 'table' and entry.url)
+        if type(url) == 'string' and url ~= '' then
+            tracks[#tracks + 1] = {
+                url    = url,
+                title  = type(entry) == 'table' and entry.title or nil,
+                artist = type(entry) == 'table' and entry.artist or nil,
+            }
+        end
+    end
+    MUSIC_SOURCES = {
+        youtube  = cfg.AllowYouTube == true,
+        anyAudio = cfg.AllowAnyAudioLink == true,
+        hosts    = hosts,
+        videos   = videos,
+        tracks   = tracks,
+    }
+end
+
 ---@type table Weather bridge (bridge.client.weather): live weather + synced world-time reads.
 local weatherBridge = require 'bridge.client.weather'
 ---@type table Custom third-party app registry (client.customapps): add/remove/message + lifecycle.
@@ -449,6 +487,8 @@ local function OpenPhone()
             apps      = visibleAppList,
             mailDomain = config.Mail.Domain,
             number    = NUMBER_FORMAT,
+            music     = MUSIC_SOURCES,
+            bootScreen = config.Phone.BootScreen ~= false,
             wallpaper = {
                 lock = config.Lockscreen.Wallpaper,
                 home = config.Apps.Wallpaper,

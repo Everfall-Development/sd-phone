@@ -1,21 +1,21 @@
 
-import marimba    from '@/assets/tones/ringtones/marimba.mp3';
-import reflection from '@/assets/tones/ringtones/reflection.mp3';
-import classic    from '@/assets/tones/ringtones/classic.mp3';
-import signal     from '@/assets/tones/ringtones/signal.mp3';
-import hold       from '@/assets/tones/ringtones/hold.mp3';
-import aria       from '@/assets/tones/ringtones/aria.mp3';
-import mirage     from '@/assets/tones/ringtones/mirage.mp3';
-import twinkle    from '@/assets/tones/ringtones/twinkle.mp3';
+import nimbus   from '@/assets/tones/ringtones/nimbus.mp3';
+import meridian from '@/assets/tones/ringtones/meridian.mp3';
+import lantern  from '@/assets/tones/ringtones/lantern.mp3';
+import prism    from '@/assets/tones/ringtones/prism.mp3';
+import solstice from '@/assets/tones/ringtones/solstice.mp3';
+import vesper   from '@/assets/tones/ringtones/vesper.mp3';
+import drift    from '@/assets/tones/ringtones/drift.mp3';
+import ember    from '@/assets/tones/ringtones/ember.mp3';
 
-import bell    from '@/assets/tones/notification/bell.mp3';
-import chime   from '@/assets/tones/notification/chime.mp3';
-import bloom   from '@/assets/tones/notification/bloom.mp3';
-import pop     from '@/assets/tones/notification/pop.mp3';
-import bubble  from '@/assets/tones/notification/bubble.mp3';
-import glimmer from '@/assets/tones/notification/glimmer.mp3';
-import note    from '@/assets/tones/notification/note.mp3';
-import tap     from '@/assets/tones/notification/tap.mp3';
+import quill   from '@/assets/tones/notification/quill.mp3';
+import dew     from '@/assets/tones/notification/dew.mp3';
+import wisp    from '@/assets/tones/notification/wisp.mp3';
+import blip    from '@/assets/tones/notification/blip.mp3';
+import murmur  from '@/assets/tones/notification/murmur.mp3';
+import spark   from '@/assets/tones/notification/spark.mp3';
+import flicker from '@/assets/tones/notification/flicker.mp3';
+import cinder  from '@/assets/tones/notification/cinder.mp3';
 
 export type ToneKind = 'ringtone' | 'notification';
 
@@ -26,29 +26,52 @@ export interface Tone {
 }
 
 export const RINGTONES: Tone[] = [
-    { id: 'marimba',    name: 'Marimba',    url: marimba },
-    { id: 'reflection', name: 'Reflection', url: reflection },
-    { id: 'classic',    name: 'Classic',    url: classic },
-    { id: 'signal',     name: 'Signal',     url: signal },
-    { id: 'hold',       name: 'Hold',       url: hold },
-    { id: 'aria',       name: 'Aria',       url: aria },
-    { id: 'mirage',     name: 'Mirage',     url: mirage },
-    { id: 'twinkle',    name: 'Twinkle',    url: twinkle },
+    { id: 'nimbus',   name: 'Nimbus',   url: nimbus },
+    { id: 'meridian', name: 'Meridian', url: meridian },
+    { id: 'lantern',  name: 'Lantern',  url: lantern },
+    { id: 'prism',    name: 'Prism',    url: prism },
+    { id: 'solstice', name: 'Solstice', url: solstice },
+    { id: 'vesper',   name: 'Vesper',   url: vesper },
+    { id: 'drift',    name: 'Drift',    url: drift },
+    { id: 'ember',    name: 'Ember',    url: ember },
 ];
 
 export const NOTIFICATION_TONES: Tone[] = [
-    { id: 'bell',    name: 'Bell',    url: bell },
-    { id: 'chime',   name: 'Chime',   url: chime },
-    { id: 'bloom',   name: 'Bloom',   url: bloom },
-    { id: 'pop',     name: 'Pop',     url: pop },
-    { id: 'bubble',  name: 'Bubble',  url: bubble },
-    { id: 'glimmer', name: 'Glimmer', url: glimmer },
-    { id: 'note',    name: 'Note',    url: note },
-    { id: 'tap',     name: 'Tap',     url: tap },
+    { id: 'quill',   name: 'Quill',   url: quill },
+    { id: 'dew',     name: 'Dew',     url: dew },
+    { id: 'wisp',    name: 'Wisp',    url: wisp },
+    { id: 'blip',    name: 'Blip',    url: blip },
+    { id: 'murmur',  name: 'Murmur',  url: murmur },
+    { id: 'spark',   name: 'Spark',   url: spark },
+    { id: 'flicker', name: 'Flicker', url: flicker },
+    { id: 'cinder',  name: 'Cinder',  url: cinder },
 ];
 
-export const DEFAULT_RINGTONE     = 'marimba';
-export const DEFAULT_NOTIFICATION = 'note';
+export const DEFAULT_RINGTONE     = 'nimbus';
+export const DEFAULT_NOTIFICATION = 'flicker';
+
+const RENAMED_IDS: Record<string, string> = {
+    marimba:    'nimbus',
+    reflection: 'meridian',
+    classic:    'lantern',
+    signal:     'prism',
+    hold:       'solstice',
+    aria:       'vesper',
+    mirage:     'drift',
+    twinkle:    'ember',
+    bell:       'quill',
+    chime:      'dew',
+    bloom:      'wisp',
+    pop:        'blip',
+    bubble:     'murmur',
+    glimmer:    'spark',
+    note:       'flicker',
+    tap:        'cinder',
+};
+
+export function canonicalToneId(id: string): string {
+    return RENAMED_IDS[id] ?? id;
+}
 
 export interface CustomTone {
     id:   string;
@@ -62,6 +85,8 @@ export function resolveTone(kind: ToneKind, id: string, custom: CustomTone[]): {
     if (builtin) return { url: builtin.url, name: builtin.name };
     const c = custom.find(t => t.id === id);
     if (c) return { url: c.url, name: c.name };
+    const renamed = list.find(t => t.id === canonicalToneId(id));
+    if (renamed) return { url: renamed.url, name: renamed.name };
     const fallback = kind === 'ringtone' ? DEFAULT_RINGTONE : DEFAULT_NOTIFICATION;
     const def = list.find(t => t.id === fallback) ?? list[0];
     return { url: def.url, name: def.name };
@@ -74,5 +99,5 @@ function listFor(kind: ToneKind): Tone[] {
 export function toneUrl(kind: ToneKind, id: string): string {
     const list = listFor(kind);
     const fallback = kind === 'ringtone' ? DEFAULT_RINGTONE : DEFAULT_NOTIFICATION;
-    return (list.find(t => t.id === id) ?? list.find(t => t.id === fallback) ?? list[0]).url;
+    return (list.find(t => t.id === canonicalToneId(id)) ?? list.find(t => t.id === fallback) ?? list[0]).url;
 }

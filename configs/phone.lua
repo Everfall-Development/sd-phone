@@ -61,6 +61,13 @@ return {
     BlockWhileDead = true,
     BlockWhileSwimming = true,
 
+    -- The boot animation: your logo over a lit backdrop, played once when the
+    -- resource starts and the player first opens their phone, never on ordinary
+    -- opens after that. Off by default so an untouched install goes straight to
+    -- the lockscreen; set true to turn it on. Players who pick No Motion in
+    -- Accessibility never see it either way.
+    BootScreen = false,
+
     -- Let the player walk around while the phone is open (the game keeps
     -- receiving input alongside the UI). Mouse-look, aiming, firing, melee and
     -- weapon switching are suppressed so the mouse only drives the on-screen

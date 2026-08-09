@@ -21,6 +21,7 @@ import type { DraftState } from './iconThemeDraft';
 import { ThemeTile, ThemeTileLabel } from './IconThemePreview';
 import { IconThemeEditorPage } from './IconThemeEditorPage';
 import { IconThemeStartPage } from './IconThemeStartPage';
+import { AppNamesPage } from './AppNamesPage';
 
 const STRIP_APPS = PREVIEW_APPS.slice(0, 4);
 
@@ -35,6 +36,7 @@ export function AppIconsPage({ onBack }: { onBack: () => void }) {
     const [editing, setEditing] = useSessionState<string | null>('settings:iconThemeEditor', null);
     const [seed,    setSeed]    = useSessionState<DraftState | null>('settings:iconThemeSeed', null);
     const [pairing, setPairing] = useState<string | null>(null);
+    const [renaming, setRenaming] = useSessionState('settings:appNames', false);
 
     const editTarget = editing === null ? null : custom.find(c => c.id === editing) ?? null;
 
@@ -50,7 +52,9 @@ export function AppIconsPage({ onBack }: { onBack: () => void }) {
     }
 
     const sub =
-        seed !== null ? (
+        renaming ? (
+            <AppNamesPage onBack={() => setRenaming(false)} />
+        ) : seed !== null ? (
             <IconThemeEditorPage existing={null} seed={seed} onBack={closeEditor} />
         ) : editing === 'new' ? (
             <IconThemeStartPage onStart={setSeed} onBack={() => setEditing(null)} />
@@ -135,6 +139,12 @@ export function AppIconsPage({ onBack }: { onBack: () => void }) {
                     chevron={false}
                     right={<div className="pointer-events-none -my-1"><Toggle on={showAppNames} /></div>}
                     onPress={() => setShowAppNames(!showAppNames)}
+                    divider
+                />
+                <ListRow
+                    label={t('settings.renameApps', 'Rename Apps')}
+                    sub={t('settings.renameAppsSub', 'Give apps your own names')}
+                    onPress={() => setRenaming(true)}
                 />
             </ListGroup>
 

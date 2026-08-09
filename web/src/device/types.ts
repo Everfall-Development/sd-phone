@@ -43,6 +43,15 @@ export interface DeviceGrid {
     stripTop: number;
 }
 
+export type Density = 'compact' | 'default' | 'large';
+
+export interface DeviceDensity {
+    cols: number;
+    rows: number;
+    padX: number;
+    icon: number;
+}
+
 /**
  * Chassis finish. `polished` is the phone's high-contrast metal sweep, which sells a small rail.
  * `matte` flattens the same ramp for a large slab, where that sweep reads as a shiny toy rather
@@ -66,6 +75,7 @@ export interface DeviceScreen {
     buttonWidth?: number;
     buttons: readonly DeviceButton[];
     grid: DeviceGrid;
+    densities: Record<Exclude<Density, 'default'>, DeviceDensity>;
     /**
      * Dock width. `true` stretches the tray edge to edge and spreads its icons across it, which
      * suits a narrow phone. `false` sizes the tray to its contents and centres it, the way a

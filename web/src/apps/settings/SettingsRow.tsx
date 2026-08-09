@@ -1,6 +1,6 @@
 import {
     Accessibility, Antenna, BatteryFull, Bell, Bluetooth, Calendar,
-    ChevronRight, Compass, CreditCard, Fingerprint, Gamepad2, Hourglass,
+    ChevronRight, Compass, CreditCard, Fingerprint, Gamepad2, Grid2x2, Hourglass,
     Image as ImageIcon, Key, Languages, LayoutGrid, ListTodo, Lock, Mail,
     MapPin, MessageCircle, Mic, Moon, Newspaper, PawPrint, Phone, Plane, Search,
     Settings2, ShieldCheck, ShoppingBag, Siren, SlidersHorizontal,
@@ -18,7 +18,7 @@ const ICONS: Record<IconName, LucideIcon> = {
     Image: ImageIcon, Sparkles, Fingerprint, Siren, BatteryFull, ShieldCheck,
     ShoppingBag, CreditCard, Gamepad2, Lock, Mail, User, Calendar, StickyNote,
     ListTodo, Mic, Phone, MessageCircle, Video, Compass, Newspaper, Languages,
-    MapPin, Zap, PawPrint,
+    MapPin, Zap, PawPrint, Grid2x2,
 };
 
 export function SettingsRow({ row, divider, onPress }: { row: SettingsRowDef; divider: boolean; onPress?: () => void }) {

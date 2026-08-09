@@ -15,7 +15,7 @@ for _, id in ipairs({
     'maps', 'music', 'stocks', 'ryde', 'notes', 'voicememos', 'health', 'compass', 'groups',
     'services', 'pages', 'review', 'marketplace', 'radio', 'darkchat', 'cherry', 'photogram',
     'garages', 'homes', 'calculator', 'passwords', 'cookie', 'wordle', 'flappy', 'blocks',
-    'blackjack', 'climber', 'railrunner', 'connectfour', 'chess', 'battleship', 'vibez',
+    'blackjack', 'climber', 'connectfour', 'chess', 'battleship', 'vibez',
     'weazelnews', 'streaks', 'birdy', 'appstore', 'camera',
 }) do SD_APPS[id] = true end
 

@@ -6,7 +6,7 @@ import { t } from '@/i18n';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { Sheet } from '@/ui/Sheet';
 import { resolveWallpaper } from '../wallpapers';
-import { SPAN, widgetPx } from './geometry';
+import { spanOf, widgetPx } from './geometry';
 import { useWidgetCatalog } from './registry';
 
 const SIZE_LABEL: Record<WidgetSize, string> = { sm: 'Small', md: 'Medium', lg: 'Large' };
@@ -123,7 +123,7 @@ export function WidgetGallery({
                                     </div>
                                 )}
                                 <span className="mt-2.5 text-[14px] font-medium tabular-nums tracking-[0.02em] text-ios-gray">
-                                    {t('widgets.grid', '{cols} x {rows} grid', { cols: SPAN[size].w, rows: SPAN[size].h })}
+                                    {t('widgets.grid', '{cols} x {rows} grid', { cols: spanOf(size).w, rows: spanOf(size).h })}
                                 </span>
                                 <button
                                     type="button"

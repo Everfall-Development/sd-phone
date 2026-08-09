@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 
-import { isDemo } from '@/core/demo';
+import { demoAdminOnly } from '@/core/demo';
 import { fetchNui } from '@/core/nui';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { QuipMark } from '@/apps/birdy/QuipMark';
@@ -79,10 +79,12 @@ const CONTENT_PAGES: Record<string, { search: string; empty: string; deleteBody:
 };
 
 export function AdminPanel() {
-    const [open, setOpen] = useState(false);
-    const [adminName, setAdminName] = useState<string | undefined>();
+    // Open on the first paint in the website's admin view, so the panel is what
+    // renders rather than something that appears a moment after the phone.
+    const [open, setOpen] = useState(demoAdminOnly);
+    const [adminName, setAdminName] = useState<string | undefined>(demoAdminOnly ? 'Demo Admin' : undefined);
     const [simEnabled, setSimEnabled] = useState(false);
-    const [racingEnabled, setRacingEnabled] = useState(false);
+    const [racingEnabled, setRacingEnabled] = useState(demoAdminOnly);
     const [page, setPage] = useState<PageId>('dashboard');
     const [playerCid, setPlayerCid] = useState<string | null>(null);
     const [searchSeed, setSearchSeed] = useState('');
@@ -152,18 +154,21 @@ export function AdminPanel() {
 
     return (
         <div
-            className={`fixed inset-0 z-[400] flex items-center justify-center p-6 font-sf${
-                isDemo ? ' bg-[#07080a]' : ''
-            }`}
-            onMouseDown={close}
+            className="admin-scrim-in fixed inset-0 z-[400] flex items-center justify-center p-6 font-sf"
+            onMouseDown={demoAdminOnly ? undefined : close}
         >
             {/* No backdrop-filter here: FiveM's CEF can't sample the game feed behind a
                 transparent NUI page, so backdrop-blur paints a huge black region instead.
-                The demo build fills instead: on a website there is no game behind the panel,
-                only the phone itself, and a device standing behind a desktop window reads as
-                a bug rather than as context. */}
+                In the website's admin view there is nothing behind it either, so the panel
+                fills the frame instead of floating at a capped size: the padding above is
+                the same 24px inset the device chassis sits at, which keeps it clear of the
+                bench's registration marks. */}
             <div
-                className="relative flex h-[min(780px,92vh)] w-[min(1180px,94vw)] overflow-hidden rounded-2xl bg-[#101114] shadow-2xl ring-1 ring-white/10"
+                className={`admin-panel-in relative flex overflow-hidden bg-[#101114] ${
+                    demoAdminOnly
+                        ? 'h-full w-full rounded-xl'
+                        : 'h-[min(780px,92vh)] w-[min(1180px,94vw)] rounded-2xl shadow-2xl ring-1 ring-white/10'
+                }`}
                 onMouseDown={e => e.stopPropagation()}
             >
                 {/* Sidebar */}

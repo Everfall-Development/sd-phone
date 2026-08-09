@@ -31,7 +31,7 @@ const PAL: Record<string, string> = {
 
 const WORDLE_CONFIG: GameStartConfig = {
     icon: WordleIcon,
-    title: t('wordle.title', 'Wordle'),
+    title: t('wordle.title', 'Penta'),
     accent: ACCENT,
     sideOptions: [{ id: 'a', label: t('wordle.player1', 'Player 1') }, { id: 'b', label: t('wordle.player2', 'Player 2') }, { id: 'random', label: t('wordle.random', 'Random') }],
     onlineBlurb: t('wordle.onlineBlurb', 'Create or join a lobby, set a wager, and race a friend to the same word.'),
@@ -106,7 +106,7 @@ export function Wordle({ onClose: _onClose }: Props) {
     }
 
     const inMatch = screen === 'game' && !resolved && !ended;
-    const title = screen === 'lobby' ? (lobby ? t('wordle.lobby', 'Lobby') : t('wordle.playOnline', 'Play Online')) : screen === 'leaderboard' ? t('wordle.leaderboard', 'Leaderboard') : t('wordle.title', 'Wordle');
+    const title = screen === 'lobby' ? (lobby ? t('wordle.lobby', 'Lobby') : t('wordle.playOnline', 'Play Online')) : screen === 'leaderboard' ? t('wordle.leaderboard', 'Leaderboard') : t('wordle.title', 'Penta');
 
     return (
         <div className="absolute inset-0 z-10 flex flex-col select-none" style={{ backgroundColor: PAL.bg, color: PAL.text }}>

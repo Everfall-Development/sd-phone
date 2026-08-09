@@ -12,6 +12,10 @@ const FRAME_COLORS: Record<string, string> = {
 
 export const DEFAULT_FRAME_COLOR = 'black';
 
+export function frameHex(name: string): string {
+    return FRAME_COLORS[name] ?? FRAME_COLORS[DEFAULT_FRAME_COLOR];
+}
+
 function clamp(n: number): number { return Math.max(0, Math.min(255, Math.round(n))); }
 
 function parse(hex: string): [number, number, number] {

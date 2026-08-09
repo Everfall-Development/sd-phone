@@ -35,5 +35,9 @@ export const device: DeviceProfile = {
             rowStride: 122,
             stripTop:  70,
         },
+        densities: {
+            compact: { cols: 5, rows: 7, padX: 22, icon: 62 },
+            large:   { cols: 3, rows: 5, padX: 40, icon: 96 },
+        },
     },
 };

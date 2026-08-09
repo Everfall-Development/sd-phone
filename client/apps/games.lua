@@ -1,5 +1,4 @@
--- Every online game (chess, connectfour, battleship, wordle) plus Rail Runner's single-player
--- profile (rr* actions: high scores, coin wallet, cosmetics) shares this one bridge into the
+-- Every online game (chess, connectfour, battleship, wordle) shares this one bridge into the
 -- generic games engine.
 ---@type string[] NUI action suffixes proxied 1:1 to sd-phone:server:games:<action>.
 local ACTIONS = {
@@ -8,7 +7,6 @@ local ACTIONS = {
     'relay', 'resign', 'finish', 'report', 'stats', 'record', 'leaderboard', 'submitScore', 'scoreboard',
     'chipsGet', 'chipsBuy', 'chipsSell',
     'bjDeal', 'bjHit', 'bjStand', 'bjDouble',
-    'rrProfile', 'rrSubmit', 'rrBuy', 'rrSelect', 'rrLeaderboard',
 }
 
 -- Thin delegates into the games engine (server/games/engine.lua).

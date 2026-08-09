@@ -3,7 +3,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 
-import { youtubeId } from './data';
+import { isSourceAllowed, youtubeId, youtubePlaybackPossible } from './data';
 import type { Track } from './data';
 
 declare global {
@@ -13,6 +13,7 @@ declare global {
 let ytApiPromise: Promise<void> | null = null;
 function loadYouTubeApi(): Promise<void> {
     if (typeof window === 'undefined') return Promise.resolve();
+    if (!youtubePlaybackPossible()) return Promise.resolve();
     if (window.YT && window.YT.Player) return Promise.resolve();
     if (!ytApiPromise) {
         ytApiPromise = new Promise<void>(resolve => {
@@ -71,6 +72,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const ytHostRef = useRef<HTMLDivElement>(null);
     const ytRef     = useRef<any>(null);
     const ytReady   = useRef(false);
+    const ytPlayerPromise = useRef<Promise<void> | null>(null);
     const handlers  = useRef<{ ended: () => void }>({ ended: () => {} });
     const wantPlay  = useRef(false);
     const timeRef   = useRef(0);
@@ -88,27 +90,42 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         return isFinite(v) && v > 0 ? Math.min(1, v) : 1;
     });
 
-    useEffect(() => {
-        let cancelled = false;
-        loadYouTubeApi().then(() => {
-            if (cancelled || !ytHostRef.current || ytRef.current) return;
-            ytRef.current = new window.YT.Player(ytHostRef.current, {
-                height: '1', width: '1',
-                playerVars: { controls: 0, disablekb: 1, playsinline: 1 },
-                events: {
-                    onReady: () => { ytReady.current = true; ytRef.current?.setVolume?.(Math.round(volume * 100)); },
-                    onStateChange: (e: any) => {
-                        if (e.data === 0) handlers.current.ended();
-                        else if (e.data === 1) setPlaying(true);
-                        // Only honour a pause the user actually asked for — ignore the
-                        // spurious "paused" the player emits mid-track-switch.
-                        else if (e.data === 2 && !wantPlay.current) setPlaying(false);
+    const volumeRef = useRef(volume);
+    useEffect(() => { volumeRef.current = volume; }, [volume]);
+
+    const ensureYtPlayer = useCallback((): Promise<void> => {
+        if (ytPlayerPromise.current) return ytPlayerPromise.current;
+        const attempt = (async () => {
+            await loadYouTubeApi();
+            if (ytRef.current || !ytHostRef.current || !window.YT?.Player) {
+                ytPlayerPromise.current = null;
+                return;
+            }
+            await new Promise<void>(resolve => {
+                const done = () => { window.clearTimeout(guard); resolve(); };
+                const guard = window.setTimeout(resolve, 3000);
+                ytRef.current = new window.YT.Player(ytHostRef.current, {
+                    height: '1', width: '1',
+                    playerVars: { controls: 0, disablekb: 1, playsinline: 1 },
+                    events: {
+                        onReady: (e: any) => {
+                            ytReady.current = true;
+                            e.target?.setVolume?.(Math.round(volumeRef.current * 100));
+                            done();
+                        },
+                        onStateChange: (e: any) => {
+                            if (e.data === 0) handlers.current.ended();
+                            else if (e.data === 1) setPlaying(true);
+                            // Only honour a pause the user actually asked for — ignore the
+                            // spurious "paused" the player emits mid-track-switch.
+                            else if (e.data === 2 && !wantPlay.current) setPlaying(false);
+                        },
                     },
-                },
+                });
             });
-        });
-        return () => { cancelled = true; };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        })();
+        ytPlayerPromise.current = attempt;
+        return attempt;
     }, []);
 
     useEffect(() => {
@@ -127,6 +144,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         const a = audioRef.current;
         if (!current) { a?.pause(); try { ytRef.current?.stopVideo?.(); } catch { /* */ } return; }
+        if (youtubeId(current.url) && !isSourceAllowed(current.url)) { a?.pause(); setPlaying(false); return; }
         const vid = youtubeId(current.url);
         if (vid) {
             a?.pause();
@@ -135,7 +153,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
                 if (!playing) window.setTimeout(() => ytRef.current?.pauseVideo?.(), 250);
             };
             if (ytReady.current) start();
-            else loadYouTubeApi().then(() => window.setTimeout(start, 200));
+            else void ensureYtPlayer().then(start);
         } else {
             try { ytRef.current?.stopVideo?.(); } catch { /* */ }
             if (a) {

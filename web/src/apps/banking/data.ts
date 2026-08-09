@@ -80,7 +80,7 @@ export function getCategories(): Record<Category, CategoryMeta> {
         connectfour:   { label: t('banking.catConnectFour', 'Connect Four'),  icon: CircleDot,    color: '#1E66D0' },
         battleship:    { label: t('banking.catBattleship', 'Battleship'),    icon: Ship,         color: '#17A0B5' },
         blackjack:     { label: t('banking.catBlackjack', 'Blackjack'),     icon: Spade,        color: '#1C8A4E' },
-        wordle:        { label: t('banking.catWordle', 'Wordle'),        icon: Type,         color: '#6AAA64' },
+        wordle:        { label: t('banking.catWordle', 'Penta'),        icon: Type,         color: '#6AAA64' },
         ryde:          { label: t('banking.catRyde', 'Ryde'),          icon: Car,          color: '#1c1c1e' },
         streaks:       { label: t('banking.catStreaks', 'Streaks'),       icon: Flame,        color: '#FF7A1A' },
     };

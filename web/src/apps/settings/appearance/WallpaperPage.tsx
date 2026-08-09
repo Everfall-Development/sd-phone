@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Camera, ChevronRight, Flashlight } from 'lucide-react';
 
 import { device } from '@device';
+import { useGrid } from '@/device/grid';
 import { t } from '@/i18n';
 import { formatClockTime, formatLongDate, useDisplayClock } from '@/hooks/useClock';
 import { useIosPush } from '@/hooks/useIosPush';
@@ -20,7 +21,6 @@ import { NavBar } from '@/ui/NavBar';
 // to thumbnail size - the geometry below is read from the device profile, the same source
 // shell/Homescreen.tsx reads, so the previews can't drift from the real screens.
 const { w: SW, h: SH } = device.screen;
-const { cols: COLS, padX: PAD_X, icon: ICON, colStride: COL_STRIDE, rowY0: ROW_Y0, rowStride: ROW_STRIDE, stripTop } = device.screen.grid;
 
 // Default first homescreen page: the first 12 non-dock apps in catalog order. Both lists are
 // filtered the way the real home grid is - a preview must never show an app the device lacks.
@@ -220,6 +220,7 @@ function QuickCircle({ children, animating }: { children: ReactNode; animating: 
 
 
 function HomePreview({ wallpaper, blurred, animating }: { wallpaper: string; blurred: boolean; animating: boolean }) {
+    const { cols: COLS, padX: PAD_X, icon: ICON, colStride: COL_STRIDE, rowY0: ROW_Y0, rowStride: ROW_STRIDE, stripTop } = useGrid();
     return (
         <div className="absolute inset-0 overflow-hidden">
             <div
@@ -268,16 +269,19 @@ function HomePreview({ wallpaper, blurred, animating }: { wallpaper: string; blu
 
 // Static replica of shell/AppIcon.tsx's resting look (tile, radius, shadow, label).
 function PreviewIcon({ icon, label }: { icon: string; label?: string }) {
+    const TILE = useGrid().icon;
     return (
         <div className="flex w-full flex-col items-center gap-[7px]">
             <div
-                className="relative h-[78px] w-[78px] overflow-hidden"
+                className="relative overflow-hidden"
                 style={{
+                    width:        TILE,
+                    height:       TILE,
                     borderRadius: '27.6%',
                     boxShadow: '0 2px 10px rgba(0,0,0,0.38), 0 0 0 0.5px rgba(0,0,0,0.12)',
                 }}
             >
-                <div style={{ width: 60, height: 60, transform: 'scale(1.3)', transformOrigin: '0 0' }}>
+                <div style={{ width: 60, height: 60, transform: `scale(${TILE / 60})`, transformOrigin: '0 0' }}>
                     <AppIconSVG icon={icon} />
                 </div>
             </div>

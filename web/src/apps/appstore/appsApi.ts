@@ -1,5 +1,7 @@
 import { device } from '@device';
-import { fitsGrid } from '@/shell/widgets/geometry';
+import { gridFor, isDensity } from '@/device/grid';
+import type { Density } from '@/device/types';
+import { fitsIn } from '@/shell/widgets/geometry';
 import { fetchNui, isFiveM } from '@/core/nui';
 import { apiData } from '@/core/api';
 import { readJson, writeJson } from '@/lib/storage';
@@ -88,7 +90,7 @@ export interface WidgetPlacement {
  * of pages, which passes Array.isArray while being the wrong shape). A separate optional key
  * leaves that guard intact and lets an older build ignore widgets instead of choking on them.
  */
-export interface SavedLayout { slots: (string | null)[]; folders: FolderDef[]; widgets?: WidgetPlacement[]; dock?: string[] }
+export interface SavedLayout { slots: (string | null)[]; folders: FolderDef[]; widgets?: WidgetPlacement[]; dock?: string[]; density?: Density }
 
 /** Every slot must be an app id or an empty slot; anything else cannot be rendered. */
 function isSlotArray(v: unknown): v is (string | null)[] {
@@ -104,8 +106,9 @@ const THEMES = new Set(['dark', 'light', 'glass']);
  * off-grid cell would either throw or draw outside the page, so it is dropped rather than
  * trusted - same posture as the slot validation above.
  */
-function sanitiseWidgets(v: unknown): WidgetPlacement[] {
+function sanitiseWidgets(v: unknown, density: Density): WidgetPlacement[] {
     if (!Array.isArray(v)) return [];
+    const { cols, rows } = gridFor(density);
     return v
         .map(w => (w && typeof w === 'object' && !ALIGNS.has((w as WidgetPlacement).align as string)
             // Drop a junk alignment rather than the whole widget: losing a tile over a bad
@@ -131,7 +134,7 @@ function sanitiseWidgets(v: unknown): WidgetPlacement[] {
         && Number.isInteger((w as WidgetPlacement).page) && (w as WidgetPlacement).page >= 0
         && Number.isInteger((w as WidgetPlacement).col)
         && Number.isInteger((w as WidgetPlacement).row)
-        && fitsGrid(w as WidgetPlacement));
+        && fitsIn(w as WidgetPlacement, cols, rows));
 }
 
 /**
@@ -146,12 +149,14 @@ function parseValue(v: unknown): SavedLayout | null {
     if (isSlotArray(v)) return { slots: v, folders: [] };
     if (v && typeof v === 'object' && isSlotArray((v as SavedLayout).slots)) {
         const o = v as SavedLayout;
-        const widgets = sanitiseWidgets(o.widgets);
+        const density: Density = isDensity(o.density) ? o.density : 'default';
+        const widgets = sanitiseWidgets(o.widgets, density);
         // Only attached when there is something to attach, so a widget-less layout keeps the
         // exact shape it had before widgets existed.
         return {
             slots: o.slots,
             folders: Array.isArray(o.folders) ? o.folders : [],
+            ...(isDensity(o.density) ? { density: o.density } : {}),
             ...(widgets.length ? { widgets } : {}),
             ...(Array.isArray(o.dock) ? { dock: o.dock.filter((x): x is string => typeof x === 'string') } : {}),
         };

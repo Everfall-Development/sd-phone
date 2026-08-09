@@ -81,7 +81,6 @@ const APP_REGISTRY = {
     blocks:      entry(() => import('@/apps/blocks/Blocks').then(m => ({ default: m.Blocks }))),
     blackjack:   entry(() => import('@/apps/blackjack/Blackjack').then(m => ({ default: m.Blackjack }))),
     climber:     entry(() => import('@/apps/climber/Climber').then(m => ({ default: m.Climber }))),
-    railrunner:  entry(() => import('@/apps/railrunner/RailRunner').then(m => ({ default: m.RailRunner }))),
     connectfour: entry(() => import('@/apps/connectfour/ConnectFour').then(m => ({ default: m.ConnectFour }))),
     chess:       entry(() => import('@/apps/chess/Chess').then(m => ({ default: m.Chess }))),
     battleship:  entry(() => import('@/apps/battleship/Battleship').then(m => ({ default: m.Battleship }))),

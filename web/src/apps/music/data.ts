@@ -30,7 +30,134 @@ export function isYouTube(url: string): boolean {
     return youtubeId(url) !== null;
 }
 
+export interface AllowedTrack {
+    url:     string;
+    title?:  string;
+    artist?: string;
+}
+
+export interface MusicSources {
+    youtube?:  boolean;
+    anyAudio?: boolean;
+    hosts?:    string[];
+    videos?:   string[];
+    tracks?:   AllowedTrack[];
+}
+
+const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
+
+let allowYouTube = false;
+let allowAnyAudio = false;
+let allowedHosts: string[] = [];
+let allowedVideos = new Set<string>();
+let allowedTracks: AllowedTrack[] = [];
+let allowedTrackUrls = new Set<string>();
+
+export function setMusicSources(src: MusicSources | undefined): void {
+    allowYouTube = src?.youtube === true;
+    allowAnyAudio = src?.anyAudio === true;
+    allowedHosts = Array.isArray(src?.hosts)
+        ? src.hosts.filter(h => typeof h === 'string' && h !== '').map(h => h.toLowerCase())
+        : [];
+    allowedVideos = new Set(
+        (Array.isArray(src?.videos) ? src.videos : [])
+            .filter(v => typeof v === 'string')
+            .map(v => youtubeId(v) ?? v.trim())
+            .filter(v => VIDEO_ID.test(v)),
+    );
+    allowedTracks = (Array.isArray(src?.tracks) ? src.tracks : [])
+        .filter(x => !!x && typeof x.url === 'string' && x.url.trim() !== '')
+        .map(x => ({
+            url:    x.url.trim(),
+            title:  typeof x.title === 'string' && x.title !== '' ? x.title : undefined,
+            artist: typeof x.artist === 'string' && x.artist !== '' ? x.artist : undefined,
+        }));
+    allowedTrackUrls = new Set(allowedTracks.map(x => x.url));
+}
+
+export function allowedTrackList(): AllowedTrack[] {
+    return allowedTracks;
+}
+
+export function hasAllowlist(): boolean {
+    return allowedTracks.length > 0 || (!allowYouTube && allowedVideos.size > 0);
+}
+
+export function audioLinksAccepted(): boolean {
+    return allowAnyAudio || allowedHosts.length > 0;
+}
+
+export function anySourceEnabled(): boolean {
+    return allowYouTube || allowAnyAudio
+        || allowedHosts.length > 0 || allowedVideos.size > 0 || allowedTracks.length > 0;
+}
+
+export function youtubePlaybackPossible(): boolean {
+    return allowYouTube || allowedVideos.size > 0;
+}
+
+export function youtubeCurated(): boolean {
+    return !allowYouTube && allowedVideos.size > 0;
+}
+
+export function allowedVideoIds(): string[] {
+    return Array.from(allowedVideos);
+}
+
+export function youtubeWatchUrl(id: string): string {
+    return `https://www.youtube.com/watch?v=${id}`;
+}
+
+export function youtubeThumb(id: string): string {
+    return `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
+}
+
+
+const AUDIO_FILE = /\.(mp3|ogg|oga|opus|wav|m4a|aac|flac|weba)$/i;
+
+function parseUrl(url: string): URL | null {
+    try {
+        const u = new URL(url);
+        return u.protocol === 'http:' || u.protocol === 'https:' ? u : null;
+    } catch {
+        return null;
+    }
+}
+
+function hostAllowed(host: string): boolean {
+    return allowedHosts.some(h => (h.startsWith('.') ? host === h.slice(1) || host.endsWith(h) : host === h));
+}
+
+export type SourceRejection =
+    | 'youtube-off'
+    | 'video-not-approved'
+    | 'host-not-allowed'
+    | 'not-configured'
+    | 'not-audio'
+    | 'invalid';
+
+export function sourceRejection(url: string): SourceRejection | null {
+    const clean = url.trim();
+    if (!clean) return 'invalid';
+    if (allowedTrackUrls.has(clean)) return null;
+    const vid = youtubeId(clean);
+    if (vid) {
+        if (allowYouTube || allowedVideos.has(vid)) return null;
+        return allowedVideos.size > 0 ? 'video-not-approved' : 'youtube-off';
+    }
+    const u = parseUrl(clean);
+    if (!u) return 'invalid';
+    if (allowedHosts.length) return hostAllowed(u.hostname.toLowerCase()) ? null : 'host-not-allowed';
+    if (!allowAnyAudio) return 'not-configured';
+    return AUDIO_FILE.test(u.pathname) ? null : 'not-audio';
+}
+
+export function isSourceAllowed(url: string): boolean {
+    return sourceRejection(url) === null;
+}
+
 export async function fetchYouTubeMeta(url: string): Promise<{ title: string; artist: string }> {
+    if (!isSourceAllowed(url)) return { title: '', artist: '' };
     try {
         const r = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
         if (r.ok) {

@@ -3,10 +3,11 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from
 import { LayoutGrid, Minus, Plus } from 'lucide-react';
 
 import { device } from '@device';
+import { DOCK_BOTTOM, DOCK_PAD_Y, DOTS_GAP, getDensity, getGrid, stripReserve, useGrid } from '@/device/grid';
 import type { AppDef } from '@/core/types';
 import { useTheme } from '@/stores/themeStore';
 import { resolveWallpaper } from './wallpapers';
-import { ART, AppIcon, TILE, TILE_SHADOW, radiusPct } from './AppIcon';
+import { ART, AppIcon, TILE_SHADOW, radiusPct } from './AppIcon';
 import { AppIconSVG } from './AppIconSVG';
 import { AppGlyph } from './AppGlyphs';
 import { AppBadge } from './AppBadge';
@@ -16,7 +17,7 @@ import { AlertDialog } from '@/ui/AlertDialog';
 import type { SavedLayout, WidgetAlign, WidgetPlacement, WidgetSize, WidgetTheme } from '@/apps/appstore/appsApi';
 import type { DockDrag, DockPlan } from './dockMoves';
 import { DOCK_MAX, planDockDrag } from './dockMoves';
-import { SPAN, coveredCells, firstFit, jiggleDeg, landingCell, pageMoves, placeNewApps, reflowAround, trySwap, widgetPx } from './widgets/geometry';
+import { coveredCells, firstFit, jiggleDeg, landingCell, pageMoves, placeNewApps, reflowAround, spanOf, trySwap, widgetPx } from './widgets/geometry';
 import { useDockReflow } from './useDockReflow';
 import { widgetByKind } from './widgets/registry';
 import { launchOriginFrom } from './launchOrigin';
@@ -26,22 +27,22 @@ import { addCard, cardsOf, patchCard, removeCard } from './widgets/stack';
 import { t } from '@/i18n';
 
 
-// ICON is the grid's cell measure. AppIcon's TILE is the same number by construction - the cell IS
-// the artwork - so a centred tile and a left-aligned one land on the same pixel in either mode.
-const { cols: COLS, rows: ROWS, padX: PAD_X, icon: ICON, colStride: COL_STRIDE, rowY0: ROW_Y0, rowStride: ROW_STRIDE, stripTop } = device.screen.grid;
 const { w: SCREEN_W, h: SCREEN_H } = device.screen;
 
 // A phone dock spans the screen and spreads its icons over it. A tablet dock is a floating tray
 // sized to its contents, so the slots stop stretching and the row is centred instead.
 const DOCK_FILL = device.screen.dockFill ?? true;
-const DOCK_BOTTOM = 20;
-const DOCK_PAD_Y  = 28;
-const DOTS_GAP    = 6;
-const DOTS_BOTTOM = DOCK_BOTTOM + ICON + DOCK_PAD_Y + DOTS_GAP;
 const DOCK_SLOT = DOCK_FILL ? 'relative flex flex-1 justify-center' : 'relative flex justify-center';
-const ITEMS_PER_PAGE = COLS * ROWS;
 const COMMIT_THRESHOLD = SCREEN_W * 0.2;
 const FLICK_VELOCITY = 0.4;
+
+function itemsPerPage(): number {
+    const g = getGrid();
+    return g.cols * g.rows;
+}
+function dotsBottom(icon: number): number {
+    return DOCK_BOTTOM + icon + DOCK_PAD_Y + DOTS_GAP;
+}
 
 function chunk<T>(arr: T[], size: number): T[][] {
     const out: T[][] = [];
@@ -49,12 +50,14 @@ function chunk<T>(arr: T[], size: number): T[][] {
     return out;
 }
 function slot(localCell: number) {
-    return { x: PAD_X + (localCell % COLS) * COL_STRIDE, y: ROW_Y0 + Math.floor(localCell / COLS) * ROW_STRIDE };
+    const g = getGrid();
+    return { x: g.padX + (localCell % g.cols) * g.colStride, y: g.rowY0 + Math.floor(localCell / g.cols) * g.rowStride };
 }
 function cellFromCenter(cx: number, cy: number) {
-    const c = Math.max(0, Math.min(COLS - 1, Math.round((cx - PAD_X - ICON / 2) / COL_STRIDE)));
-    const r = Math.max(0, Math.min(ROWS - 1, Math.round((cy - ROW_Y0 - ICON / 2) / ROW_STRIDE)));
-    return r * COLS + c;
+    const g = getGrid();
+    const c = Math.max(0, Math.min(g.cols - 1, Math.round((cx - g.padX - g.icon / 2) / g.colStride)));
+    const r = Math.max(0, Math.min(g.rows - 1, Math.round((cy - g.rowY0 - g.icon / 2) / g.rowStride)));
+    return r * g.cols + c;
 }
 function offsetWithin(el: HTMLElement | null, root: HTMLElement | null): { x: number; y: number } {
     let x = 0, y = 0;
@@ -77,8 +80,9 @@ function lastFilledIndex(arr: (string | null)[]): number {
     return -1;
 }
 function normalize(arr: (string | null)[]): (string | null)[] {
-    const filledPages = Math.floor(lastFilledIndex(arr) / ITEMS_PER_PAGE) + 1;
-    const want = (filledPages + 1) * ITEMS_PER_PAGE;
+    const per = itemsPerPage();
+    const filledPages = Math.floor(lastFilledIndex(arr) / per) + 1;
+    const want = (filledPages + 1) * per;
     const out = arr.slice(0, want);
     while (out.length < want) out.push(null);
     return out;
@@ -107,8 +111,9 @@ function widgetsAfterDrop(widgets: WidgetPlacement[], uid: string | undefined, p
 }
 
 function pillSpot(x: number, y: number, size: WidgetSize): { x: number; y: number } {
+    const g = getGrid();
     const { width, height } = widgetPx(size);
-    const gridH = ROWS * ROW_STRIDE + ROW_Y0;
+    const gridH = g.rows * g.rowStride + g.rowY0;
     const below = y + height + 10;
     return {
         x: Math.max(96, Math.min(SCREEN_W - 96, x + width / 2)),
@@ -137,6 +142,11 @@ export interface HomescreenProps {
 
 export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, savedLayout, onLayoutChange, onEditingChange, bloomOnMount = true }: HomescreenProps) {
     const { blurHome } = useTheme('blurHome');
+    const grid = useGrid();
+    const { cols: COLS, rows: ROWS, icon: ICON, rowY0: ROW_Y0, rowStride: ROW_STRIDE, stripTop } = grid;
+    const TILE = ICON;
+    const DOTS_BOTTOM = dotsBottom(ICON);
+    const densityRef = useRef(getDensity());
     const badges = useBadges();
     // The homescreen mounts exactly when the phone content is revealed (open without a lock,
     // or the unlock swipe finishing), so a mount-triggered bloom staggers the icons in like
@@ -175,9 +185,9 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
         const loose = apps.filter(a => !dockIds.includes(a.id) && !seeded.has(a.id)).map(a => a.id);
         // A seeding count, not a grid measure: how many apps land on page one before it spills.
         const FIRST_PAGE = 12;
-        const arr: (string | null)[] = Array(ITEMS_PER_PAGE * 2).fill(null);
+        const arr: (string | null)[] = Array(itemsPerPage() * 2).fill(null);
         loose.slice(0, FIRST_PAGE).forEach((id, i) => { arr[i] = id; });
-        loose.slice(FIRST_PAGE).forEach((id, i) => { arr[ITEMS_PER_PAGE + i] = id; });
+        loose.slice(FIRST_PAGE).forEach((id, i) => { arr[itemsPerPage() + i] = id; });
         return normalize(arr);
     });
 
@@ -213,7 +223,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                 .filter(a => !docked.has(a.id) && !folderedIds.has(a.id) && !placed.has(a.id))
                 .map(a => a.id);
             if (!missing.length && cleaned.every((v, i) => v === prev[i])) return prev;
-            return normalize(placeNewApps(cleaned, missing, widgets, ITEMS_PER_PAGE));
+            return normalize(placeNewApps(cleaned, missing, widgets, itemsPerPage()));
         });
     }, [apps, dockIds, folders, folderedIds, widgets]);
 
@@ -228,6 +238,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
         folders: Object.entries(folders).map(([key, f]) => ({ key, name: f.name, appIds: f.appIds })),
         widgets,
         dock: dockIds,
+        density: densityRef.current,
     };
     const onLayoutChangeRef = useRef(onLayoutChange);
     onLayoutChangeRef.current = onLayoutChange;
@@ -257,7 +268,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
 
     /** Places a widget on the current page, or reports back that it would not fit. */
     const addWidget = useCallback((kind: string, size: WidgetSize, align: WidgetAlign, theme: WidgetTheme, picks?: string[]): boolean => {
-        const spot = firstFit(size, pageRef.current, slots, widgets, ITEMS_PER_PAGE);
+        const spot = firstFit(size, pageRef.current, slots, widgets, itemsPerPage());
         if (!spot) return false;
         const next: WidgetPlacement[] = [...widgets, {
             uid: `w${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`,
@@ -265,7 +276,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
             ...(picks?.length ? { picks } : {}),
         }];
         setWidgets(next);
-        setSlots(prev => normalize(reflowAround(prev, next, ITEMS_PER_PAGE)));
+        setSlots(prev => normalize(reflowAround(prev, next, itemsPerPage())));
         setGalleryOpen(false);
         return true;
     }, [slots, widgets]);
@@ -308,9 +319,10 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
 
     /** Nearest legal top-left cell for a widget dragged to (x, y), clamped inside the grid. */
     const cellFor = useCallback((size: WidgetSize, x: number, y: number) => {
-        const span = SPAN[size];
-        const col = Math.max(0, Math.min(COLS - span.w, Math.round((x - PAD_X) / COL_STRIDE)));
-        const row = Math.max(0, Math.min(ROWS - span.h, Math.round((y - ROW_Y0) / ROW_STRIDE)));
+        const g = getGrid();
+        const span = spanOf(size);
+        const col = Math.max(0, Math.min(g.cols - span.w, Math.round((x - g.padX) / g.colStride)));
+        const row = Math.max(0, Math.min(g.rows - span.h, Math.round((y - g.rowY0) / g.rowStride)));
         return { col, row };
     }, []);
 
@@ -358,8 +370,8 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
             // Same edge-hold as the icon drag, so carrying a widget between pages feels identical
             // to carrying an icon: hover near an edge and the page turns under you.
             const stripW = stripRef.current?.offsetWidth ?? 0;
-            const span = SPAN[dragSizeRef.current];
-            const px = x + (span.w * COL_STRIDE) / 2;
+            const span = spanOf(dragSizeRef.current);
+            const px = x + (span.w * getGrid().colStride) / 2;
             const EDGE = 44;
             const dir: 'l' | 'r' | null = px < EDGE ? 'l' : px > stripW - EDGE ? 'r' : null;
             const canFlip = dir === 'l' ? pageRef.current > 0
@@ -392,7 +404,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
             const next = widgetsAfterDrop(widgetsRef.current, uid, toPage, spot.col, spot.row);
             if (!next) return;
             setWidgets(next);
-            setSlots(prev => normalize(reflowAround(prev, next, ITEMS_PER_PAGE)));
+            setSlots(prev => normalize(reflowAround(prev, next, itemsPerPage())));
         }
 
         window.addEventListener('pointermove', move);
@@ -417,11 +429,11 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
     }, [widgets, dragW?.uid, dropPreview]);
 
     const previewSlots = useMemo(
-        () => (previewWidgets === widgets ? slots : reflowAround(slots, previewWidgets, ITEMS_PER_PAGE)),
+        () => (previewWidgets === widgets ? slots : reflowAround(slots, previewWidgets, itemsPerPage())),
         [slots, widgets, previewWidgets],
     );
 
-    const reflowNote = useMemo(() => pageMoves(slots, previewSlots, ITEMS_PER_PAGE), [slots, previewSlots]);
+    const reflowNote = useMemo(() => pageMoves(slots, previewSlots, itemsPerPage()), [slots, previewSlots]);
 
     /** page -> cells hidden beneath a widget, so an icon is never drawn under one. */
     const coveredByPage = useMemo(() => {
@@ -490,8 +502,8 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
 
     const blockedCells = useCallback((pg: number) => {
         const set = new Set(coveredByPage.get(pg) ?? []);
-        const base = pg * ITEMS_PER_PAGE;
-        for (let i = 0; i < ITEMS_PER_PAGE; i++) {
+        const base = pg * itemsPerPage();
+        for (let i = 0; i < itemsPerPage(); i++) {
             const v = slots[base + i];
             if (v && isFolderId(v)) set.add(i);
         }
@@ -508,14 +520,14 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
         page:         pg,
         overCell:     cell,
         blocked:      blockedCells(pg),
-        merge:        armed !== null && armed === cell && !!slots[pg * ITEMS_PER_PAGE + armed],
-        itemsPerPage: ITEMS_PER_PAGE,
+        merge:        armed !== null && armed === cell && !!slots[pg * itemsPerPage() + armed],
+        itemsPerPage: itemsPerPage(),
     }), [dockShown, slots, blockedCells]);
 
     const dockPlan = useMemo(() => {
         if (!dragId) return null;
         if (dockOver === null && (!dragFromDock || overCell === null)) return null;
-        const fromIndex = fromPageRef.current * ITEMS_PER_PAGE + fromCell.current;
+        const fromIndex = fromPageRef.current * itemsPerPage() + fromCell.current;
         return planDockDrag(dockDragOf(dragId, dockOver, dragFromDock, fromIndex, page, overCell ?? 0, mergeCell));
     }, [dragId, dockOver, dragFromDock, overCell, page, mergeCell, dockDragOf]);
 
@@ -527,7 +539,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
     const dockRowRef = useDockReflow<HTMLDivElement>(dockView.map(a => a.id).join('|'));
 
     const pages = useMemo(
-        () => chunk(dockPlan ? normalize(dockPlan.slots) : previewSlots, ITEMS_PER_PAGE),
+        () => chunk(dockPlan ? normalize(dockPlan.slots) : previewSlots, itemsPerPage()),
         [dockPlan, previewSlots],
     );
 
@@ -544,7 +556,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
     // A page counts as used if it holds an icon OR a widget. Counting only icons made a page
     // holding nothing but a widget collapse the moment the drag ended: the page stopped being
     // rendered and took the widget with it, which looked exactly like the widget was deleted.
-    const lastIconPage   = Math.floor(lastFilledIndex(slots) / ITEMS_PER_PAGE);
+    const lastIconPage   = Math.floor(lastFilledIndex(slots) / itemsPerPage());
     const lastWidgetPage = widgets.reduce((m, w) => Math.max(m, w.page), -1);
     const filledPages = Math.max(lastIconPage, lastWidgetPage) + 1;
     const visiblePages = editing ? Math.max(1, filledPages + 1) : Math.max(1, filledPages);
@@ -555,7 +567,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
     // is also what provides the spare trailing page to drag onto in edit mode.
     const renderPages = useMemo(() => {
         const out = pages.slice(0, visiblePages);
-        while (out.length < visiblePages) out.push(Array<string | null>(ITEMS_PER_PAGE).fill(null));
+        while (out.length < visiblePages) out.push(Array<string | null>(itemsPerPage()).fill(null));
         return out;
     }, [pages, visiblePages]);
     useEffect(() => { if (page > visiblePages - 1) setPage(visiblePages - 1); }, [visiblePages, page]);
@@ -693,7 +705,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
         const over = cellFromCenter(x + ICON / 2, y + ICON / 2);
         overCellRef.current = over;
         setOverCell(over);
-        const targetId = slots[pageRef.current * ITEMS_PER_PAGE + over] ?? null;
+        const targetId = slots[pageRef.current * itemsPerPage() + over] ?? null;
         const sameAsOrigin = pageRef.current === fromPageRef.current && over === fromCell.current;
         if (!isFolderId(dragId) && !fromDockRef.current && targetId && !sameAsOrigin) {
             if (dwellCell.current !== over) {
@@ -745,8 +757,8 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
         const dragged = dragId;
         const fromDock = fromDockRef.current;
         const onDock = dockOverRef.current;
-        const from = fromPageRef.current * ITEMS_PER_PAGE + fromCell.current;
-        const to   = pageRef.current * ITEMS_PER_PAGE + overCellRef.current;
+        const from = fromPageRef.current * itemsPerPage() + fromCell.current;
+        const to   = pageRef.current * itemsPerPage() + overCellRef.current;
 
         if (onDock !== null && !isFolderId(dragged)) {
             const plan = planDockDrag(dockDragOf(dragged, onDock, fromDock, from, pageRef.current, overCellRef.current, armed));
@@ -793,7 +805,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
             return;
         }
 
-        const dest = landingCell(slots, coveredByPage.get(pageRef.current), pageRef.current, overCellRef.current, ITEMS_PER_PAGE);
+        const dest = landingCell(slots, coveredByPage.get(pageRef.current), pageRef.current, overCellRef.current, itemsPerPage());
         if (dest === null) { endIconDrag(); return; }
 
         if (dest !== from) {
@@ -836,7 +848,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
     }
 
     const tx = -(page * SCREEN_W) + dragX;
-    const padCell = dockPlan?.landedCell != null ? dockPlan.landedCell - page * ITEMS_PER_PAGE : overCell;
+    const padCell = dockPlan?.landedCell != null ? dockPlan.landedCell - page * itemsPerPage() : overCell;
 
     const dragWidget = dragW ? previewWidgets.find(w => w.uid === dragW.uid) : undefined;
     const dragWidgetDef = dragWidget ? widgetByKind(dragWidget.kind) : undefined;
@@ -893,7 +905,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                 ref={stripRef}
                 className="relative z-10 overflow-hidden"
                 data-page-motion={pageMoving || undefined}
-                style={{ marginTop: stripTop, height: `calc(100% - ${stripTop}px - 104px)` }}
+                style={{ marginTop: stripTop, height: `calc(100% - ${stripTop}px - ${stripReserve(grid)}px)` }}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
@@ -1061,7 +1073,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                                 const isMergeTarget = mergeCell !== null && pi === page && li === mergeCell;
                                 const isSwapTarget = !!dragId && pi === page && overCell !== null && li === overCell
                                     && !(pi === fromPageRef.current && overCell === fromCell.current) && !isMergeTarget;
-                                const isDisplaced = dockPlan?.displacedCell === pi * ITEMS_PER_PAGE + li;
+                                const isDisplaced = dockPlan?.displacedCell === pi * itemsPerPage() + li;
                                 const slidePreview = isSwapTarget && page === fromPageRef.current && fromCell.current >= 0;
                                 const pos = slidePreview ? slot(fromCell.current) : s;
                                 return (
@@ -1257,6 +1269,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
 }
 
 function EditTile({ app, dragging, swapTarget, plopping, removable, merging, badge, onRemove }: { app: AppDef; dragging: boolean; swapTarget: boolean; plopping: boolean; removable: boolean; merging: boolean; badge?: number; onRemove: () => void }): ReactNode {
+    const TILE = useGrid().icon;
     const showNames = useShowAppNames();
     const {
         background, glyph, art, radius, glyphSize, glyphWeight, boxShadow,
@@ -1299,9 +1312,12 @@ const TILE_GLYPH  = 40;
 const MINI_GLYPH  = 10;
 // One cell of the folder's 3x3 preview: the tile less its 9px padding and two 3px gutters. Derived
 // rather than fixed so a native mini keeps filling its cell when the tile follows a bigger profile.
-const MINI = (TILE - 9 * 2 - 3 * 2) / 3;
+function miniOf(tile: number): number {
+    return (tile - 9 * 2 - 3 * 2) / 3;
+}
 
 function FolderMini({ app }: { app: AppDef }): ReactNode {
+    const MINI = miniOf(useGrid().icon);
     const { background, glyph, art, radius, glyphSize, glyphWeight, icon: glyphOverride } = useIconAppearance(app.id, app.accent);
     return (
         <div className="overflow-hidden" style={{ borderRadius: radiusPct(radius * (MINI_RADIUS / TILE_RADIUS)) }}>
@@ -1326,6 +1342,7 @@ function FolderMini({ app }: { app: AppDef }): ReactNode {
 }
 
 function FolderTile({ label, apps, onOpen, merging = false, badge }: { label: string; apps: AppDef[]; onOpen: () => void; merging?: boolean; badge?: number }): ReactNode {
+    const TILE = useGrid().icon;
     const showNames = useShowAppNames();
     return (
         <button type="button" onClick={onOpen} className="group block" style={{ width: TILE }}>
@@ -1365,6 +1382,7 @@ function FolderOverlay({ name, apps, badges, editing: homeEditing, autoEdit, wal
     onLaunch: (app: AppDef, origin: { x: number; y: number }) => void;
     onClose: () => void;
 }): ReactNode {
+    const TILE = useGrid().icon;
     const panelRef = useRef<HTMLDivElement>(null);
     const [localEdit, setLocalEdit] = useState(false);
     const editing = homeEditing || localEdit;

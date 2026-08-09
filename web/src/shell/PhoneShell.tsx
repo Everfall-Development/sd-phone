@@ -15,7 +15,8 @@ import type { Track } from '@/apps/music/data';
 import { RingDuration } from '@/apps/clock/AlarmRinging';
 import { playShutter } from '@/media/shutter';
 import { SWITCHER_SCALE } from './AppSwitcher';
-import { DEFAULT_FRAME_COLOR, frameStops } from './frameColors';
+import { DEFAULT_FRAME_COLOR, frameHex, frameStops } from './frameColors';
+import { BootSplash } from './BootSplash';
 import { chassisMetrics, rrect } from './chassis';
 import type { ChassisMetrics, FacePart, RailButton } from './chassis';
 import { shellFor } from './shells';
@@ -561,6 +562,8 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
                     )}
 
                     {children}
+
+                    <BootSplash radius={SR} tint={frameHex(frameColor)} />
 
                     <div
                         className="pointer-events-none absolute inset-0"

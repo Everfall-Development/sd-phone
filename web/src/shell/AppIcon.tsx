@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 
-import { device } from '@device';
+import { useGrid } from '@/device/grid';
 import type { AppDef } from '@/core/types';
 import { useDownloadProgress } from '@/stores/downloadStore';
 import { useIconAppearance, useShowAppNames } from '@/stores/iconThemeStore';
@@ -11,9 +11,6 @@ import { launchOriginFrom } from './launchOrigin';
 import { asAppId, preloadApp } from './appRegistry';
 import { CircularProgress } from '@/ui/CircularProgress';
 
-// The icon artwork IS the grid cell: `grid.icon` is documented as the tile edge length, and the
-// homescreen measures cells, hit-tests and landing pads with it, so the tile must be exactly it.
-export const TILE = device.screen.grid.icon;
 // AppIconSVG always draws on a fixed 60px design box; every caller scales that box to fit.
 export const ART = 60;
 
@@ -31,6 +28,7 @@ export interface AppIconProps {
 }
 
 export function AppIcon({ app, label = true, onOpen, badge }: AppIconProps) {
+    const TILE = useGrid().icon;
     const btnRef = useRef<HTMLButtonElement>(null);
     const {
         background, glyph, art, radius, glyphSize, glyphWeight, boxShadow,

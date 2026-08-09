@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState  } from 'react';
 import type { CSSProperties } from 'react';
 
 import { device } from '@device';
+import { gridFor } from '@/device/grid';
+import { refitLayout } from '@/shell/widgets/geometry';
 import { isCustomPaletteId, rampFor, rampVars } from '@/apps/settings/appearance/paletteRamp';
 import { accentVars } from '@/apps/settings/appearance/accentRamp';
 import { AdminPanel } from '@/admin/AdminPanel';
+import { demoAdminOnly } from '@/core/demo';
 import { PayphoneUI } from '@/payphone/PayphoneUI';
 import { RaceOverlay } from '@/apps/racing/hud/RaceOverlay';
 import { CallLayer } from '@/apps/phone/CallLayer';
@@ -31,6 +34,7 @@ import { useLocaleStore } from '@/stores/localeStore';
 import { HomeIndicator } from '@/shell/HomeIndicator';
 import { Lockscreen }  from '@/shell/Lockscreen';
 import { PhoneShell }  from '@/shell/PhoneShell';
+import { BootReplayButton, setBootScreenEnabled } from '@/shell/BootSplash';
 import { StatusBar }   from '@/shell/StatusBar';
 import { useAutoContrast } from '@/shell/useAutoContrast';
 import { VolumeHUD }   from '@/shell/VolumeHUD';
@@ -45,6 +49,7 @@ import { fetchNui, isFiveM } from '@/core/nui';
 import { usePhoneReset } from '@/core/phoneReset';
 import { resetAuth } from '@/stores/authStore';
 import { setMailDomain } from '@/core/accountsApi';
+import { setMusicSources } from '@/apps/music/data';
 import { setNumberFormat } from '@/lib/phone';
 import { cancelSmoothScroll, shiftWheelDelta, smoothScrollBy, verticalScrollerFor, wheelDelta } from '@/lib/wheel';
 import { voiceHub, setLocalTalking } from '@/media/nearbyVoice';
@@ -168,10 +173,11 @@ export function App() {
     return (
         <ThemeProvider>
             <MusicProvider>
-                <AppContent />
+                <BootReplayButton />
+                {!demoAdminOnly && <AppContent />}
                 {device.admin && <AdminPanel />}
-                {device.payphone && <PayphoneUI />}
-                {device.id === 'phone' && <RaceOverlay />}
+                {!demoAdminOnly && device.payphone && <PayphoneUI />}
+                {!demoAdminOnly && device.id === 'phone' && <RaceOverlay />}
             </MusicProvider>
         </ThemeProvider>
     );
@@ -181,7 +187,7 @@ function AppContent() {
     // Tone/volume fields are deliberately NOT subscribed here — they're only
     // read inside event callbacks (via useThemeStore.getState()), so slider
     // drags in Control Center don't re-render the whole tree from the root.
-    const { theme, darkTheme, lightTheme, accent, customPalettes, wallpaperLock, wallpaperHome, setTheme, setWallpaper, statusLightOverride, statusBarAutoLight, hideHomeIndicator, airplaneMode, hour24, setHour24, setSecurity } = useTheme('theme', 'darkTheme', 'lightTheme', 'accent', 'wallpaperLock', 'wallpaperHome', 'setTheme', 'setWallpaper', 'statusLightOverride', 'statusBarAutoLight', 'hideHomeIndicator', 'airplaneMode', 'hour24', 'setHour24', 'setSecurity', 'customPalettes');
+    const { theme, darkTheme, lightTheme, accent, customPalettes, wallpaperLock, wallpaperHome, setTheme, setWallpaper, statusLightOverride, statusBarAutoLight, hideHomeIndicator, airplaneMode, hour24, setHour24, setSecurity, appLabels, homeDensity } = useTheme('theme', 'darkTheme', 'lightTheme', 'accent', 'wallpaperLock', 'wallpaperHome', 'setTheme', 'setWallpaper', 'statusLightOverride', 'statusBarAutoLight', 'hideHomeIndicator', 'airplaneMode', 'hour24', 'setHour24', 'setSecurity', 'customPalettes', 'appLabels', 'homeDensity');
     const activeThemeId = theme === 'dark' ? darkTheme : lightTheme;
     const themeVars = useMemo(() => {
         const vars: Record<string, string> = accentVars(theme === 'dark' ? 'dark' : 'light', accent);
@@ -420,6 +426,8 @@ function AppContent() {
         if (data.locale) useLocaleStore.getState().applyServerDefault(data.locale);   // server default, unless the player already picked their own
         if (data.mailDomain) setMailDomain(data.mailDomain);
         if (data.number) setNumberFormat(data.number.formats, data.number.length);
+        setMusicSources(data.music);
+        setBootScreenEnabled(data.bootScreen !== false);
         useWifiStore.getState().setConfigured(data.wifiConfigured === true);
         useBluetoothStore.getState().setConfigured(data.bluetoothConfigured === true);
         useSimStore.getState().apply(data.sim);
@@ -765,6 +773,13 @@ function AppContent() {
     const handleSaveLayout = useCallback((layout: SavedLayout) => {
         saveHomeLayout(layout);
     }, []);
+
+    const homeLayout = useMemo(
+        () => (savedLayout
+            ? refitLayout(savedLayout, gridFor(savedLayout.density ?? 'default'), gridFor(homeDensity), homeDensity)
+            : null),
+        [savedLayout, homeDensity],
+    );
 
     // Stable-ish context handed to every deck app instance. Memoized so unrelated
     // App re-renders (notifications, battery, island state) don't rebuild app nodes;
@@ -1409,8 +1424,10 @@ function AppContent() {
     const statusLight = locked || !currentApp || theme === 'dark';
     const homeWallpaper = wallpaperHome || view.wallpaperHome;
     const lockWallpaper = wallpaperLock || view.wallpaperLock;
-
-    const allApps       = [...view.apps, ...customDefs.filter(c => !view.apps.some(a => a.id === c.id))];
+    const rawApps       = [...view.apps, ...customDefs.filter(c => !view.apps.some(a => a.id === c.id))];
+    const allApps       = appLabels && Object.keys(appLabels).length
+        ? rawApps.map(a => (appLabels[a.id] ? { ...a, label: appLabels[a.id] } : a))
+        : rawApps;
     // Excluded apps are dropped here, not just refused at launch: this list is the home grid,
     // the switcher's card set and the App Store's catalogue.
     const effectiveApps = allApps.filter(a => !device.excludedApps.includes(a.id) && (a.base || installedApps.has(a.id) || downloadingIds.includes(a.id)));
@@ -1524,12 +1541,13 @@ function AppContent() {
                 ) : (
                     !cameraMode && appsReady && (
                         <Homescreen
+                            key={homeDensity}
                             apps={effectiveApps}
                             dock={view.dock}
                             wallpaper={homeWallpaper}
                             onLaunchApp={launchApp}
                             onUninstall={handleUninstallApp}
-                            savedLayout={savedLayout}
+                            savedLayout={homeLayout}
                             onLayoutChange={handleSaveLayout}
                             onEditingChange={setHomeEditing}
                             bloomOnMount={currentApp === null}

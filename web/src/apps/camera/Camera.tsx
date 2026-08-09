@@ -145,11 +145,12 @@ function blobToDataURL(blob: Blob): Promise<string> {
     });
 }
 
-export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = false }: {
+export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = false, onCapture }: {
     onClose: () => void;
     onLandscapeChange?: (v: boolean) => void;
     onOpenApp?: (id: string) => void;
     photoOnly?: boolean;
+    onCapture?: (url: string) => void;
 }) {
     const [photos,  setPhotos]  = useState<Photo[]>([]);
     const [pending, setPending] = useState(false);
@@ -396,7 +397,8 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
         setPhotos(prev => (prev.some(x => x.id === p.id) ? prev : [p, ...prev]));
         setPending(false);
         if (captureTimer.current) { clearTimeout(captureTimer.current); captureTimer.current = null; }
-    }, []));
+        if (onCapture && p.url) onCapture(p.url);
+    }, [onCapture]));
 
     function togglePicker() {
         if (!pickerOpen) setSwatch(grabSwatch());

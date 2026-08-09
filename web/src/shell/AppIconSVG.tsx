@@ -939,24 +939,6 @@ export function ClimberIcon() {
     );
 }
 
-function RailRunnerIcon() {
-    return (
-        <svg viewBox={`0 0 ${S} ${S}`} width={S} height={S}>
-            <defs><LinearGrad id="rrn" top="#4A63A8" mid="#3C5290" bot="#2A3A66" angle={160} /></defs>
-            <rect width={S} height={S} fill="url(#rrn)" />
-            <path d="M22,52 L18,12 M30,52 L30,12 M38,52 L42,12" stroke="#FFFFFF" strokeOpacity="0.32" strokeWidth="2" strokeDasharray="4 5" strokeLinecap="round" />
-            <circle cx="42" cy="22" r="5" fill="#FFC83A" stroke="#E0A000" strokeWidth="1.2" />
-            <g transform="translate(30 36)">
-                <rect x="-7" y="-6" width="14" height="16" rx="6" fill="#FF7A3C" />
-                <circle cx="0" cy="-12" r="6.5" fill="#FFD9B0" />
-                <path d="M-6.5,-12 A6.5,6.5 0 0 1 6.5,-12 Z" fill="#1E66D0" />
-                <rect x="-5" y="10" width="4" height="8" rx="2" fill="#2E3550" />
-                <rect x="1"  y="10" width="4" height="8" rx="2" fill="#2E3550" />
-            </g>
-        </svg>
-    );
-}
-
 export function ConnectFourIcon() {
     const discs: Record<string, string> = {
         '0-2': '#F2C53D', '1-2': '#E0413B', '2-2': '#F2C53D',
@@ -1407,7 +1389,6 @@ const ICON_MAP: Record<string, IconComponent> = {
     blocks:      BlocksIcon,
     blackjack:   BlackjackIcon,
     climber:     ClimberIcon,
-    railrunner:  RailRunnerIcon,
     connectfour: ConnectFourIcon,
     chess:       ChessIcon,
     battleship:  BattleshipIcon,

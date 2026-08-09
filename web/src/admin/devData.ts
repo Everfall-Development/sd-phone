@@ -87,7 +87,7 @@ const DOWNLOADABLE = [
     { id: 'vibez', label: 'Vibez' }, { id: 'cherry', label: 'Cherry' },
     { id: 'darkchat', label: 'Dark Chat' }, { id: 'marketplace', label: 'Marketplace' },
     { id: 'pages', label: 'Pages' }, { id: 'stocks', label: 'Stocks' },
-    { id: 'wordle', label: 'Wordle' }, { id: 'chess', label: 'Chess' },
+    { id: 'wordle', label: 'Penta' }, { id: 'chess', label: 'Chess' },
 ];
 
 export const DEV_MUTES: AdminMute[] = [

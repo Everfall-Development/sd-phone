@@ -74,6 +74,10 @@ function store.ensureSchema()
             passcode           VARCHAR(8)   NULL,
             face_id            TINYINT(1)   NOT NULL DEFAULT 0,
             chat_text_scale    DECIMAL(3,2) NULL,
+            reduce_motion      TINYINT      NULL,
+            bold_text          TINYINT(1)   NULL,
+            text_scale         DECIMAL(3,2) NULL,
+            app_labels         TEXT         NULL,
             phone_scale        TINYINT UNSIGNED NULL,
             brightness         TINYINT UNSIGNED NULL,
             phone_align        VARCHAR(16) NULL,
@@ -90,6 +94,7 @@ function store.ensureSchema()
             icon_theme         VARCHAR(16)  NULL,
             icon_custom        LONGTEXT     NULL,
             show_app_names     TINYINT(1)   NOT NULL DEFAULT 1,
+            home_density       VARCHAR(12)  NULL,
             ringtone_volume    TINYINT UNSIGNED NULL,
             call_volume        TINYINT UNSIGNED NULL,
             locale             VARCHAR(8)   NULL,
@@ -124,6 +129,36 @@ function store.ensureSchema()
     if appNamesNullable == 'YES' then
         MySQL.update.await('UPDATE phone_settings SET show_app_names = 1 WHERE show_app_names IS NULL')
         MySQL.query.await('ALTER TABLE phone_settings MODIFY show_app_names TINYINT(1) NOT NULL DEFAULT 1')
+    end
+
+    -- Personalisation columns added after the table shipped. Keyed off the first of them so the
+    -- whole group is added in one ALTER on an existing install and skipped on every boot after,
+    -- and so a fresh install (which gets them from the CREATE TABLE above) never runs it at all.
+    local hasPersonalisation = MySQL.scalar.await([[
+        SELECT COUNT(*) FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = 'phone_settings'
+          AND COLUMN_NAME = 'reduce_motion'
+    ]])
+    if tonumber(hasPersonalisation) == 0 then
+        MySQL.query.await([[
+            ALTER TABLE phone_settings
+                ADD COLUMN reduce_motion TINYINT      NULL,
+                ADD COLUMN bold_text     TINYINT(1)   NULL,
+                ADD COLUMN text_scale    DECIMAL(3,2) NULL,
+                ADD COLUMN app_labels    TEXT         NULL
+        ]])
+    end
+
+    -- reduce_motion holds three levels (0 full, 1 reduced, 2 off), so it must NOT be TINYINT(1):
+    -- oxmysql maps that width to a Lua boolean, which would read both 1 and 2 back as `true` and
+    -- collapse the setting to off/on. Early installs got the narrow type; widen them.
+    local motionType = MySQL.scalar.await([[
+        SELECT COLUMN_TYPE FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = 'phone_settings'
+          AND COLUMN_NAME = 'reduce_motion'
+    ]])
+    if type(motionType) == 'string' and motionType:lower():find('tinyint(1)', 1, true) then
+        MySQL.query.await('ALTER TABLE phone_settings MODIFY reduce_motion TINYINT NULL')
     end
 
     MySQL.query.await([[
@@ -760,6 +795,118 @@ function store.setChatTextScale(citizenid, scale, device)
         INSERT INTO phone_settings (citizenid, device, chat_text_scale) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE chat_text_scale = VALUES(chat_text_scale)
     ]], { citizenid, device, clean })
+end
+
+---Clamps the accessibility text multiplier. Deliberately narrower than the chat scale: this one
+---resizes the whole UI, and past 1.3 the fixed-height rows and the status bar start to collide.
+---@param v any client-supplied multiplier
+---@return number|nil value rounded to 2dp within 0.85-1.30, nil if unusable
+local function clampTextScale(v)
+    local n = tonumber(v)
+    if not n or n ~= n then return nil end
+    if n < 0.85 then n = 0.85 elseif n > 1.30 then n = 1.30 end
+    return math.floor(n * 100 + 0.5) / 100
+end
+
+---Persist the accessibility trio, leaving other settings intact. Each field is optional, so the
+---UI can toggle one switch without echoing the other two back.
+---@param citizenid string framework per-character id
+---@param opts table { reduceMotion: boolean?, boldText: boolean?, textScale: number? }
+---@param device string|nil 'phone' | 'tablet'
+function store.setAccessibility(citizenid, opts, device)
+    device = device or 'phone'
+    if not citizenid or citizenid == '' or type(opts) ~= 'table' then return end
+
+    local sets, args = {}, {}
+    -- Motion is three levels (0 full, 1 reduced, 2 off) kept in the original boolean column: the
+    -- display width in TINYINT(1) is cosmetic, the range is still -128..127.
+    if opts.motion ~= nil then
+        local level = math.floor(tonumber(opts.motion) or 0)
+        if level >= 0 and level <= 2 then
+            sets[#sets + 1] = 'reduce_motion'
+            args[#args + 1] = level
+        end
+    end
+    if opts.boldText ~= nil then
+        sets[#sets + 1] = 'bold_text'
+        args[#args + 1] = opts.boldText == true and 1 or 0
+    end
+    if opts.textScale ~= nil then
+        local clean = clampTextScale(opts.textScale)
+        if clean then
+            sets[#sets + 1] = 'text_scale'
+            args[#args + 1] = clean
+        end
+    end
+    if #sets == 0 then return end
+
+    -- Column names come from the fixed list above, never from the payload, so the concat cannot
+    -- carry anything a client chose. Values stay bound.
+    local cols, placeholders, updates = {}, {}, {}
+    for i = 1, #sets do
+        cols[i] = sets[i]
+        placeholders[i] = '?'
+        updates[i] = ('%s = VALUES(%s)'):format(sets[i], sets[i])
+    end
+    local insertArgs = { citizenid, device }
+    for i = 1, #args do insertArgs[#insertArgs + 1] = args[i] end
+
+    MySQL.update.await(([[
+        INSERT INTO phone_settings (citizenid, device, %s) VALUES (?, ?, %s)
+        ON DUPLICATE KEY UPDATE %s
+    ]]):format(table.concat(cols, ', '), table.concat(placeholders, ', '), table.concat(updates, ', ')), insertArgs)
+end
+
+---Persist per-app home screen name overrides. Stored as one JSON object rather than a row per
+---app: it is read on every phone open and never queried by app id, so a column is cheaper than a
+---join. An empty/absent label clears that app back to its configured name.
+---@param citizenid string framework per-character id
+---@param labels table<string, string> appId -> label
+---@param device string|nil 'phone' | 'tablet'
+function store.setAppLabels(citizenid, labels, device)
+    device = device or 'phone'
+    if not citizenid or citizenid == '' or type(labels) ~= 'table' then return end
+
+    local clean, count = {}, 0
+    for id, label in pairs(labels) do
+        if count >= 64 then break end
+        if type(id) == 'string' and id ~= '' and #id <= 64
+            and type(label) == 'string' then
+            local trimmed = label:gsub('^%s+', ''):gsub('%s+$', '')
+            -- Only store a real override. A blank or unchanged-length-zero label means "use the
+            -- configured name", and storing it would grow the blob for no reason.
+            if trimmed ~= '' then
+                clean[id] = trimmed:sub(1, 24)
+                count = count + 1
+            end
+        end
+    end
+
+    MySQL.update.await([[
+        INSERT INTO phone_settings (citizenid, device, app_labels) VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE app_labels = VALUES(app_labels)
+    ]], { citizenid, device, json.encode(clean) })
+end
+
+---@type table<string, boolean> The home-grid presets the UI offers. Stored as a name rather than
+---an index: an index would have to agree with the order the client happens to list them in, and
+---the column reads as itself in the database.
+local HOME_DENSITIES = { compact = true, default = true, large = true }
+
+---Persist the home screen density preset, leaving other settings intact. An unknown preset is
+---dropped rather than stored, so a client cannot park a value the UI can never render.
+---@param citizenid string framework per-character id
+---@param density any client-supplied preset name
+---@param device string|nil 'phone' | 'tablet'
+function store.setHomeDensity(citizenid, density, device)
+    device = device or 'phone'
+    if not citizenid or citizenid == '' then return end
+    if type(density) ~= 'string' or not HOME_DENSITIES[density] then return end
+
+    MySQL.update.await([[
+        INSERT INTO phone_settings (citizenid, device, home_density) VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE home_density = VALUES(home_density)
+    ]], { citizenid, device, density })
 end
 
 ---Clamps a 0-100 slider value to an integer; nil for non-numbers and NaN, out-of-range values
@@ -1967,6 +2114,18 @@ function store.snapshot(citizenid, device)
     local icons = row and row.icon_theme
     if not isStorableIconTheme(icons) then icons = 'default' end
     local showAppNames = row == nil or isTruthy(row.show_app_names)
+    local homeDensity = row and row.home_density
+    if type(homeDensity) ~= 'string' or not HOME_DENSITIES[homeDensity] then homeDensity = 'default' end
+
+    -- Belt and braces against the TINYINT(1) boolean mapping: if a driver still hands this back
+    -- as a boolean, `true` means the player asked for less motion, so read it as 'reduced'
+    -- rather than letting tonumber() return nil and silently restoring full animation.
+    local motionLevel = 0
+    if row ~= nil and row.reduce_motion ~= nil then
+        if row.reduce_motion == true then motionLevel = 1
+        elseif row.reduce_motion ~= false then motionLevel = math.floor(tonumber(row.reduce_motion) or 0) end
+        if motionLevel < 0 then motionLevel = 0 elseif motionLevel > 2 then motionLevel = 2 end
+    end
 
     return {
         ringtone         = row and row.ringtone or nil,
@@ -1987,6 +2146,7 @@ function store.snapshot(citizenid, device)
         customIconThemes = shared and decodeCustomIconThemes(shared.icon_custom) or {},
         customPalettes   = shared and decodeCustomPalettes(shared.palette_custom) or {},
         showAppNames     = showAppNames,
+        homeDensity      = homeDensity,
         lockClock        = row and decodeColumn(row.lock_clock, nil) or nil,
         wallpaper        = (row and row.wallpaper ~= '') and row.wallpaper or nil,
         wallpaperHome    = (row and row.wallpaper_home ~= '') and row.wallpaper_home or nil,
@@ -1995,6 +2155,10 @@ function store.snapshot(citizenid, device)
         islandPet        = (row and row.island_pet ~= '') and row.island_pet or nil,
         customWallpapers = shared and decodeColumn(shared.custom_wallpapers, {}) or {},
         chatTextScale    = (row and row.chat_text_scale ~= nil) and tonumber(row.chat_text_scale) or nil,
+        appLabels        = row and decodeColumn(row.app_labels, {}) or {},
+        motion           = motionLevel,
+        boldText         = row ~= nil and isTruthy(row.bold_text) or false,
+        textScale        = (row and row.text_scale ~= nil) and tonumber(row.text_scale) or nil,
         phoneScale       = (row and row.phone_scale ~= nil) and tonumber(row.phone_scale) or nil,
         brightness       = (row and row.brightness ~= nil) and tonumber(row.brightness) or nil,
         phoneAlign       = (row and row.phone_align ~= '') and row.phone_align or nil,

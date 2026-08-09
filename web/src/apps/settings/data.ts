@@ -8,7 +8,7 @@ export type IconName =
     | 'ShoppingBag' | 'CreditCard' | 'Gamepad2' | 'Lock' | 'Mail'
     | 'User' | 'Calendar' | 'StickyNote' | 'ListTodo' | 'Mic'
     | 'Phone' | 'MessageCircle' | 'Video' | 'Compass' | 'Newspaper'
-    | 'Languages' | 'MapPin' | 'Zap' | 'PawPrint';
+    | 'Languages' | 'MapPin' | 'Zap' | 'PawPrint' | 'Grid2x2';
 
 export interface SettingsRowDef {
     id:        string;
@@ -55,10 +55,12 @@ export function getSettingsGroups(): SettingsGroup[] {
             id: 'general',
             rows: [
                 { id: 'general',      icon: 'Settings2',   iconBg: '#8e8e93', label: t('settings.general', 'General'),              subtitle: t('settings.generalSub', 'Device info, storage and language') },
+                { id: 'accessibility', icon: 'Accessibility', iconBg: '#0a84ff', label: t('settings.accessibility', 'Accessibility'),   subtitle: t('settings.accessibilitySub', 'Motion and text options') },
                 { id: 'display',      icon: 'Sun',         iconBg: '#0a84ff', label: t('settings.displayBrightness', 'Display & Brightness'),  subtitle: t('settings.displayBrightnessSub', 'Wallpaper, theme and brightness') },
                 { id: 'island-pet',   icon: 'PawPrint',    iconBg: '#ff9f0a', label: t('settings.islandPet', 'Island Pets'),          subtitle: t('settings.islandPetSub', 'Pick a pixel pet for the Dynamic Island') },
                 { id: 'wallpaper',    icon: 'Image',       iconBg: '#64d2ff', label: t('settings.wallpaper', 'Wallpaper'),             subtitle: t('settings.wallpaperSub', 'Wallpaper & background') },
                 { id: 'app-icons',    icon: 'LayoutGrid',  iconBg: '#5e5ce6', label: t('settings.appIcons', 'App Icons'),              subtitle: t('settings.appIconsSub', 'Icon theme and Home Screen names') },
+                { id: 'home-density', icon: 'Grid2x2',     iconBg: '#ff375f', label: t('settings.homeDensity', 'Home Screen'),         subtitle: t('settings.homeDensitySub', 'How many apps fit and how big they are') },
                 { id: 'face-unlock',  icon: 'Fingerprint', iconBg: '#34c759', label: t('settings.faceScanPasscode', 'Face Scan & Passcode'), subtitle: t('settings.faceScanPasscodeSub', 'Lock and unlock options') },
                 { id: 'battery',      icon: 'BatteryFull', iconBg: '#34c759', label: t('settings.battery', 'Battery'),               subtitle: t('settings.batterySub', 'Manage battery usage') },
                 { id: 'privacy',      icon: 'ShieldCheck', iconBg: '#0a84ff', label: t('settings.privacySecurity', 'Privacy & Security'),    subtitle: t('settings.privacySecuritySub', 'Control app permissions') },

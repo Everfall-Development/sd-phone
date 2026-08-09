@@ -44,7 +44,7 @@
         }
     }
 
-    async function fetchNui(event, data, scriptName) {
+    async function fetchNuiStrict(event, data, scriptName) {
         const target = scriptName || globalThis.resourceName;
 
         if (scriptName && scriptName !== globalThis.resourceName) {
@@ -54,18 +54,22 @@
             );
         }
 
+        const response = await fetch(`https://${target}/${event}`, {
+            method:  'post',
+            headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+            body:    JSON.stringify(data === undefined ? {} : data),
+        });
+
+        if (!response.ok) throw new Error(`${target}/${event}: ${response.status} ${response.statusText}`);
+
+        return await response.json();
+    }
+
+    async function fetchNui(event, data, scriptName) {
         try {
-            const response = await fetch(`https://${target}/${event}`, {
-                method:  'post',
-                headers: { 'Content-Type': 'application/json; charset=UTF-8' },
-                body:    JSON.stringify(data === undefined ? {} : data),
-            });
-
-            if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-
-            return await response.json();
+            return await fetchNuiStrict(event, data, scriptName);
         } catch (err) {
-            console.error(`[fetchNui] ${target}/${event} failed:`, err);
+            console.error(`[fetchNui] ${err && err.message ? err.message : err}`);
             return undefined;
         }
     }
@@ -345,14 +349,15 @@
         globalThis[name.charAt(0).toLowerCase() + name.slice(1)] = API[name];
     });
 
-    globalThis.selectGif   = API.SelectGIF;
-    globalThis.fetchNui    = fetchNui;
-    globalThis.onNuiEvent  = subscribeNuiEvent;
-    globalThis.useNuiEvent = subscribeNuiEvent;
+    globalThis.selectGif       = API.SelectGIF;
+    globalThis.fetchNui        = fetchNui;
+    globalThis.fetchNuiStrict  = fetchNuiStrict;
+    globalThis.onNuiEvent      = subscribeNuiEvent;
+    globalThis.useNuiEvent     = subscribeNuiEvent;
 
-    globalThis.componentsVersion = 3;
+    globalThis.componentsVersion = 4;
 
-    globalThis.componentsUnsupported = Object.freeze(['UseCamera', 'SetContactModal']);
+    globalThis.componentsUnsupported = Object.freeze(['SetContactModal']);
 
     globalThis.componentsSupports = function (name) {
         if (typeof name !== 'string' || typeof globalThis[name] !== 'function') return false;

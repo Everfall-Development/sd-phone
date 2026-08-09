@@ -105,7 +105,6 @@ return {
     'phone_racing_tracks',
     'phone_radio',
     'phone_radio_saved',
-    'phone_railrunner',
     'phone_review_business_meta',
     'phone_review_helpful',
     'phone_review_reviews',

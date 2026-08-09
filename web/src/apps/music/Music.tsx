@@ -22,7 +22,8 @@ import { MusicTabBar, type MusicTab } from './MusicTabBar';
 import { useMusic, useMusicProgress } from './MusicContext';
 import {
     coverColor, coverGradient, fetchYouTubeMeta, fmt, groupByAlbum, groupByArtist,
-    newId, titleFromUrl, youtubeId,
+    allowedTrackList, allowedVideoIds, anySourceEnabled, audioLinksAccepted, hasAllowlist, isSourceAllowed, newId, sourceRejection,
+    titleFromUrl, youtubeCurated, youtubeId, youtubePlaybackPossible, youtubeThumb, youtubeWatchUrl,
     shareTrack, sharePlaylist,
 } from './data';
 import { useMusicLibrary } from '@/stores/musicLibraryStore';
@@ -81,7 +82,7 @@ export function Music({ onClose: _onClose }: { onClose: () => void }) {
 
     function addTrack(url: string, title: string, artist: string, album: string) {
         const clean = url.trim();
-        if (!clean) return;
+        if (!clean || !isSourceAllowed(clean)) return;
         const id = newId();
         const t: Track = {
             id, url: clean,
@@ -93,6 +94,7 @@ export function Music({ onClose: _onClose }: { onClose: () => void }) {
         commitTracks([t, ...tracks]);
         if (youtubeId(clean) && !title.trim()) {
             void fetchYouTubeMeta(clean).then(meta => {
+                if (!meta.title) return;
                 setTracks(prev => prev.map(x => x.id === id ? { ...x, title: meta.title, artist: artist.trim() || meta.artist } : x));
             });
         }
@@ -187,6 +189,7 @@ export function Music({ onClose: _onClose }: { onClose: () => void }) {
                             {recent.map(t => (
                                 <ArtCard key={t.id} track={t} title={t.title} subtitle={t.artist}
                                     playing={m.current?.id === t.id && m.playing}
+                                    unplayable={!isSourceAllowed(t.url)}
                                     onPress={() => m.play(t, recent)} />
                             ))}
                         </ArtGrid>
@@ -391,8 +394,9 @@ export function Music({ onClose: _onClose }: { onClose: () => void }) {
                             <div className="w-[190px]"><Cover track={a.tracks[0]} size="100%" rounded={10} /></div>
                             <p className="mt-3 text-center text-[20px] font-bold leading-tight">{a.album}</p>
                             <p className="text-center text-[15px] text-ios-blue">{a.artist}</p>
-                            <button onClick={() => m.play(a.tracks[0], a.tracks)}
-                                className="mt-3 flex items-center justify-center gap-2 rounded-[10px] bg-black/5 px-8 py-2.5 text-[16px] font-semibold text-ios-blue dark:bg-white/10">
+                            <button onClick={() => { const first = a.tracks.find(x => isSourceAllowed(x.url)); if (first) m.play(first, a.tracks); }}
+                                disabled={!a.tracks.some(x => isSourceAllowed(x.url))}
+                                className="mt-3 flex items-center justify-center gap-2 rounded-[10px] bg-black/5 px-8 py-2.5 text-[16px] font-semibold text-ios-blue disabled:opacity-40 dark:bg-white/10">
                                 <Play className="h-5 w-5 fill-current" /> {t('music.play', 'Play')}
                             </button>
                         </div>
@@ -631,16 +635,29 @@ function ShareBtn({ onShare, label }: { onShare: () => void; label: string }) {
     );
 }
 
+function unavailableLabel(url: string): string {
+    switch (sourceRejection(url)) {
+        case 'host-not-allowed':   return t('music.blockedHost', 'Unavailable: host not allowed here');
+        case 'youtube-off':        return t('music.blockedYoutubeOff', 'Unavailable: YouTube is off here');
+        case 'video-not-approved': return t('music.blockedNotListed', 'Unavailable: not on the allowlist');
+        case 'not-configured':     return t('music.blockedNoSources', 'Unavailable: no music sources set up here');
+        case 'not-audio':          return t('music.blockedNotAudio', 'Unavailable: not a supported link');
+        default:                   return t('music.blockedInvalid', 'Unavailable: broken link');
+    }
+}
+
 function ArtGrid({ children }: { children: React.ReactNode }) {
     return <div className="grid grid-cols-2 gap-x-4 gap-y-5 px-4 pb-2 pt-1">{children}</div>;
 }
 
-function ArtCard({ track, title, subtitle, onPress, playing = false }: { track: Track; title: string; subtitle: string; onPress: () => void; playing?: boolean }) {
+function ArtCard({ track, title, subtitle, onPress, playing = false, unplayable = false }: { track: Track; title: string; subtitle: string; onPress: () => void; playing?: boolean; unplayable?: boolean }) {
     return (
-        <button onClick={onPress} className="flex w-full min-w-0 flex-col text-left active:opacity-80">
-            <Cover track={track} size="100%" rounded={8} playing={playing} />
+        <button onClick={() => { if (!unplayable) onPress(); }} className={`flex w-full min-w-0 flex-col text-left active:opacity-80 ${unplayable ? 'opacity-60' : ''}`}>
+            <Cover track={track} size="100%" rounded={8} playing={playing && !unplayable} />
             <span className="mt-1.5 block w-full truncate text-[17px] font-semibold leading-tight">{title}</span>
-            <span className="block w-full truncate text-[16px] font-medium leading-tight text-black/75 dark:text-white/70">{subtitle}</span>
+            {unplayable
+                ? <span className="block w-full truncate text-[16px] font-medium leading-tight text-ios-red">{unavailableLabel(track.url)}</span>
+                : <span className="block w-full truncate text-[16px] font-medium leading-tight text-black/75 dark:text-white/70">{subtitle}</span>}
         </button>
     );
 }
@@ -657,6 +674,7 @@ function TrackList({ tracks, current, playing, onPlay, onRemove, removeIcon = 't
         <div className="px-2">
             {tracks.map((track, idx) => {
                 const active = current?.id === track.id;
+                const unplayable = !isSourceAllowed(track.url);
                 return (
                     <div key={track.id} className="relative flex items-center rounded-lg px-2 py-2.5 transition-colors hover:bg-black/[0.06] active:bg-black/10 dark:hover:bg-white/[0.07] dark:active:bg-white/10">
                         {onEditRemove && (
@@ -667,11 +685,13 @@ function TrackList({ tracks, current, playing, onPlay, onRemove, removeIcon = 't
                                 </button>
                             </div>
                         )}
-                        <button onClick={() => { if (!editing) onPlay(track); }} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                        <button onClick={() => { if (!editing && !unplayable) onPlay(track); }} className={`flex min-w-0 flex-1 items-center gap-3 text-left ${unplayable ? 'opacity-60' : ''}`}>
                             <Cover track={track} size={56} rounded={7} playing={active && playing} />
                             <span className="flex min-w-0 flex-col leading-tight">
-                                <span className="truncate text-[20px] font-semibold" style={active ? { color: 'rgb(var(--ios-blue))' } : undefined}>{track.title}</span>
-                                <span className="truncate text-[16px] text-ios-gray">{track.artist}</span>
+                                <span className="truncate text-[20px] font-semibold" style={active && !unplayable ? { color: 'rgb(var(--ios-blue))' } : undefined}>{track.title}</span>
+                                {unplayable
+                                    ? <span className="truncate text-[16px] text-ios-red">{unavailableLabel(track.url)}</span>
+                                    : <span className="truncate text-[16px] text-ios-gray">{track.artist}</span>}
                             </span>
                         </button>
                         {onShare && !editing && (
@@ -894,9 +914,24 @@ function AddForm({ onAdd, onClose, backLabel }: { onAdd: (url: string, title: st
     const [title, setTitle] = useSessionState('music:add:title', '');
     const [artist, setArtist] = useSessionState('music:add:artist', '');
     const [ytStatus, setYtStatus] = useState<'idle' | 'loading' | 'filled'>('idle');
+    const [pickOpen, setPickOpen] = useState(false);
     function clearDraft() { clearSessionState('music:add:'); }
-    const vid = youtubeId(url);
+    const canYt = youtubePlaybackPossible();
+    const canAudio = audioLinksAccepted();
+    const curated = youtubeCurated();
+    const linkLabel = canYt && canAudio ? t('music.pasteAnyLink', 'Paste a song link')
+        : canYt ? t('music.pasteYoutubeLink', 'Paste a YouTube link')
+            : canAudio ? t('music.pasteAudioLink', 'Paste an audio file link')
+                : t('music.pasteNothing', 'Links cannot be added on this server');
+    const previewLabel = canYt && canAudio ? t('music.pasteAnyPreview', 'Paste a song link to preview it.')
+        : canYt ? t('music.pasteLinkPreview', 'Paste a YouTube link to preview your song.')
+            : canAudio ? t('music.pasteAudioPreview', 'Paste a link to an audio file to preview your song.')
+                : t('music.pasteNothingPreview', 'This server only allows songs from its own list.');
+    const vid = isSourceAllowed(url) ? youtubeId(url) : null;
     const hasUrl = url.trim().length > 0;
+    const rejection = hasUrl ? sourceRejection(url) : null;
+    const blocked = rejection !== null;
+    const showReason = blocked && rejection !== 'invalid';
 
     useEffect(() => {
         if (!vid) { setYtStatus('idle'); return; }
@@ -913,7 +948,7 @@ function AddForm({ onAdd, onClose, backLabel }: { onAdd: (url: string, title: st
     }, [vid]);
 
     function submit() {
-        if (!hasUrl) return;
+        if (!hasUrl || blocked) return;
         onAdd(url, title, artist, '');
         clearDraft();
         onClose();
@@ -934,7 +969,7 @@ function AddForm({ onAdd, onClose, backLabel }: { onAdd: (url: string, title: st
                         <ChevronLeft className="h-7 w-7" /><span className="text-[17px]">{backLabel}</span>
                     </button>
                     <span className="absolute left-1/2 -translate-x-1/2 text-[17px] font-semibold">{t('music.newSong', 'New Song')}</span>
-                    <button onClick={submit} disabled={!hasUrl} className="ml-auto pr-2 text-[17px] font-semibold text-ios-blue disabled:opacity-40">
+                    <button onClick={submit} disabled={!hasUrl || blocked} className="ml-auto pr-2 text-[17px] font-semibold text-ios-blue disabled:opacity-40">
                         {t('music.add', 'Add')}
                     </button>
                 </div>
@@ -946,7 +981,7 @@ function AddForm({ onAdd, onClose, backLabel }: { onAdd: (url: string, title: st
                         <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-black/[0.06] dark:bg-white/10">
                             <Music2 className="h-7 w-7 text-ios-gray" strokeWidth={1.7} />
                         </div>
-                        <p className="text-[15px] font-medium text-ios-gray">{t('music.pasteLinkPreview', 'Paste a YouTube link to preview your song.')}</p>
+                        <p className="text-[15px] font-medium text-ios-gray">{previewLabel}</p>
                     </div>
                     <div className={`absolute inset-0 flex items-center gap-4 rounded-[18px] bg-elevated px-5 shadow-sm transition-all duration-300 dark:bg-surface ${hasUrl ? 'opacity-100 translate-y-0 scale-100' : 'pointer-events-none opacity-0 translate-y-2 scale-[0.97]'}`}>
                         <Cover track={shown.track} size={80} rounded={14} />
@@ -959,14 +994,123 @@ function AddForm({ onAdd, onClose, backLabel }: { onAdd: (url: string, title: st
                 </div>
 
                 <p className="mb-2.5 mt-6 px-1 text-[19px] font-bold tracking-tight">{t('music.link', 'Link')}</p>
-                <Field large value={url} onChange={setUrl} placeholder={t('music.pasteYoutubeLink', 'Paste a YouTube link')}
-                    icon={<YouTubeGlyph size={22} />} />
+                <Field large value={url} onChange={setUrl} placeholder={linkLabel}
+                    icon={canYt && !canAudio ? <YouTubeGlyph size={22} /> : <Music2 className="h-[22px] w-[22px] text-ios-gray" strokeWidth={1.7} />} />
+                {hasAllowlist() && (
+                    <button type="button" onClick={() => setPickOpen(true)}
+                        className="mt-3 flex w-full items-center justify-center gap-2 rounded-[12px] bg-black/[0.06] py-3 text-[17px] font-semibold text-ios-blue active:opacity-70 dark:bg-white/10">
+                        <ListMusic className="h-[19px] w-[19px]" />
+                        {t('music.addFromAllowlist', 'Add from allowlist')}
+                    </button>
+                )}
+                {curated && (
+                    <p className="mt-2 px-1 text-[13px] text-ios-gray">
+                        {t('music.allowlistOnly', 'Only YouTube links on the allowlist can be added on this server.')}
+                    </p>
+                )}
+                {!anySourceEnabled() && (
+                    <p className="mt-2 px-1 text-[13px] text-ios-gray">
+                        {t('music.noSources', 'This server has not set up any music sources yet.')}
+                    </p>
+                )}
+
+                {showReason && (
+                    <p className="mt-2 px-1 text-[13px] font-medium text-ios-red">
+                        {rejection === 'youtube-off'
+                            ? t('music.youtubeDisabled', 'YouTube links are turned off on this server.')
+                            : rejection === 'video-not-approved'
+                                ? t('music.videoNotApproved', 'This YouTube link is not on the allowlist for this server.')
+                                : rejection === 'not-audio'
+                                    ? t('music.needsAudioFile', 'Link must point straight to an audio file, like a .mp3 or .ogg.')
+                                    : t('music.sourceBlocked', 'That link is not from an allowed source.')}
+                    </p>
+                )}
 
                 <p className="mb-2.5 mt-6 px-1 text-[19px] font-bold tracking-tight">{t('music.detailsOptional', 'Details (optional)')}</p>
                 <Field large value={title} onChange={setTitle} placeholder={t('music.titleField', 'Title')} />
                 <Field large value={artist} onChange={setArtist} placeholder={t('music.artist', 'Artist')} />
             </div>
+
+            {pickOpen && (
+                <AllowlistSheet
+                    onPick={picked => { onAdd(picked, '', '', ''); clearDraft(); onClose(); }}
+                    onClose={() => setPickOpen(false)}
+                />
+            )}
         </>
+    );
+}
+
+function AllowlistSheet({ onPick, onClose }: { onPick: (url: string) => void; onClose: () => void }) {
+    const ids = useMemo(() => (youtubeCurated() ? allowedVideoIds() : []), []);
+    const hosted = useMemo(() => allowedTrackList(), []);
+    const [titles, setTitles] = useState<Record<string, string>>({});
+
+    useEffect(() => {
+        let cancelled = false;
+        void Promise.all(ids.map(id =>
+            fetchYouTubeMeta(youtubeWatchUrl(id)).then(meta => [id, meta.title] as const),
+        )).then(pairs => {
+            if (cancelled) return;
+            setTitles(Object.fromEntries(pairs.filter(([, title]) => !!title)));
+        });
+        return () => { cancelled = true; };
+    }, [ids]);
+
+    return (
+        <Sheet onClose={onClose} top={130} className="bg-base text-black dark:text-white font-sf">
+            {({ close }) => (
+                <div className="flex min-h-0 flex-1 flex-col pb-[calc(var(--safe-bottom)+16px)]">
+                    <div className="flex shrink-0 items-center justify-between px-5 pb-1 pt-6">
+                        <h2 className="text-[22px] font-bold tracking-tight">{t('music.allowlistTitle', 'Approved Songs')}</h2>
+                        <button onClick={close} className="text-[17px] font-semibold text-ios-blue active:opacity-60">{t('music.done', 'Done')}</button>
+                    </div>
+                    <p className="shrink-0 px-5 pb-3 text-[15px] text-ios-gray">
+                        {t('music.allowlistBlurb', 'Songs this server has approved. Tap one to add it.')}
+                    </p>
+                    <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2">
+                        {ids.length === 0 && hosted.length === 0 && (
+                            <p className="px-5 py-7 text-center text-[18px] font-medium text-ios-gray">
+                                {t('music.allowlistEmpty', 'This server has no approved songs yet.')}
+                            </p>
+                        )}
+                        {hosted.length > 0 && <SectionLabel>{t('music.allowlistHosted', 'From this server')}</SectionLabel>}
+                        {hosted.map(entry => {
+                            const preview: Track = {
+                                id: `al-${entry.url}`,
+                                url: entry.url,
+                                title: entry.title || titleFromUrl(entry.url),
+                                artist: entry.artist || t('music.unknownArtist', 'Unknown artist'),
+                                addedAt: 0,
+                            };
+                            return (
+                                <button key={entry.url} type="button" onClick={() => { onPick(entry.url); close(); }}
+                                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left active:bg-black/10 dark:active:bg-white/10">
+                                    <Cover track={preview} size={52} rounded={7} />
+                                    <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                                        <span className="truncate text-[18px] font-semibold">{preview.title}</span>
+                                        <span className="truncate text-[15px] text-ios-gray">{preview.artist}</span>
+                                    </span>
+                                    <Plus className="h-5 w-5 shrink-0 text-ios-blue" />
+                                </button>
+                            );
+                        })}
+                        {ids.length > 0 && <SectionLabel>{t('music.allowlistYouTube', 'From YouTube')}</SectionLabel>}
+                        {ids.map(id => (
+                            <button key={id} type="button" onClick={() => { onPick(youtubeWatchUrl(id)); close(); }}
+                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left active:bg-black/10 dark:active:bg-white/10">
+                                <img src={youtubeThumb(id)} alt="" loading="lazy"
+                                    className="h-[52px] w-[92px] shrink-0 rounded-[7px] bg-black/10 object-cover dark:bg-white/10" />
+                                <span className="min-w-0 flex-1 truncate text-[18px] font-semibold">
+                                    {titles[id] ?? t('music.gettingTitle', 'Getting title…')}
+                                </span>
+                                <Plus className="h-5 w-5 shrink-0 text-ios-blue" />
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </Sheet>
     );
 }
 

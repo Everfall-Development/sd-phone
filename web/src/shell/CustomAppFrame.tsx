@@ -16,6 +16,7 @@ import { EmojiPanel } from '@/shared/chat/EmojiPanel';
 import { GifPickerSheet } from '@/shared/chat/GifPickerSheet';
 import { ContactPickerSheet } from '@/shared/ContactPickerSheet';
 import { formatPhone } from '@/apps/phone/data';
+import { Camera } from '@/apps/camera/Camera';
 import { AppIconSVG } from './AppIconSVG';
 import { useDeckActive } from './deckActive';
 import { resolveCustomUi } from './widgets/customUrl';
@@ -113,6 +114,7 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
     const [contactOpen, setContact] = useState(false);
     const [colorReq, setColorReq]   = useState<ColorReq | null>(null);
     const [fullImage, setFullImage] = useState<string | null>(null);
+    const [cameraOpen, setCameraOpen] = useState(false);
 
     const popupResolve   = useRef<((v: number | undefined) => void) | null>(null);
     const ctxResolve     = useRef<((v: number | undefined) => void) | null>(null);
@@ -121,6 +123,7 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
     const gifResolve     = useRef<((v: string | null) => void) | null>(null);
     const contactResolve = useRef<((v: unknown) => void) | null>(null);
     const colorResolve   = useRef<((v: string | null) => void) | null>(null);
+    const cameraResolve  = useRef<((v: string | null) => void) | null>(null);
 
     const settleEmoji = useCallback((value: string | null) => {
         const r = emojiResolve.current; emojiResolve.current = null;
@@ -155,6 +158,12 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
     const settleColor = useCallback((value: string | null) => {
         const r = colorResolve.current; colorResolve.current = null;
         setColorReq(null);
+        if (r) r(value);
+    }, []);
+
+    const settleCamera = useCallback((value: string | null) => {
+        const r = cameraResolve.current; cameraResolve.current = null;
+        setCameraOpen(false);
         if (r) r(value);
     }, []);
 
@@ -210,8 +219,7 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
             case 'colorpicker':
                 return new Promise(res => { colorResolve.current = res; setColorReq({ value: data.value as string }); });
             case 'camera':
-                warnOnce('ShowComponent:camera');
-                return Promise.resolve(null);
+                return new Promise(res => { cameraResolve.current = res; setCameraOpen(true); });
             default:
                 warnOnce(`ShowComponent:${data?.component ?? 'unknown'}`);
                 return Promise.resolve(null);
@@ -577,6 +585,16 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
                     onPick={(c: Contact) => settleContact({ name: c.name, number: c.phone, avatar: c.avatar })}
                     onClose={() => settleContact(null)}
                 />
+            )}
+
+            {cameraOpen && (
+                <div className="absolute inset-0 z-[80] bg-black">
+                    <Camera
+                        photoOnly
+                        onCapture={url => settleCamera(url)}
+                        onClose={() => settleCamera(null)}
+                    />
+                </div>
             )}
 
             {fullImage && (
