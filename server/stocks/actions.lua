@@ -150,11 +150,12 @@ function actions.withdraw(src, payload)
         local cash = store.ensureWallet(cid, ST.StartingCash)
         if cash < amount then return { success = false, message = 'Insufficient brokerage cash' } end
 
-        if not bank.addMoney(src, amount, 'Brokerage withdrawal') then
-            return { success = false, message = 'Bank transfer was declined' }
-        end
         cash = cash - amount
         store.setWallet(cid, cash)
+        if not bank.addMoney(src, amount, 'Brokerage withdrawal') then
+            store.setWallet(cid, cash + amount)
+            return { success = false, message = 'Bank transfer was declined' }
+        end
 
         return { success = true, data = { cash = cash, bank = bank.getBalance(src) or 0 } }
     end)

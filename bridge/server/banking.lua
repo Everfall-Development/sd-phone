@@ -154,13 +154,18 @@ function banking.consumeExpected(src, amount, minus)
     return false
 end
 
----Credit the player's bank account. ef_banking declines never fall through to the framework
----projection. Other supported providers retain their established framework fallback.
+---Credit the player's bank account, falling back to the framework account when no provider path
+---handles it. ef_banking declines never fall through to the framework projection, while other
+---supported providers retain their established framework fallback. True only when the credit
+---landed.
 ---@param src number
 ---@param amount number
 ---@param reason? string
----@return boolean
+---@return boolean added
 function banking.addMoney(src, amount, reason)
+    amount = math.floor(tonumber(amount) or 0)
+    if amount <= 0 then return false end
+
     expect(src, amount, false)
     local name = banking.name
     if name == 'ef_banking' then
@@ -180,29 +185,54 @@ function banking.addMoney(src, amount, reason)
     return applied
 end
 
----Debit the player's bank account. Returns true only when the provider accepted the debit.
+---Debit the player's bank account, re-reading the balance to confirm the money moved. True only
+---when it left the account; callers must not credit anyone on a false.
 ---@param src number
 ---@param amount number
 ---@param reason? string
----@return boolean
+---@return boolean removed
 function banking.removeMoney(src, amount, reason)
+    amount = math.floor(tonumber(amount) or 0)
+    if amount <= 0 then return false end
+
+    local before = banking.getBalance(src) or 0
+    if before < amount then return false end
+
     expect(src, amount, true)
+
     local name = banking.name
     if name == 'ef_banking' then
         local applied = efBanking.removeMoney(src, amount, reason)
         if not applied then discardExpected(src, amount, true) end
-        return applied
-    elseif name == 'wasabi_banking' then
-        local id = player.getIdentifier(src)
-        if id and try(function() return exports.wasabi_banking:RemoveMoney(id, amount, reason or 'Phone transfer') end) then return true end
-    elseif name == 'omes_banking' then
-        if try(function() return exports['omes_banking']:RemoveBankMoney(src, amount, reason or 'Phone transfer') end) then return true end
-    elseif name == 'prism_banking' then
-        if try(function() return exports['prism_banking']:AddBankingTransaction(src, 'withdraw', amount, 'phone', false, reason or 'Phone transfer', reason or '') end) then return true end
+        if not applied then return false end
+        if (banking.getBalance(src) or 0) >= before then
+            discardExpected(src, amount, true)
+            return false
+        end
+        return true
     end
-    local applied = money.remove(src, 'bank', amount, reason)
-    if not applied then discardExpected(src, amount, true) end
-    return applied
+
+    local viaProvider = false
+    if name == 'wasabi_banking' then
+        local id = player.getIdentifier(src)
+        viaProvider = id ~= nil and try(function() return exports.wasabi_banking:RemoveMoney(id, amount, reason or 'Phone transfer') end)
+    elseif name == 'omes_banking' then
+        viaProvider = try(function() return exports['omes_banking']:RemoveBankMoney(src, amount, reason or 'Phone transfer') end)
+    elseif name == 'prism_banking' then
+        viaProvider = try(function() return exports['prism_banking']:AddBankingTransaction(src, 'withdraw', amount, 'phone', false, reason or 'Phone transfer', reason or '') end)
+    end
+
+    if not viaProvider then
+        if money.remove(src, 'bank', amount, reason) then return true end
+        discardExpected(src, amount, true)
+        return false
+    end
+
+    if (banking.getBalance(src) or 0) >= before then
+        discardExpected(src, amount, true)
+        return false
+    end
+    return true
 end
 
 ---Credit an offline character through ef_banking's identifier export, or a guarded framework DB

@@ -262,7 +262,7 @@ export type NuiMessage =
     | { action: 'sd-phone:frameColor'; data: { color: string } }
     | { action: 'sd-phone:music:receive'; data: MusicSharePush }
     | { action: 'sd-phone:pages:feed';       data: ClassifiedFeedPush }
-    | { action: 'sd-phone:weazelnews:feed';  data: { type: 'changed' } }
+    | { action: 'sd-phone:weazelnews:feed';  data: { type: 'changed' | 'job' } }
     | { action: 'sd-phone:marketplace:feed'; data: ClassifiedFeedPush }
     | { action: 'sd-phone:ryde:requestAdded';   data: RydeRequestPush }
     | { action: 'sd-phone:ryde:requestRemoved'; data: { id: string } }

@@ -3,16 +3,22 @@ local store = {}
 
 ---@type table Shared server helpers (server.util): collation conversion.
 local util = require 'server.util'
+---@type table Crypto helper (server.crypto): scrypt hashing and vault encryption over Node.
+local crypto = require 'server.crypto'
 
--- Server-side pepper folded into every password hash.
----@type string Engine password pepper.
-local PEPPER = 'sd-phone-v1::accounts::do-not-leak-this-string'
+-- The pepper the pre-scrypt digest was built with. Shipped in the source of every sd-phone, so it
+-- protects nothing; it survives only so hashes written before scrypt can still be verified once.
+---@type string Legacy engine password pepper.
+local LEGACY_PEPPER = 'sd-phone-v1::accounts::do-not-leak-this-string'
 
----Hashes a password into a stable 24-char hex digest using the engine's pepper.
+---@type string Prefix marking a hash produced by the scrypt path.
+local SCRYPT_TAG = 'scrypt$'
+
+---The pre-scrypt digest. Verification only; nothing new is ever written in this format.
 ---@param password string plaintext password
 ---@return string hash 24-char hex digest
-function store.hashPassword(password)
-    local input = password .. PEPPER
+local function legacyHash(password)
+    local input = password .. LEGACY_PEPPER
     local h1, h2, h3 = 0x12345678, 0x87654321, 0xABCDEF01
     for i = 1, #input do
         local b = input:byte(i)
@@ -21,6 +27,34 @@ function store.hashPassword(password)
         h3 = (((h3 << 5) | (h3 >> 27)) + b * (h1 + 1)) & 0xFFFFFFFF
     end
     return ('%08x%08x%08x'):format(h1, h2, h3)
+end
+
+---Hashes a password for storage: salted scrypt, or the legacy digest when the helper is absent.
+---The result is NOT stable across calls, so it can only be written, never compared.
+---@param password string plaintext password
+---@return string hash
+function store.hashPassword(password)
+    return crypto.hashPassword(password) or legacyHash(password)
+end
+
+---Checks a plaintext password against whichever format the row holds.
+---@param plain string plaintext password
+---@param stored any stored hash
+---@return boolean verified
+function store.verifyPassword(plain, stored)
+    if type(stored) ~= 'string' or stored == '' then return false end
+    if stored:sub(1, #SCRYPT_TAG) == SCRYPT_TAG then
+        return crypto.verifyPassword(plain, stored)
+    end
+    return legacyHash(plain) == stored
+end
+
+---True when a verified password is held in an older format and should be written back as scrypt.
+---@param stored any stored hash
+---@return boolean stale
+function store.needsRehash(stored)
+    if not crypto.available() then return false end
+    return type(stored) ~= 'string' or stored:sub(1, #SCRYPT_TAG) ~= SCRYPT_TAG
 end
 
 ---Creates the engine tables idempotently: phone_app_accounts, phone_app_sessions, and the
@@ -32,7 +66,7 @@ function store.ensureSchema()
             app           VARCHAR(24)  NOT NULL,
             username      VARCHAR(64)  NOT NULL,
             display_name  VARCHAR(50)  NOT NULL DEFAULT '',
-            password_hash VARCHAR(64)  NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
             email         VARCHAR(120) NULL,
             phone         VARCHAR(20)  NULL,
             created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -54,7 +88,7 @@ function store.ensureSchema()
             citizenid  VARCHAR(64)  NOT NULL,
             app        VARCHAR(24)  NOT NULL,
             username   VARCHAR(64)  NOT NULL,
-            password   VARCHAR(64)  NOT NULL,
+            password   VARCHAR(255) NOT NULL,
             email      VARCHAR(120) NULL,
             phone      VARCHAR(20)  NULL,
             created_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -67,6 +101,12 @@ function store.ensureSchema()
     util.ensureCollation('phone_app_accounts')
     util.ensureCollation('phone_app_sessions')
     util.ensureCollation('phone_passwords')
+
+    -- Both columns held a 24-char digest / a plaintext password and were sized for it. A scrypt
+    -- hash is ~86 chars and an encrypted vault secret longer still, so an install that predates
+    -- them has to be widened before either can be written.
+    util.ensureColumnWidth('phone_app_accounts', 'password_hash', 'password_hash VARCHAR(255) NOT NULL', 255)
+    util.ensureColumnWidth('phone_passwords', 'password', 'password VARCHAR(255) NOT NULL', 255)
 
     -- An account is identified by its contacts alone, which cannot say who owns it: an account
     -- with only an email is unattributable, and an email need not be the holder's, so counting a
@@ -284,11 +324,31 @@ function store.getSessionAccount(app, citizenid)
     return rowToAccount(row)
 end
 
+-- The Passwords app shows a player their saved logins, so the vault has to be reversible and
+-- cannot be hashed. It is encrypted instead, under a key held outside the database, so a dump of
+-- the tables alone does not hand over passwords players may have reused elsewhere.
+---Encrypts a vault secret for storage, passing it through untouched when no key is available.
+---@param plain string|nil
+---@return string|nil stored
+local function sealSecret(plain)
+    if type(plain) ~= 'string' or plain == '' then return plain end
+    return crypto.encrypt(plain) or plain
+end
+
+---Reveals a stored vault secret. Rows written before encryption are already plaintext and are
+---returned as they are, which is what lets the vault migrate one entry at a time.
+---@param stored any
+---@return any plain
+local function openSecret(stored)
+    if type(stored) ~= 'string' or stored == '' then return stored end
+    return crypto.decrypt(stored) or stored
+end
+
 ---Upserts one vault entry for a character, keyed UNIQUE (citizenid, app, username).
 ---@param citizenid string framework per-character id (the vault's owner)
 ---@param app string account app key
 ---@param username string saved login username
----@param password string saved login password, stored plaintext
+---@param password string saved login password, encrypted at rest
 ---@param email string|nil saved linked email
 ---@param phone string|nil saved linked phone (digits)
 function store.saveVaultEntry(citizenid, app, username, password, email, phone)
@@ -296,7 +356,7 @@ function store.saveVaultEntry(citizenid, app, username, password, email, phone)
         INSERT INTO phone_passwords (citizenid, app, username, password, email, phone)
         VALUES (?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE password = VALUES(password), email = VALUES(email), phone = VALUES(phone)
-    ]], { citizenid, app, username, password, email, phone })
+    ]], { citizenid, app, username, sealSecret(password), email, phone })
 end
 
 ---Returns all of one character's vault entries, ordered app then username. `created` is a unix
@@ -306,10 +366,74 @@ end
 ---@param citizenid string framework per-character id
 ---@return table[] entries
 function store.listVaultEntries(citizenid)
-    return MySQL.query.await([[
+    local rows = MySQL.query.await([[
         SELECT id, app, username, password, email, phone, UNIX_TIMESTAMP(created_at) AS created
         FROM phone_passwords WHERE citizenid = ? ORDER BY app, username
     ]], { citizenid }) or {}
+    for i = 1, #rows do
+        rows[i].password = openSecret(rows[i].password)
+    end
+    return rows
+end
+
+---Encrypts vault rows still held in plaintext. Unlike a password hash, a vault secret IS the
+---plaintext, so it can be converted in place instead of waiting to be re-saved one entry at a
+---time. Idempotent: an already-sealed row is filtered out by the query.
+---@return integer sealed rows converted
+function store.sealPlaintextVault()
+    if not crypto.available() then return 0 end
+
+    local rows = MySQL.query.await("SELECT id, password FROM phone_passwords WHERE password NOT LIKE 'v1$%'") or {}
+    local sealed = 0
+    for i = 1, #rows do
+        local blob = crypto.encrypt(rows[i].password)
+        if blob and blob ~= rows[i].password then
+            MySQL.update.await('UPDATE phone_passwords SET password = ? WHERE id = ?', { blob, rows[i].id })
+            sealed = sealed + 1
+        end
+    end
+    if sealed > 0 then
+        print(('^2[sd-phone:accounts]^0 encrypted %d saved password%s that were stored in plaintext.')
+            :format(sealed, sealed == 1 and '' or 's'))
+    end
+    return sealed
+end
+
+---Upgrades legacy account hashes using passwords their owners already saved in the vault. A
+---signed-in player never re-enters a password, so lazy rehash alone would leave those accounts on
+---the old hash forever. Each candidate is checked against the stored legacy hash first, so a
+---stale vault entry can never overwrite a password it does not actually match.
+---@return integer upgraded accounts converted
+function store.rehashFromVault()
+    if not crypto.available() then return 0 end
+
+    local rows = MySQL.query.await([[
+        SELECT a.id, a.password_hash, p.password
+        FROM phone_passwords p
+        JOIN phone_app_accounts a ON a.app = p.app AND a.username = p.username
+        WHERE a.password_hash NOT LIKE 'scrypt$%'
+    ]]) or {}
+
+    local seen, upgraded = {}, 0
+    for i = 1, #rows do
+        local row = rows[i]
+        if not seen[row.id] then
+            local plain = openSecret(row.password)
+            if type(plain) == 'string' and plain ~= '' and legacyHash(plain) == row.password_hash then
+                MySQL.update.await('UPDATE phone_app_accounts SET password_hash = ? WHERE id = ?',
+                    { store.hashPassword(plain), row.id })
+                seen[row.id] = true
+                upgraded = upgraded + 1
+            end
+            Wait(0)
+        end
+    end
+
+    if upgraded > 0 then
+        print(('^2[sd-phone:accounts]^0 upgraded %d account password%s to scrypt from saved logins.')
+            :format(upgraded, upgraded == 1 and '' or 's'))
+    end
+    return upgraded
 end
 
 ---Deletes one vault entry, scoped to citizenid AND id.
@@ -322,11 +446,11 @@ end
 ---Updates every saved vault copy of this login to the new password.
 ---@param app string account app key
 ---@param username string account username
----@param password string the new plaintext password
+---@param password string the new plaintext password, encrypted before it is written
 function store.syncVaultPassword(app, username, password)
     MySQL.update.await(
         'UPDATE phone_passwords SET password = ? WHERE app = ? AND username = ?',
-        { password, app, username }
+        { sealSecret(password), app, username }
     )
 end
 

@@ -65,11 +65,21 @@
         return await response.json();
     }
 
+    function reportDebug(message) {
+        try {
+            globalThis.parent.postMessage({ type: 'sdphoneDebug', message: String(message) }, '*');
+        } catch (err) {
+            void err;
+        }
+    }
+
     async function fetchNui(event, data, scriptName) {
         try {
             return await fetchNuiStrict(event, data, scriptName);
         } catch (err) {
-            console.error(`[fetchNui] ${err && err.message ? err.message : err}`);
+            const reason = err && err.message ? err.message : err;
+            console.error(`[fetchNui] ${reason}`);
+            reportDebug(`${globalThis.appIdentifier || 'app'}: fetchNui "${event}" failed: ${reason}`);
             return undefined;
         }
     }
@@ -416,5 +426,17 @@
 
     globalThis.componentsLoaded = true;
 
+    reportDebug(
+        `${globalThis.appIdentifier || 'app'}: SDK v${globalThis.componentsVersion} ready in `
+        + `"${globalThis.resourceName}", settings=${globalThis.settings ? 'yes' : 'no'}, `
+        + `bridge=${globalThis.components ? 'yes' : 'no'}`,
+    );
+
     globalThis.postMessage('componentsLoaded', '*');
+
+    try {
+        globalThis.parent.postMessage({ type: 'sdphoneSdkReady' }, '*');
+    } catch (err) {
+        void err;
+    }
 })();

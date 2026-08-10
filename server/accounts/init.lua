@@ -18,6 +18,14 @@ CreateThread(function()
     if not okMig then
         boot.schemaFailed('accounts', merr)
     end
+    local okSeal, serr = pcall(store.sealPlaintextVault)
+    if not okSeal then
+        print(('^1[sd-phone:accounts]^0 could not encrypt the saved-password vault: %s'):format(serr))
+    end
+    local okRehash, rerr = pcall(store.rehashFromVault)
+    if not okRehash then
+        print(('^1[sd-phone:accounts]^0 could not upgrade account hashes: %s'):format(rerr))
+    end
     boot.schemaReady()
 end)
 

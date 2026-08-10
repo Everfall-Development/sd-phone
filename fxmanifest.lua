@@ -19,6 +19,7 @@ client_scripts {
 
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
+    'server/crypto.js',
     'bridge/server/init.lua',
     'server/main.lua',
 }

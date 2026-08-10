@@ -39,19 +39,55 @@ local LEGACY_HASHERS = {
     mail  = mailStore.hashPassword,
 }
 
+-- Password-guessing budget, keyed on the caller rather than the account being guessed: a
+-- per-target bucket would let anyone lock a player out of their own login by burning it.
+---@type integer Guess window in milliseconds.
+local GUESS_WINDOW   = 300000
+---@type integer Sign-in attempts allowed per caller per window.
+local LOGIN_MAX      = 15
+---@type integer Password changes allowed per caller per window.
+local CHANGE_MAX     = 10
+
+---True when the caller holds the account. Mail keys ownership by mailbox address, every other
+---app by session.
+---@param app string account app key
+---@param cid string framework per-character id
+---@param acc table resolved account row
+---@return boolean owns
+local function ownsAccount(app, cid, acc)
+    if app == 'mail' then
+        local want  = tostring(acc.username or ''):lower()
+        local boxes = mailStore.listAccountsForCitizen(cid) or {}
+        for i = 1, #boxes do
+            if tostring(boxes[i].email or ''):lower() == want then return true end
+        end
+        return false
+    end
+    local held = store.listSessionAccounts(app, cid) or {}
+    for i = 1, #held do
+        if held[i].id == acc.id then return true end
+    end
+    return false
+end
+
 
 
 ---@type integer Longest password any creation path accepts.
 local MAX_PASSWORD_LEN = math.max(64, config.Birdy.MaxPasswordLength or 0, config.Mail.MaxPasswordLength or 0)
 
----Checks a plaintext password against an account's stored hash, trying the app's legacy hasher
----on an engine-hash miss and re-hashing a legacy match with the engine hash.
+---Checks a plaintext password against an account's stored hash, trying the app's legacy hasher on
+---a miss. Any match held in an older format is written back as a current hash on the way out.
 ---@param account table account row (store shape, passwordHash included)
 ---@param plain any client-supplied plaintext password
 ---@return boolean verified
 function actions.verifyPassword(account, plain)
     if type(plain) ~= 'string' or plain == '' or #plain > MAX_PASSWORD_LEN then return false end
-    if store.hashPassword(plain) == account.passwordHash then return true end
+    if store.verifyPassword(plain, account.passwordHash) then
+        if store.needsRehash(account.passwordHash) then
+            store.setPassword(account.id, store.hashPassword(plain))
+        end
+        return true
+    end
     local legacy = LEGACY_HASHERS[account.app]
     if legacy and legacy(plain) == account.passwordHash then
         store.setPassword(account.id, store.hashPassword(plain))
@@ -226,6 +262,11 @@ function actions.login(source, payload)
     local app = payload.app
     if not DIRECT_APPS[app] then return fail('Unknown app') end
     local cid = player.getIdentifier(source); if not cid then return fail('Player not found') end
+
+    if not util.cooldown(cid, 'accounts:login', 1000)
+        or not util.rateLimit(cid, 'accounts:login', GUESS_WINDOW, LOGIN_MAX) then
+        return fail('Too many sign-in attempts. Try again shortly')
+    end
 
     local raw = trim(payload.username):lower()
     if raw == '' then return fail('Wrong username or password') end
@@ -433,14 +474,12 @@ end
 -- In-memory password-reset code state, keyed app:accountId.
 ---@type table<string, { code: string, expires: integer, attempts: integer, channel: string }> Live codes by app:accountId.
 local resetCodes     = {}
----@type table<string, { count: integer, windowStart: integer }> Issue-rate windows by app:accountId.
-local resetRequests  = {}
 
 ---@type integer Reset-code lifetime in seconds.
 local CODE_TTL       = 600
 ---@type integer Wrong guesses allowed per code before it is voided.
 local MAX_ATTEMPTS   = 5
----@type integer Codes issuable per account within one request window.
+---@type integer Codes issuable per caller within one request window.
 local MAX_REQUESTS   = 3
 ---@type integer Issue-rate window length in seconds.
 local REQUEST_WINDOW = 600
@@ -509,32 +548,29 @@ function actions.requestReset(source, payload)
     local app = payload.app
     if not ALL_APPS[app] then return fail('Unknown app') end
 
-    local acc, channel, err = resolveRecovery(app, trim(payload.identity))
-    if not acc then return fail(err) end
+    local cid = player.getIdentifier(source); if not cid then return fail('Player not found') end
 
-    local key = resetKey(app, acc.id)
-    local now = os.time()
-    local req = resetRequests[key]
-    if req and now - req.windowStart < REQUEST_WINDOW and req.count >= MAX_REQUESTS then
+    local identity = trim(payload.identity)
+    if identity == '' then return fail('Enter the username, email or phone number on the account') end
+
+    if not util.cooldown(cid, 'accounts:requestReset', 2000)
+        or not util.rateLimit(cid, 'accounts:requestReset', REQUEST_WINDOW * 1000, MAX_REQUESTS) then
         return fail('Too many codes requested. Try again in a few minutes')
     end
-    if not req or now - req.windowStart >= REQUEST_WINDOW then
-        resetRequests[key] = { count = 0, windowStart = now }
-        req = resetRequests[key]
-    end
+
+    local acc, channel = resolveRecovery(app, identity)
+    if not acc then return ok({}) end
 
     local code = ('%06d'):format(math.random(0, 999999))
     local sent
     if channel == 'email' then
         sent = delivery.sendCodeEmail(acc.email, app, code)
-        if not sent then return fail('Could not deliver the email. The linked address may have been deleted') end
     else
         sent = delivery.sendCodeSms(acc.phone, app, code)
-        if not sent then return fail('Could not deliver the text. The linked number is not active') end
     end
+    if not sent then return ok({}) end
 
-    req.count = req.count + 1
-    resetCodes[key] = { code = code, expires = now + CODE_TTL, attempts = 0, channel = channel }
+    resetCodes[resetKey(app, acc.id)] = { code = code, expires = os.time() + CODE_TTL, attempts = 0, channel = channel }
     return ok({ channel = channel })
 end
 
@@ -620,10 +656,16 @@ function actions.changePassword(source, payload)
     payload = payload or {}
     local app = payload.app
     if not ALL_APPS[app] then return fail('Unknown app') end
+    local cid = player.getIdentifier(source); if not cid then return fail('Player not found') end
+    if not util.cooldown(cid, 'accounts:changePassword', 1000)
+        or not util.rateLimit(cid, 'accounts:changePassword', GUESS_WINDOW, CHANGE_MAX) then
+        return fail('Too many attempts. Try again shortly')
+    end
+
     local username = trim(payload.identity or '')
     if username == '' then return fail('Account is required') end
     local acc = store.getAccount(app, username)
-    if not acc or not actions.verifyPassword(acc, payload.currentPassword) then
+    if not acc or not ownsAccount(app, cid, acc) or not actions.verifyPassword(acc, payload.currentPassword) then
         return fail('Current password is incorrect')
     end
     local password, pe = validPassword(payload.newPassword); if not password then return fail(pe) end

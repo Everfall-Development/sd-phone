@@ -274,6 +274,24 @@ function util.ensureColumns(tbl, defs)
     return true
 end
 
+---Widens a VARCHAR column that is shorter than a new format needs. A no-op once the column is
+---already wide enough, so it costs one information_schema read per boot.
+---@param tbl string table name
+---@param col string column name
+---@param ddl string full column definition to MODIFY to
+---@param want integer minimum CHARACTER_MAXIMUM_LENGTH required
+---@return boolean widened
+function util.ensureColumnWidth(tbl, col, ddl, want)
+    local have = MySQL.scalar.await([[
+        SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = ? AND COLUMN_NAME = ?
+    ]], { tbl, col })
+    if not have or tonumber(have) == nil or tonumber(have) >= want then return false end
+
+    MySQL.query.await(('ALTER TABLE `%s` MODIFY COLUMN %s'):format(tbl, ddl))
+    return true
+end
+
 ---Adds a FOREIGN KEY once, so existing installs migrate on boot with no manual SQL. Orphaned
 ---child rows are cleared first - they reference a parent that no longer exists, so they are
 ---already unreachable, and ALTER TABLE ... ADD FOREIGN KEY fails outright while any remain.

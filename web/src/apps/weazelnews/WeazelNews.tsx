@@ -42,6 +42,10 @@ export function WeazelNews({ onClose: _onClose }: { onClose: () => void }) {
     useEffect(() => { void refresh(); }, [refresh]);
 
     useEffect(() => {
+        if (!canManage) setManaging(false);
+    }, [canManage]);
+
+    useEffect(() => {
         void weazelWatch(true);
         return () => { void weazelWatch(false); };
     }, []);
