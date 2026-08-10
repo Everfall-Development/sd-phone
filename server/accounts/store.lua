@@ -14,7 +14,9 @@ local LEGACY_PEPPER = 'sd-phone-v1::accounts::do-not-leak-this-string'
 ---@type string Prefix marking a hash produced by the scrypt path.
 local SCRYPT_TAG = 'scrypt$'
 
----The pre-scrypt digest. Verification only; nothing new is ever written in this format.
+---The pre-scrypt digest. Interactive account paths never write it; the bulk importer may use it
+---for freshly generated credentials so thousands of synchronous scrypt calls cannot
+---starve the FiveM server thread. Those hashes are upgraded to scrypt after authentication.
 ---@param password string plaintext password
 ---@return string hash 24-char hex digest
 local function legacyHash(password)
@@ -35,6 +37,14 @@ end
 ---@return string hash
 function store.hashPassword(password)
     return crypto.hashPassword(password) or legacyHash(password)
+end
+
+---Hashes a freshly generated migration credential without blocking the server thread on scrypt.
+---This is intentionally migration-only; normal account creation must use `hashPassword`.
+---@param password string plaintext generated password
+---@return string hash legacy digest, upgraded to scrypt after authentication
+function store.hashImportedPassword(password)
+    return legacyHash(password)
 end
 
 ---Checks a plaintext password against whichever format the row holds.
@@ -342,6 +352,31 @@ end
 local function openSecret(stored)
     if type(stored) ~= 'string' or stored == '' then return stored end
     return crypto.decrypt(stored) or stored
+end
+
+---Encrypts a migration credential with the same vault contract as normal account writes.
+---@param plain string plaintext password
+---@return string stored encrypted blob, or plaintext when the crypto helper is unavailable
+function store.sealImportedVaultSecret(plain)
+    return sealSecret(plain)
+end
+
+---Reveals a vault value for migration reuse. Encrypted rows return nil when they cannot be opened,
+---so an importer never mistakes ciphertext for a password and hashes it into the account.
+---@param stored any encrypted or legacy plaintext vault value
+---@return string|nil plain
+function store.openImportedVaultSecret(stored)
+    if type(stored) ~= 'string' or stored == '' then return nil end
+    if stored:sub(1, 3) ~= 'v1$' then return stored end
+    return crypto.decrypt(stored)
+end
+
+---True when the current runtime can verify a saved credential against this account hash.
+---@param stored any account password hash
+---@return boolean available
+function store.canVerifyImportedPasswordHash(stored)
+    if type(stored) ~= 'string' or stored:sub(1, #SCRYPT_TAG) ~= SCRYPT_TAG then return true end
+    return crypto.available()
 end
 
 ---Upserts one vault entry for a character, keyed UNIQUE (citizenid, app, username).

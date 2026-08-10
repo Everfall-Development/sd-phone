@@ -206,9 +206,10 @@ end
 ---@return string
 local function elapsed(since) return ('%.1fs'):format((GetGameTimer() - since) / 1000) end
 
----Runs the import. `force` re-runs domains already marked done; `dryRun` counts without writing.
+---Runs one import after the caller has acquired the migration guard.
+---`force` re-runs domains already marked done; `dryRun` counts without writing.
 ---@param opts { force?: boolean, dryRun?: boolean }
-local function run(opts)
+local function runImport(opts)
     local cfg = config.Migrate or {}
     local dryRun = opts.dryRun or cfg.dryRun or false
     local startedAt = GetGameTimer()
@@ -372,6 +373,26 @@ local function run(opts)
         log('^1they will be retried automatically on the next start.^0')
     end
     log('=========================================================')
+end
+
+---@type boolean True while either the boot import or a console-triggered import owns the runner.
+local migrationRunning = false
+
+---Runs at most one import at a time. Every porter shares fixed scratch-table names, so concurrent
+---boot and console runs can corrupt each other's staging state as well as doubling server load.
+---@param opts { force?: boolean, dryRun?: boolean }
+---@return boolean started
+local function run(opts)
+    if migrationRunning then
+        log('^3an lb-phone import is already running; wait for it to finish before starting another.^0')
+        return false
+    end
+
+    migrationRunning = true
+    local ok, result = xpcall(function() return runImport(opts) end, debug.traceback)
+    migrationRunning = false
+    if not ok then error(result, 0) end
+    return true
 end
 
 -- Drops every table sd-phone owns and forgets the import markers, so the next start rebuilds the

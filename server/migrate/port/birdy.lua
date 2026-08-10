@@ -196,7 +196,8 @@ function M.run(ctx)
         return out
     end
 
-    out.logins = store.grantMigratedLogins(grants)
+    out.logins, out.deferred = store.grantMigratedLogins(grants)
+    if out.deferred > 0 then out.retry = true end
     local linked, inserted = store.insertPgSessions(sessions)
     linked, inserted = linked or 0, inserted or 0
     if linked == 0 and #sessions > 0 then

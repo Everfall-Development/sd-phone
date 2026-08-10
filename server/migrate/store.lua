@@ -5,6 +5,7 @@ local store = {}
 
 local config   = require 'configs.config'
 local settings = require 'server.settings.store'
+local util     = require 'server.util'
 
 ---@type string Validated lb-phone table prefix. Falls back to the default when the configured
 ---value is not a plain identifier.
@@ -1139,6 +1140,45 @@ local function newPassword()
     return table.concat(out)
 end
 
+---@type boolean True after migration-owned credential columns have been checked this resource run.
+local loginColumnWidthsReady = false
+
+---Guarantees every destination touched by the login grant can hold current scrypt/encrypted data.
+---Their normal schema bootstraps run in separate threads and may not have finished widening an old
+---install when the migration's table-existence gate opens.
+local function ensureLoginColumnWidths()
+    if loginColumnWidthsReady then return end
+    util.ensureColumnWidth(
+        'phone_app_accounts',
+        'password_hash',
+        'password_hash VARCHAR(255) NOT NULL',
+        255
+    )
+    util.ensureColumnWidth(
+        'phone_passwords',
+        'password',
+        'password VARCHAR(255) NOT NULL',
+        255
+    )
+    util.ensureColumnWidth(
+        'phone_birdy_profiles',
+        'password',
+        "password VARCHAR(255) NOT NULL DEFAULT ''",
+        255
+    )
+    loginColumnWidthsReady = true
+end
+
+---True when a target account already holds one of the engine's own password formats. Without a
+---verified vault value, a forced migration must preserve it rather than manufacture a replacement.
+---@param value any stored password hash
+---@return boolean current
+local function isEnginePasswordHash(value)
+    if type(value) ~= 'string' then return false end
+    if value:sub(1, 7) == 'scrypt$' then return true end
+    return #value == 24 and value:match('^[0-9a-fA-F]+$') ~= nil
+end
+
 ---Gives migrated accounts a login their owner can actually use.
 ---
 ---lb-phone hashes passwords with bcrypt, which sd-phone cannot verify and cannot reverse, so a
@@ -1149,28 +1189,149 @@ end
 ---Accounts with no resolved owner keep whatever hash they came with. Nobody can sign into them, but
 ---there is also no one to hand a password to.
 ---@param entries { app: string, username: string, cid: string, email: string|nil }[]
----@return integer granted
+---@return integer granted, integer deferred
 function store.grantMigratedLogins(entries)
-    if #entries == 0 then return 0 end
+    if #entries == 0 then return 0, 0 end
     local accounts = require 'server.accounts.store'
 
-    -- Reuse a saved credential for an account whenever one exists. Older forced runs generated a
-    -- different password per owner and could leave a shared account with conflicting vault rows;
-    -- prefer whichever plaintext still matches the account hash, then converge every owner on it.
-    local credentials, matched = {}, {}
-    local saved = MySQL.query.await([[
-        SELECT p.app, p.username, p.password, a.password_hash
-        FROM phone_passwords p
-        JOIN phone_app_accounts a ON a.app = p.app AND a.username = p.username
-        WHERE p.app IN ('birdy', 'photogram', 'mail')
-    ]]) or {}
-    for _, row in ipairs(saved) do
-        local key = row.app .. '\0' .. row.username
-        if not credentials[key] then credentials[key] = row.password end
-        if not matched[key] and accounts.hashPassword(row.password) == row.password_hash then
-            credentials[key] = row.password
-            matched[key] = true
+    local targets, appNames, seenApps = {}, {}, {}
+    for i = 1, #entries do
+        local entry = entries[i]
+        targets[entry.app .. '\0' .. entry.username] = true
+        if not seenApps[entry.app] then
+            seenApps[entry.app] = true
+            appNames[#appNames + 1] = entry.app
         end
+    end
+    table.sort(appNames)
+
+    ensureLoginColumnWidths()
+
+    -- Reuse a saved credential for an account whenever one exists. Read the vault in bounded
+    -- primary-key pages: a full server can hold tens of thousands of rows, and bridging all of
+    -- them to Lua in one result both trips oxmysql's warning and delays the scheduler heartbeat.
+    local savedByAccount, unreadable = {}, {}
+    local appPlaceholders = {}
+    for i = 1, #appNames do appPlaceholders[i] = '?' end
+
+    -- Record current engine hashes separately from the vault. A player can delete a saved Passwords
+    -- entry without changing their actual account password; a forced migration must not treat that
+    -- missing convenience copy as permission to rotate a working account.
+    local existingHashes = {}
+    local lastAccountId = 0
+    while true do
+        local params = { lastAccountId }
+        for i = 1, #appNames do params[#params + 1] = appNames[i] end
+        local rows = MySQL.query.await(([=[
+            SELECT id, app, username, password_hash
+            FROM phone_app_accounts
+            WHERE id > ? AND app IN (%s)
+            ORDER BY id ASC
+            LIMIT %d
+        ]=]):format(table.concat(appPlaceholders, ','), READ_CHUNK_SIZE), params) or {}
+
+        for i = 1, #rows do
+            local row = rows[i]
+            local key = row.app .. '\0' .. row.username
+            if targets[key] then existingHashes[key] = row.password_hash end
+        end
+
+        if #rows == 0 then break end
+        lastAccountId = rows[#rows].id
+        Wait(0)
+        if #rows < READ_CHUNK_SIZE then break end
+    end
+
+    local lastVaultId = 0
+    while true do
+        local params = { lastVaultId }
+        for i = 1, #appNames do params[#params + 1] = appNames[i] end
+        local rows = MySQL.query.await(([=[
+            SELECT p.id, p.app, p.username, p.password, a.password_hash
+            FROM phone_passwords p
+            JOIN phone_app_accounts a ON a.app = p.app AND a.username = p.username
+            WHERE p.id > ? AND p.app IN (%s)
+            ORDER BY p.id ASC
+            LIMIT %d
+        ]=]):format(table.concat(appPlaceholders, ','), READ_CHUNK_SIZE), params) or {}
+
+        for i = 1, #rows do
+            local row = rows[i]
+            local key = row.app .. '\0' .. row.username
+            if targets[key] then
+                local plain = accounts.openImportedVaultSecret(row.password)
+                if plain then
+                    local saved = savedByAccount[key]
+                    if not saved then
+                        saved = { hash = row.password_hash, candidates = {}, seen = {} }
+                        savedByAccount[key] = saved
+                    end
+                    if not saved.seen[plain] then
+                        saved.seen[plain] = true
+                        saved.candidates[#saved.candidates + 1] = plain
+                    end
+                elseif type(row.password) == 'string' and row.password:sub(1, 3) == 'v1$' then
+                    unreadable[key] = true
+                end
+            end
+        end
+
+        if #rows == 0 then break end
+        lastVaultId = rows[#rows].id
+        Wait(0)
+        if #rows < READ_CHUNK_SIZE then break end
+    end
+
+    -- Verify saved credentials instead of hashing and comparing them: salted scrypt hashes are
+    -- deliberately different on every invocation. Each expensive scrypt check yields afterward.
+    -- Current engine accounts with no verified value stay untouched; foreign source hashes still
+    -- receive a fresh usable credential. Unreadable encryption is deferred for a later retry.
+    local credentials, blocked, deferred = {}, {}, {}
+    for key, saved in pairs(savedByAccount) do
+        local selected
+        local isScrypt = type(saved.hash) == 'string' and saved.hash:sub(1, 7) == 'scrypt$'
+        if accounts.canVerifyImportedPasswordHash(saved.hash) then
+            for i = 1, #saved.candidates do
+                local candidate = saved.candidates[i]
+                local verified = accounts.verifyPassword(candidate, saved.hash)
+                if isScrypt then Wait(0) end
+                if verified then
+                    selected = candidate
+                    break
+                end
+            end
+        else
+            blocked[key] = true
+            deferred[key] = true
+        end
+        if selected then
+            credentials[key] = { plain = selected, hash = saved.hash }
+        elseif not deferred[key] and isEnginePasswordHash(saved.hash) then
+            blocked[key] = true
+        end
+    end
+    for key in pairs(unreadable) do
+        if not credentials[key] then
+            blocked[key] = true
+            deferred[key] = true
+        end
+    end
+    for key, hash in pairs(existingHashes) do
+        if not credentials[key] and not blocked[key] and isEnginePasswordHash(hash) then
+            blocked[key] = true
+        end
+    end
+
+    local blockedCount, deferredCount = 0, 0
+    for key in pairs(blocked) do
+        if targets[key] then blockedCount = blockedCount + 1 end
+    end
+    for key in pairs(deferred) do
+        if targets[key] then deferredCount = deferredCount + 1 end
+    end
+    if blockedCount > 0 then
+        print(('^3[sd-phone:migrate]^0 left %d existing login%s unchanged because no verified saved password was available.')
+            :format(blockedCount, blockedCount == 1 and '' or 's'))
     end
 
     -- Staged and joined rather than two queries per account: row-by-row took 47s on a full dump.
@@ -1179,7 +1340,7 @@ function store.grantMigratedLogins(entries)
     MySQL.query.await(([[
         CREATE TABLE `%s` (
             app VARCHAR(24) NOT NULL, username VARCHAR(64) NOT NULL, citizenid VARCHAR(64) NOT NULL,
-            plain VARCHAR(64) NOT NULL, hash VARCHAR(64) NOT NULL, email VARCHAR(120) NULL,
+            stored VARCHAR(255) NOT NULL, hash VARCHAR(255) NOT NULL, email VARCHAR(120) NULL,
             PRIMARY KEY (app, username, citizenid)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ]]):format(tmp))
@@ -1188,24 +1349,36 @@ function store.grantMigratedLogins(entries)
         local last = math.min(i + 299, #entries)
         local groups, params = {}, {}
         for j = i, last do
-            local e = entries[j]
-            local key = e.app .. '\0' .. e.username
-            local plain = credentials[key]
-            if not plain then
-                plain = newPassword()
-                credentials[key] = plain
+            local entry = entries[j]
+            local key = entry.app .. '\0' .. entry.username
+            local credential = credentials[key]
+            if not credential and not blocked[key] then
+                local plain = newPassword()
+                credential = {
+                    plain = plain,
+                    hash = accounts.hashImportedPassword(plain),
+                }
+                credentials[key] = credential
             end
-            groups[#groups + 1] = '(?,?,?,?,?,?)'
-            params[#params + 1] = e.app
-            params[#params + 1] = e.username
-            params[#params + 1] = e.cid
-            params[#params + 1] = plain
-            params[#params + 1] = accounts.hashPassword(plain)
-            params[#params + 1] = e.email
+            if credential then
+                params[#params + 1] = entry.app
+                params[#params + 1] = entry.username
+                params[#params + 1] = entry.cid
+                params[#params + 1] = accounts.sealImportedVaultSecret(credential.plain)
+                params[#params + 1] = credential.hash
+                if entry.email then
+                    params[#params + 1] = entry.email
+                    groups[#groups + 1] = '(?,?,?,?,?,?)'
+                else
+                    groups[#groups + 1] = '(?,?,?,?,?,NULL)'
+                end
+            end
         end
-        MySQL.query.await(([[
-            INSERT IGNORE INTO `%s` (app, username, citizenid, plain, hash, email) VALUES %s
-        ]]):format(tmp, table.concat(groups, ',')), params)
+        if #groups > 0 then
+            MySQL.query.await(([[
+                INSERT IGNORE INTO `%s` (app, username, citizenid, stored, hash, email) VALUES %s
+            ]]):format(tmp, table.concat(groups, ',')), params)
+        end
     end
 
     -- Only accounts that exist get a password, and only those get a vault entry, so the vault never
@@ -1231,13 +1404,13 @@ function store.grantMigratedLogins(entries)
 
     MySQL.query.await(([[
         INSERT INTO phone_passwords (citizenid, app, username, password, email)
-        SELECT t.citizenid, t.app, t.username, t.plain, t.email FROM `%s` t
+        SELECT t.citizenid, t.app, t.username, t.stored, t.email FROM `%s` t
         JOIN phone_app_accounts a ON a.app = t.app AND a.username = t.username
         ON DUPLICATE KEY UPDATE password = VALUES(password), email = VALUES(email)
     ]]):format(tmp))
 
     MySQL.query.await(('DROP TABLE IF EXISTS `%s`'):format(tmp))
-    return granted
+    return granted, deferredCount
 end
 
 ---Sessions for migrated app accounts. `linked` counts rows whose account exists and now has a

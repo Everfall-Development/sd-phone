@@ -204,7 +204,7 @@ function store.ensureSchema()
             handle       VARCHAR(32)  NOT NULL,
             citizenid    VARCHAR(64)  NOT NULL DEFAULT '',
             display_name VARCHAR(64)  NOT NULL,
-            password     VARCHAR(64)  NOT NULL DEFAULT '',
+            password     VARCHAR(255) NOT NULL DEFAULT '',
             bio          VARCHAR(200) NOT NULL DEFAULT '',
             verified     TINYINT(1)   NOT NULL DEFAULT 0,
             verified_type VARCHAR(8)   NULL,
@@ -311,7 +311,7 @@ function store.ensureSchema()
         end
         return false
     end
-    ensureColumn('phone_birdy_profiles', 'password',   "password VARCHAR(64) NOT NULL DEFAULT ''")
+    ensureColumn('phone_birdy_profiles', 'password',   "password VARCHAR(255) NOT NULL DEFAULT ''")
     ensureColumn('phone_birdy_profiles', 'bio',        "bio VARCHAR(200) NOT NULL DEFAULT ''")
     ensureColumn('phone_birdy_profiles', 'logged_in',  'logged_in TINYINT(1) NOT NULL DEFAULT 0')
     ensureColumn('phone_birdy_profiles', 'join_label', "join_label VARCHAR(32) NOT NULL DEFAULT ''")
@@ -322,6 +322,12 @@ function store.ensureSchema()
     ensureColumn('phone_birdy_dms',      'reactions',  'reactions TEXT NULL')
     ensureColumn('phone_birdy_profiles', 'avatar',     'avatar VARCHAR(512) NULL')
     ensureColumn('phone_birdy_profiles', 'banner',     'banner VARCHAR(512) NULL')
+    util.ensureColumnWidth(
+        'phone_birdy_profiles',
+        'password',
+        "password VARCHAR(255) NOT NULL DEFAULT ''",
+        255
+    )
 
     -- Backfill history as already-seen, or every existing row would count as unread.
     if ensureColumn('phone_birdy_notifications', 'seen', 'seen TINYINT(1) NOT NULL DEFAULT 0') then

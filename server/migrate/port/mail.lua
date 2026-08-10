@@ -163,7 +163,8 @@ function M.run(ctx)
         -- which has already happened by the time the import runs. Rebuild it now so migrated
         -- players are signed into mail immediately rather than after the next restart.
         if out.sessions > 0 then pcall(mailStore.reconcileSessions) end
-        out.logins = store.grantMigratedLogins(grants)
+        out.logins, out.deferred = store.grantMigratedLogins(grants)
+        if out.deferred > 0 then out.retry = true end
     end
     return out
 end

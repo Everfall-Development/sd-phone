@@ -210,7 +210,8 @@ function M.run(ctx)
         store.insertPgStoryViews(views)
         store.insertPgDms(dms)
         store.insertPgNotifications(notifs)
-        out.logins = store.grantMigratedLogins(grants)
+        out.logins, out.deferred = store.grantMigratedLogins(grants)
+        if out.deferred > 0 then out.retry = true end
         local linked = store.insertPgSessions(sessions)
         out.sessions = linked or 0
     end
