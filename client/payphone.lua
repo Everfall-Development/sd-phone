@@ -4,6 +4,8 @@ local config = require 'configs.config'
 local target = require 'bridge.client.target'
 ---@type table Companion-device bus (client.companion): whether a sibling device holds the screen.
 local companion = require 'client.companion'
+---@type table Call-audio submixes (client.callaudio): which earpiece the call sounds like.
+local callaudio = require 'client.callaudio'
 
 ---@type table Payphone config (configs/payphone.lua).
 local cfg = config.Payphone
@@ -202,6 +204,15 @@ local function endBoothAnim()
     end)
 end
 
+---Takes or releases the live booth call. Every write to activeChannel goes through here so the
+---call-audio line follows it: a booth is an analogue landline, and has no business sounding like
+---the cellular handset the phone app uses.
+---@param channel number|nil live call channel, nil when the booth is back on the hook
+local function setActiveChannel(channel)
+    activeChannel = channel
+    callaudio.setPayphone(channel ~= nil)
+end
+
 ---Dials out from the active booth; shared by the NUI keypad and the ox_lib menu.
 ---@param number string digits to call
 ---@return table result server envelope
@@ -212,7 +223,7 @@ local function doDial(number)
         number   = number,
     })
     if result and result.success and result.data then
-        activeChannel = result.data.channel
+        setActiveChannel(result.data.channel)
         loopBoothAnim()
     end
     return result or { success = false, message = 'No response from server' }
@@ -222,7 +233,7 @@ end
 local function doHangup()
     if not activeChannel then return end
     lib.callback.await('sd-phone:server:call:hangup', false, { channel = activeChannel })
-    activeChannel = nil
+    setActiveChannel(nil)
 end
 
 ---Ends the booth session outside the NUI path (menu closed / call over).
@@ -343,7 +354,7 @@ local function openPayphone(entity, coords, connected)
 
     activeLocation = location
     if connected then
-        activeChannel = connected.channel
+        setActiveChannel(connected.channel)
         state.data.connected = true
         state.data.callerName = connected.callerName
     end
@@ -450,7 +461,7 @@ RegisterNUICallback('sd-phone:payphone:answer', function(data, cb)
         return
     end
 
-    activeChannel = (result.data and result.data.channel) or channel
+    setActiveChannel((result.data and result.data.channel) or channel)
     loopBoothAnim()
     cb(result)
 end)
@@ -463,7 +474,7 @@ end)
 ---Server push: any call ended; the payphone UI/menu filters by channel.
 RegisterNetEvent('sd-phone:client:call:ended', function(data)
     if not (activeChannel and data and data.channel == activeChannel) then return end
-    activeChannel = nil
+    setActiveChannel(nil)
     if cfg.UseOxLibMenu then
         if lib.getOpenContextMenu() == 'sd_payphone_call' then lib.hideContext(true) end
         lib.notify({ title = 'Payphone', description = 'Call ended', type = 'inform' })

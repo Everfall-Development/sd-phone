@@ -7,6 +7,8 @@ local phonecam = require 'client.phonecam'
 local HUD = require 'bridge.client.providers.ef_hud'
 ---@type table On-screen keybind hints (client.hints): placement config shared with the Camera app.
 local hints = require 'client.hints'
+---@type table Call-audio submixes (client.callaudio): which earpiece the call sounds like.
+local callaudio = require 'client.callaudio'
 
 -- Thin delegates: each call action proxies straight into its server callback.
 proxyCallback('sd-phone:call:dial',    'sd-phone:server:call:dial')
@@ -59,7 +61,10 @@ end)
 ---@param data { on: boolean }
 ---@param cb fun(ok: string) NUI response
 RegisterNUICallback('sd-phone:call:speaker', function(data, cb)
-    TriggerServerEvent('sd-phone:server:call:speaker', data and data.on == true)
+    local on = data and data.on == true
+    TriggerServerEvent('sd-phone:server:call:speaker', on)
+    -- Held to your ear vs fired into the room: two different speakers, two different lines.
+    callaudio.setSpeaker(on)
     cb('ok')
 end)
 
@@ -76,17 +81,22 @@ RegisterNUICallback('sd-phone:call:setVolume', function(data, cb)
     cb('ok')
 end)
 
----Incoming call: forces the phone open, waits briefly for the React tree to mount, then pushes
----the ringing payload.
+---Incoming call: pushes the ringing payload, then tries to bring the phone up for it.
+---
+---The push goes FIRST and is never gated on the open. The call session lives above the phone shell
+---in the NUI, so the ring, the island and the ringtone land whether or not the phone is on screen -
+---and OpenPhone refuses outright while the player is dead, swimming, phone-disabled or has another
+---resource's NUI focused, which used to swallow the call entirely.
 ---@param data table incoming-call payload from the server
 RegisterNetEvent('sd-phone:client:call:incoming', function(data)
-    if LocalPlayer.state.tabletOpen ~= true then
-        exports['sd-phone']:open()
-        Wait(200)
-    else
-        lib.print.debug('[sd-phone] Incoming call retained on active tablet')
-    end
     pushCall('sd-phone:call:incoming', data)
+
+    if LocalPlayer.state.tabletOpen == true then
+        lib.print.debug('[sd-phone] Incoming call retained on active tablet')
+        return
+    end
+
+    exports['sd-phone']:open()
 end)
 
 -- Call-lifecycle relays: outgoing ring-back, connect, and end push straight into the React
@@ -101,6 +111,7 @@ end)
 
 RegisterNetEvent('sd-phone:client:call:ended', function(data)
     if micMuted then setMicMuted(false) end
+    callaudio.reset()
     pushCall('sd-phone:call:ended', data)
 end)
 
@@ -116,6 +127,7 @@ end)
 ---signal that dropped; the phone raises a dialog either way.
 ---@param data { lost: boolean }
 RegisterNetEvent('sd-phone:client:call:dropped', function(data)
+    callaudio.reset()
     pushCall('sd-phone:call:dropped', data)
 end)
 
@@ -218,6 +230,9 @@ local function setVideoCamera(on, front)
     if on then
         if not videoCamActive then
             videoCamActive = true
+            -- The picture coming up is also the moment the leg goes wideband: a FaceTime is not
+            -- meant to sound like the same narrow cell line the audio call was on.
+            callaudio.setVideo(true)
             setVideoCursor(true)
             -- Take the view BEFORE announcing the mode: the pose handler asks phonecam.active()
             -- which lens is framing, and the scripted cam animates no pose of its own.
@@ -244,6 +259,7 @@ local function setVideoCamera(on, front)
         end
     elseif videoCamActive then
         videoCamActive = false
+        callaudio.setVideo(false)
         if phonecam.active() then
             phonecam.stop()
         else

@@ -11,6 +11,7 @@ import { demoAdminOnly } from '@/core/demo';
 import { PayphoneUI } from '@/payphone/PayphoneUI';
 import { RaceOverlay } from '@/apps/racing/hud/RaceOverlay';
 import { CallLayer } from '@/apps/phone/CallLayer';
+import { CallSession } from '@/apps/phone/CallSession';
 import { NotificationHost, type NotificationItem } from '@/shell/Notifications';
 import { AirShareCard, type AirShareRequest } from '@/shared/AirShare';
 import { SignRequestLayer, type SignRequestData } from '@/apps/documents/SignRequestLayer';
@@ -174,6 +175,9 @@ export function App() {
         <ThemeProvider>
             <MusicProvider>
                 <BootReplayButton />
+                {/* Above AppContent, which unmounts the whole shell (and CallLayer with it) while
+                    the phone is closed: the call has to be heard and islanded either way. */}
+                {!demoAdminOnly && device.calls && <CallSession />}
                 {!demoAdminOnly && <AppContent />}
                 {device.admin && <AdminPanel />}
                 {!demoAdminOnly && device.payphone && <PayphoneUI />}
@@ -1598,8 +1602,8 @@ function AppContent() {
                     />
                 )}
 
-                {/* Must not MOUNT on a device without calls: CallLayer self-hydrates through
-                    getCurrentCall(), so an ongoing call would surface here even with no pushes. */}
+                {/* Same device gate as CallSession, which is what fills the store: a device without
+                    calls must never surface one. */}
                 {device.calls && <CallLayer wallpaper={homeWallpaper} />}
 
                 {ringingAlarm && (

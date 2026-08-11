@@ -7,13 +7,9 @@ import { resolveWallpaper } from '@/shell/wallpapers';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { fetchNui } from '@/core/nui';
 import { useContacts } from '@/stores/contactsStore';
-import { acceptCall, addToCall, declineCall, getCurrentCall, hangupCall } from './callsApi';
+import { acceptCall, addToCall, declineCall, hangupCall } from './callsApi';
 import { formatPhone } from './data';
 import { playDtmf } from './keypad/dtmf';
-import { startRing } from './calls/ringtone';
-import { startRingtone } from '@/apps/settings/tonePlayer';
-import { resolveTone } from '@/apps/settings/tones';
-import { useTheme } from '@/stores/themeStore';
 import { VideoCall } from './calls/VideoCall';
 import { acceptVideo, requestVideo, stopVideo } from './calls/webrtc';
 import { useCallStore } from '@/stores/callStore';
@@ -48,7 +44,6 @@ export function CallLayer({ wallpaper }: { wallpaper?: string }) {
     const [now, setNow]         = useState(() => Date.now());
     const [videoPhase, setVideoPhase]         = useState<'off' | 'requesting' | 'incoming' | 'active'>('off');
     const [videoInitiator, setVideoInitiator] = useState(false);
-    const { ringtone, ringtoneVol, customRingtones } = useTheme('ringtone', 'ringtoneVol', 'customRingtones');
     const { contacts: contactList, load: loadContacts } = useContacts('contacts', 'load');
 
     const resetControls = useCallback(() => {
@@ -57,31 +52,14 @@ export function CallLayer({ wallpaper }: { wallpaper?: string }) {
         setAddOpen(false); setAddKeypad(false); setAddDigits(''); setAddError(null);
     }, []);
 
-    useNuiEvent('sd-phone:call:incoming', useCallback((data) => {
-        resetControls();
-        useCallStore.getState().incoming(data);
-    }, [resetControls]));
-
-    useNuiEvent('sd-phone:call:outgoing', useCallback((data) => {
-        resetControls();
-        useCallStore.getState().outgoing(data);
-    }, [resetControls]));
-
-    useNuiEvent('sd-phone:call:connected', useCallback((data) => {
-        useCallStore.getState().connected(data);
-    }, []));
-
-    useNuiEvent('sd-phone:call:ended', useCallback(() => {
-        useCallStore.getState().ended();
-        resetControls();
-    }, [resetControls]));
+    // The call itself is owned by CallSession, which outlives this layer; these only reset the
+    // on-screen controls (mute, speaker, keypad, video) that belong to one call's presentation.
+    useNuiEvent('sd-phone:call:incoming', resetControls);
+    useNuiEvent('sd-phone:call:outgoing', resetControls);
+    useNuiEvent('sd-phone:call:ended',    resetControls);
 
     useNuiEvent('sd-phone:call:dropped', useCallback((data) => {
         setDroppedLost(data?.lost === true);
-    }, []));
-
-    useNuiEvent('sd-phone:call:roster', useCallback((data) => {
-        useCallStore.getState().roster(data ?? {});
     }, []));
 
     useNuiEvent('sd-phone:video:begin', useCallback((data) => {
@@ -92,23 +70,6 @@ export function CallLayer({ wallpaper }: { wallpaper?: string }) {
     useNuiEvent('sd-phone:video:request', useCallback(() => setVideoPhase('incoming'), []));
     useNuiEvent('sd-phone:video:accept',  useCallback(() => { setVideoInitiator(true); setVideoPhase('active'); }, []));
     useNuiEvent('sd-phone:video:stop',    useCallback(() => setVideoPhase('off'), []));
-
-    useEffect(() => {
-        let active = true;
-        void getCurrentCall().then(cur => {
-            if (!active || !cur) return;
-            useCallStore.getState().hydrate(cur);
-        });
-        return () => { active = false; };
-    }, []);
-
-    useEffect(() => {
-        if (!phase || phase === 'active') return;
-        if (phase === 'incoming') {
-            return startRingtone(resolveTone('ringtone', ringtone, customRingtones).url, ringtoneVol / 100);
-        }
-        return startRing('ringback');
-    }, [channel, phase, ringtone, customRingtones]);
 
     useEffect(() => {
         if (phase !== 'active') return;

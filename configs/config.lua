@@ -24,6 +24,7 @@ local config = {
     Birdy       = require 'configs.birdy',         -- microblog
     Photogram   = require 'configs.photogram',     -- photo social + live video streaming
     Voice       = require 'configs.voice',          -- camera/Live audio: own mic + nearby voices (WebRTC)
+    CallAudio   = require 'configs.callaudio',      -- how calls sound: handset/speaker/video/payphone submixes
     Contacts    = require 'configs.contacts',      -- phone-book + recents
     Giphy       = require 'configs.giphy',         -- Messages GIF picker display tunables (key is in configs/server/apikeys.lua)
     Garages     = require 'configs.garages',       -- vehicle list (multi-system)
