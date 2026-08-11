@@ -179,6 +179,7 @@ interface CallPush {
     channel: number;
     name?:   string;
     number:  string;
+    video?:  boolean;
 }
 
 interface CallEndedPush {
@@ -329,6 +330,7 @@ export type NuiMessage =
     | { action: 'sd-phone:call:connected'; data: { channel: number } }
     | { action: 'sd-phone:call:ended';     data: CallEndedPush }
     | { action: 'sd-phone:call:dropped';   data: { lost: boolean } }
+    | { action: 'sd-phone:call:roster';    data: { channel?: number; others?: { name?: string; number: string }[]; pending?: { name?: string; number: string } | null } }
     | { action: 'sd-phone:payphone:open';     data: { number: string; anonymous: boolean; myNumber?: string | null; favorites: { name: string; phone: string }[]; connected?: boolean; callerName?: string; coin?: { enabled: boolean; cost: number }; credited?: boolean } }
     | { action: 'sd-phone:payphone:outgoing'; data: { channel: number; number: string } }
     | { action: 'sd-phone:payphone:ended';    data: { channel: number; reason: string } }
@@ -342,6 +344,8 @@ export type NuiMessage =
     | { action: 'sd-phone:video:accept' }
     | { action: 'sd-phone:video:stop' }
     | { action: 'sd-phone:video:signal';   data: { kind: 'offer' | 'answer' | 'ice'; sdp?: string; candidate?: unknown } }
+    | { action: 'sd-phone:video:key';      data: { key: string } }
+    | { action: 'sd-phone:video:begin';    data: { initiator?: boolean } }
     | { action: 'sd-phone:voice:added';        data: { id: string; name: string; url: string; duration: number; date: string } }
     | { action: 'sd-phone:notes:added';        data: { id: string; body: string; sketches: string[]; images: string[]; createdAt: string; updatedAt: string } }
     | { action: 'sd-phone:notes:changed';      data: { operation: 'upsert' | 'delete'; note?: { id: string; body: string; sketches: string[]; images: string[]; createdAt: string; updatedAt: string }; id: string } }

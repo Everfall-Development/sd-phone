@@ -1,6 +1,6 @@
 <div align="center">
 
-# sd-phone (THIS IS A BETA RELEASE, WILL HAVE ISSUES)
+# sd-phone
 
 ### Try it right now, in your browser
 
@@ -35,6 +35,15 @@ If sd-phone is useful to you, please ⭐ the repo. Issues and pull requests are 
 ---
 
 > [!IMPORTANT]
+> **This is production ready.** sd-phone is ready to run on a live server — there should be
+> no blatant issues with the phone as it stands today.
+>
+> The version number is not a warning about stability. It sits below 1.0.0 because 1.0.0 is
+> a scope target rather than a quality one: I want the initial 1.0.0 release to ship more
+> than what is here today, racing and MDTs among them. That is the only thing holding the
+> number back.
+
+> [!IMPORTANT]
 > **Coming from lb-phone? Give the first boot time to finish.**
 > sd-phone imports your lb-phone data on its first-ever startup. On a large database that is not instant: a production import of **3.8 million rows took roughly 8 minutes**, and the server stays busy until it completes. The console prints the row count, a time estimate and per-domain progress, so you can tell it is working rather than hung. Let it run to the end.
 >
@@ -47,16 +56,6 @@ If sd-phone is useful to you, please ⭐ the repo. Issues and pull requests are 
 > read it. No pairing, no sync, no second phone to configure.
 >
 > It is a companion resource and needs sd-phone to run. [More below](#companion-sd-tablet).
-
-> [!NOTE]
-> **Know what leaves your server before you go live.**
-> A handful of features talk to third parties, and some of what they send is personal data
-> about your players: media uploads, GIF searches, map tiles, and microphone audio when
-> nearby voice capture is on. [**PRIVACY.md**](PRIVACY.md) lists every one of them, what
-> triggers it, and the exact config line that switches it off.
->
-> Five minutes well spent before launch, and rather more than that if your players are in
-> the EU or UK.
 
 ## Preview
 
