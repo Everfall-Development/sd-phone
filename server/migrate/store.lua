@@ -184,9 +184,31 @@ end
 ---`players`, while ESX uses `users.identifier`. A non-standard schema logs the query error and
 ---degrades to empty maps so the migration can abort without writing partial ownership data.
 ---@param frameworkName 'qbx'|'qb'|'esx'
----@return { cids: table<string, boolean>, licenseToCids: table<string, string[]> }
+---@return { cids: table<string, boolean>, licenseToCids: table<string, string[]>, namesByCid: table<string, string> }
 function store.loadRoster(frameworkName)
-    local cids, licenseToCids = {}, {}
+    local cids, licenseToCids, namesByCid = {}, {}, {}
+
+    local function joinedName(firstname, lastname)
+        local name = ('%s %s'):format(tostring(firstname or ''), tostring(lastname or ''))
+            :gsub('^%s+', '')
+            :gsub('%s+$', '')
+            :gsub('%s+', ' ')
+        return name ~= '' and name or nil
+    end
+
+    local function rowName(row)
+        if frameworkName == 'esx' or frameworkName == 'qbx' then
+            return joinedName(row.firstname, row.lastname)
+        end
+
+        local charinfo = row.charinfo
+        if type(charinfo) == 'string' then
+            local decoded, value = pcall(json.decode, charinfo)
+            charinfo = decoded and type(value) == 'table' and value or nil
+        end
+        if type(charinfo) ~= 'table' then return nil end
+        return joinedName(charinfo.firstname, charinfo.lastname)
+    end
 
     local function addLicense(cid, license)
         if not license or license == '' then return end
@@ -205,7 +227,8 @@ function store.loadRoster(frameworkName)
             local rows
             if frameworkName == 'esx' then
                 rows = MySQL.query.await(([[
-                    SELECT identifier AS citizenid, NULL AS license, NULL AS license2
+                    SELECT identifier AS citizenid, NULL AS license, NULL AS license2,
+                           firstname, lastname, NULL AS charinfo
                     FROM users
                     WHERE identifier > ?
                     ORDER BY identifier
@@ -213,7 +236,8 @@ function store.loadRoster(frameworkName)
                 ]]):format(READ_CHUNK_SIZE), { lastCid }) or {}
             elseif frameworkName == 'qbx' then
                 rows = MySQL.query.await(([[
-                    SELECT p.citizenid, u.license, u.license2
+                    SELECT p.citizenid, u.license, u.license2,
+                           p.firstName AS firstname, p.lastName AS lastname, NULL AS charinfo
                     FROM players p
                     LEFT JOIN users u ON u.userId = p.userId
                     WHERE p.citizenid > ?
@@ -222,7 +246,8 @@ function store.loadRoster(frameworkName)
                 ]]):format(READ_CHUNK_SIZE), { lastCid }) or {}
             else
                 rows = MySQL.query.await(([[
-                    SELECT citizenid, license, NULL AS license2
+                    SELECT citizenid, license, NULL AS license2, charinfo,
+                           NULL AS firstname, NULL AS lastname
                     FROM players
                     WHERE citizenid > ?
                     ORDER BY citizenid
@@ -234,6 +259,8 @@ function store.loadRoster(frameworkName)
                 local cid = r.citizenid
                 if cid and cid ~= '' then
                     cids[cid] = true
+                    local name = rowName(r)
+                    if name then namesByCid[cid] = name end
                     addLicense(cid, r.license)
                     if r.license2 ~= r.license then addLicense(cid, r.license2) end
                 end
@@ -246,10 +273,10 @@ function store.loadRoster(frameworkName)
 
     if not ok then
         print(('^1[sd-phone:migrate] failed to load the character roster: %s^0'):format(tostring(err)))
-        return { cids = {}, licenseToCids = {} }
+        return { cids = {}, licenseToCids = {}, namesByCid = {} }
     end
 
-    return { cids = cids, licenseToCids = licenseToCids }
+    return { cids = cids, licenseToCids = licenseToCids, namesByCid = namesByCid }
 end
 
 ---Every lb-phone phone: its owner id, number and lock pin. Read-only and paged so a large archive
@@ -658,6 +685,38 @@ function store.lbLoggedIn()
     end
 
     return accounts
+end
+
+---Every legacy Mail account-to-phone link, including inactive rows. Mail accounts have no display
+---name of their own, so the porter uses these historical links to recover the owning character's
+---name. Active state is returned separately and remains the authority for restoring a login.
+---@return { phone_number: string, username: string, active: any }[]
+function store.lbMailAccountLinks()
+    local tableName = store.lbSource('logged_in_accounts')
+    if not tableName then return {} end
+    local links = {}
+    local lastPhone, lastApp, lastUsername = '', '', ''
+    local hasActive = store.tableHasColumn(tableName, 'active')
+    local activeSelect = hasActive and 'active' or '1 AS active'
+
+    while true do
+        local rows = MySQL.query.await(([[
+            SELECT phone_number, app, username, %s
+            FROM %s
+            WHERE LOWER(app) = 'mail'
+              AND (phone_number, app, username) > (?, ?, ?)
+            ORDER BY phone_number, app, username
+            LIMIT %d
+        ]]):format(activeSelect, tableName, READ_CHUNK_SIZE), { lastPhone, lastApp, lastUsername }) or {}
+
+        for _, row in ipairs(rows) do links[#links + 1] = row end
+        if #rows < READ_CHUNK_SIZE then break end
+
+        local last = rows[#rows]
+        lastPhone, lastApp, lastUsername = last.phone_number, last.app, last.username
+    end
+
+    return links
 end
 
 ---Every legacy Twitter account, paged by its unique username.

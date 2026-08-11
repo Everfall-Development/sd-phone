@@ -21,7 +21,7 @@ end
 ---Resolves one lb-phone owner id to an sd-phone citizenid under the configured mode. Returns the
 ---citizenid, or nil plus a reason ('unresolved' or 'ambiguous').
 ---@param ownerId string
----@param roster { cids: table<string, boolean>, licenseToCids: table<string, string[]> }
+---@param roster { cids: table<string, boolean>, licenseToCids: table<string, string[]>, namesByCid: table<string, string> }
 ---@param mode 'auto'|'citizenid'|'license'
 ---@return string|nil citizenid, string|nil reason
 local function resolveOwner(ownerId, roster, mode)
@@ -44,7 +44,7 @@ end
 ---lookups the porters use. Also tallies resolved / unresolved / ambiguous counts.
 ---@param cfg table config.Migrate
 ---@param framework { name: 'qbx'|'qb'|'esx' }
----@return { resolvedPhones: { cid: string, number: string, pin: string|nil }[], numberToCid: table<string, string>, cids: string[], stats: { total: number, resolved: number, unresolved: number, ambiguous: number } }
+---@return { resolvedPhones: { cid: string, number: string, pin: string|nil }[], numberToCid: table<string, string>, namesByCid: table<string, string>, cids: string[], stats: { total: number, resolved: number, unresolved: number, ambiguous: number } }
 function identity.build(cfg, framework)
     local roster = store.loadRoster(framework.name)
     local phones = store.lbPhones()
@@ -67,7 +67,13 @@ function identity.build(cfg, framework)
         end
     end
 
-    return { resolvedPhones = resolvedPhones, numberToCid = numberToCid, cids = cids, stats = stats }
+    return {
+        resolvedPhones = resolvedPhones,
+        numberToCid = numberToCid,
+        namesByCid = roster.namesByCid,
+        cids = cids,
+        stats = stats,
+    }
 end
 
 return identity

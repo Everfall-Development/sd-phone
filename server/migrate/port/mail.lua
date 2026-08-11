@@ -63,7 +63,7 @@ local function htmlToText(body)
     return (s:gsub('^%s+', ''):gsub('%s+$', ''))
 end
 
----@param ctx table migration context (numberToCid, dryRun)
+---@param ctx table migration context (numberToCid, namesByCid, dryRun)
 ---@return { accounts: number, messages: number, sessions: number, logins: number, collided: number, skipped: number }
 function M.run(ctx)
     local out = { accounts = 0, messages = 0, sessions = 0, logins = 0, collided = 0, skipped = 0 }
@@ -91,12 +91,46 @@ function M.run(ctx)
         logins[a.email] = {}
     end
 
+    local grants = {}
+    local ownerByAddress = {}
+    local conflictingOwner = {}
+    if store.lbSource('logged_in_accounts') then
+        for _, l in ipairs(store.lbMailAccountLinks()) do
+            local cid = ctx.numberToCid[digits(l.phone_number)]
+            local addr = addressOf[tostring(l.username):lower()]
+            local box = addr and logins[addr]
+            if cid and box then
+                local owner = ownerByAddress[addr]
+                if owner and owner ~= cid then
+                    conflictingOwner[addr] = true
+                else
+                    ownerByAddress[addr] = cid
+                end
+
+                if l.active == true or tonumber(l.active) == 1 then
+                    box[#box + 1] = cid
+                    out.sessions = out.sessions + 1
+                    grants[#grants + 1] = { app = 'mail', username = addr, cid = cid, email = addr }
+                end
+            end
+        end
+    end
+
+    local displayNameByAddress = {}
+    for address, cid in pairs(ownerByAddress) do
+        if not conflictingOwner[address] then
+            local name = ctx.namesByCid[cid]
+            if name and name ~= '' then displayNameByAddress[address] = name end
+        end
+    end
+
     if store.lbSource('mail_messages') then
         for _, m in ipairs(store.lbMailMessages()) do
             local to = addressOf[tostring(m.recipient):lower()]
             local box = to and inbox[to]
             if box then
-                local from = addressOf[tostring(m.sender):lower()] or onOurDomain(m.sender)
+                local sourceAddress = tostring(m.sender):lower()
+                local from = addressOf[sourceAddress] or onOurDomain(m.sender)
                 -- Built to the shape server/mail/actions.lua writes for a real send. Getting this
                 -- wrong renders a message with an empty sender, no recipients and no body.
                 -- Attachments are deliberately dropped: sd-phone's are a tagged union
@@ -104,7 +138,7 @@ function M.run(ctx)
                 box[#box + 1] = {
                     id      = ('lbm%s'):format(m.id),
                     folder  = 'inbox',
-                    from    = { name = localPart(m.sender), email = from },
+                    from    = { name = displayNameByAddress[from] or localPart(m.sender), email = from },
                     to      = { to },
                     subject = tostring(m.subject or ''),
                     body    = htmlToText(m.content),
@@ -119,29 +153,12 @@ function M.run(ctx)
         end
     end
 
-    local grants = {}
-    if store.lbSource('logged_in_accounts') then
-        for _, l in ipairs(store.lbLoggedIn()) do
-            -- lb-phone capitalises these ('Mail'), so compare case-insensitively.
-            if tostring(l.app or ''):lower() == 'mail' then
-                local cid = ctx.numberToCid[digits(l.phone_number)]
-                local addr = addressOf[tostring(l.username):lower()]
-                local box = addr and logins[addr]
-                if cid and box then
-                    box[#box + 1] = cid
-                    out.sessions = out.sessions + 1
-                    grants[#grants + 1] = { app = 'mail', username = addr, cid = cid, email = addr }
-                end
-            end
-        end
-    end
-
     local rows = {}
     for _, a in ipairs(kept) do
         rows[#rows + 1] = {
             a.email:sub(1, 64),
             tostring(a.password or ''):sub(1, 255),
-            localPart(a.raw):sub(1, 64),
+            (displayNameByAddress[a.email] or localPart(a.raw)):sub(1, 64),
             store.encodeJson(inbox[a.email]) or '[]',
             store.encodeJson(logins[a.email]) or '[]',
         }
@@ -153,7 +170,8 @@ function M.run(ctx)
     -- login grant below to attach a password to, and no recovery path at all until a restart.
     local engineRows = {}
     for _, a in ipairs(kept) do
-        engineRows[#engineRows + 1] = { 'mail', a.email:sub(1, 64), localPart(a.raw):sub(1, 50), '' }
+        local displayName = displayNameByAddress[a.email] or localPart(a.raw)
+        engineRows[#engineRows + 1] = { 'mail', a.email:sub(1, 64), displayName:sub(1, 50), '' }
     end
 
     if not ctx.dryRun then
