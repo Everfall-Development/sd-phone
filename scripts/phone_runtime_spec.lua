@@ -158,13 +158,18 @@ assert(has('server/badges/init.lua', "util.appEnabled('groups') and require 'ser
 assert(not badgesSource:find("local groupStore     = require 'server.groups.store'", 1, true))
 
 -- Native-open and incoming-ring gates are source contracts: OpenPhone reports refusal, boats are
--- allowed, and the ring overlay is only sent after the open export succeeds.
+-- allowed, and the ring is pushed BEFORE the open is attempted and never gated on it - a refused
+-- open (dead, swimming, another NUI focused) must still ring and light the island.
 local mainSource = read('client/main.lua')
 assert(has('client/main.lua', 'local function OpenPhone()'))
 assert(has('client/main.lua', 'if phoneState.open then return true end'))
 assert(has('client/main.lua', 'if config.Phone.BlockWhileSwimming and IsPedSwimming(ped) and not IsPedInAnyBoat(ped) then'))
 assert(has('client/main.lua', "function OpenApp(appId, link)"))
-assert(has('client/apps/calls.lua', "if not exports['sd-phone']:open() then return end"))
+assert(not has('client/apps/calls.lua', "if not exports['sd-phone']:open() then return end"))
+local callsSource = read('client/apps/calls.lua')
+local ringPush = callsSource:find("pushCall('sd-phone:call:incoming', data)", 1, true)
+local ringOpen = callsSource:find("exports['sd-phone']:open()", ringPush or 1, true)
+assert(ringPush and ringOpen and ringPush < ringOpen)
 assert(mainSource:find('function OpenPhone%(%)', 1) ~= nil)
 assert(has('client/main.lua', "cb(appgate.disabledResult())"))
 assert(has('client/main.lua', "cb({ ok = OpenPhone() })"))
