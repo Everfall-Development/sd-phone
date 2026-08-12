@@ -140,13 +140,13 @@ export function Phone({ onClose: _onClose }: { onClose: () => void }) {
             {callTarget !== null && (
                 <AlertDialog
                     title={callTarget.video
-                        ? t('phone.faceTimeName','FaceTime {name}',{ name: callTarget.name || formatPhone(callTarget.number) })
+                        ? t('phone.videoCallName','Video call {name}',{ name: callTarget.name || formatPhone(callTarget.number) })
                         : t('phone.callName','Call {name}',{ name: callTarget.name || formatPhone(callTarget.number) })}
                     message={callTarget.video
-                        ? t('phone.faceTimeConfirm','Start a FaceTime with {name}?',{ name: callTarget.name || formatPhone(callTarget.number) })
+                        ? t('phone.videoCallConfirm','Start a video call with {name}?',{ name: callTarget.name || formatPhone(callTarget.number) })
                         : t('phone.callConfirm','Call {name}?',{ name: callTarget.name || formatPhone(callTarget.number) })}
                     cancelLabel={t('phone.cancel','Cancel')}
-                    confirmLabel={callTarget.video ? t('phone.faceTime','FaceTime') : t('phone.call','Call')}
+                    confirmLabel={callTarget.video ? t('phone.videoCall','Video Call') : t('phone.call','Call')}
                     onCancel={() => setCallTarget(null)}
                     onConfirm={() => { void placeCall(callTarget); setCallTarget(null); }}
                 />

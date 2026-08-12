@@ -19,6 +19,7 @@ import type { DockDrag, DockPlan } from './dockMoves';
 import { DOCK_MAX, planDockDrag } from './dockMoves';
 import { coveredCells, firstFit, jiggleDeg, landingCell, pageMoves, placeNewApps, reflowAround, spanOf, trySwap, widgetPx } from './widgets/geometry';
 import { useDockReflow } from './useDockReflow';
+import { PARALLAX_SCALE, PARALLAX_SHIFT, type DockStyle } from './shellLook';
 import { widgetByKind } from './widgets/registry';
 import { launchOriginFrom } from './launchOrigin';
 import { WidgetGallery } from './widgets/WidgetGallery';
@@ -32,6 +33,15 @@ const { w: SCREEN_W, h: SCREEN_H } = device.screen;
 // A phone dock spans the screen and spreads its icons over it. A tablet dock is a floating tray
 // sized to its contents, so the slots stop stretching and the row is centred instead.
 const DOCK_FILL = device.screen.dockFill ?? true;
+
+const DOCK_TRAY: Record<DockStyle, string> = {
+    glass:   'border border-white/20 bg-white/15 backdrop-blur-2xl',
+    tinted:  'border border-white/20 bg-ios-blue/35 backdrop-blur-2xl',
+    solid:   'border border-white/10 bg-black/45',
+    outline: 'border border-white/35',
+    clear:   '',
+    hidden:  '',
+};
 const DOCK_SLOT = DOCK_FILL ? 'relative flex flex-1 justify-center' : 'relative flex justify-center';
 const COMMIT_THRESHOLD = SCREEN_W * 0.2;
 const FLICK_VELOCITY = 0.4;
@@ -40,8 +50,8 @@ function itemsPerPage(): number {
     const g = getGrid();
     return g.cols * g.rows;
 }
-function dotsBottom(icon: number): number {
-    return DOCK_BOTTOM + icon + DOCK_PAD_Y + DOTS_GAP;
+function dotsBottom(icon: number, dockHidden: boolean): number {
+    return dockHidden ? DOCK_BOTTOM + DOTS_GAP : DOCK_BOTTOM + icon + DOCK_PAD_Y + DOTS_GAP;
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -141,11 +151,12 @@ export interface HomescreenProps {
 }
 
 export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, savedLayout, onLayoutChange, onEditingChange, bloomOnMount = true }: HomescreenProps) {
-    const { blurHome } = useTheme('blurHome');
+    const { blurHome, dockStyle, wallpaperParallax } = useTheme('blurHome', 'dockStyle', 'wallpaperParallax');
     const grid = useGrid();
     const { cols: COLS, rows: ROWS, icon: ICON, rowY0: ROW_Y0, rowStride: ROW_STRIDE, stripTop } = grid;
     const TILE = ICON;
-    const DOTS_BOTTOM = dotsBottom(ICON);
+    const dockHidden = dockStyle === 'hidden';
+    const DOTS_BOTTOM = dotsBottom(ICON, dockHidden);
     const densityRef = useRef(getDensity());
     const badges = useBadges();
     // The homescreen mounts exactly when the phone content is revealed (open without a lock,
@@ -239,6 +250,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
         widgets,
         dock: dockIds,
         density: densityRef.current,
+        rows: ROWS,
     };
     const onLayoutChangeRef = useRef(onLayoutChange);
     onLayoutChangeRef.current = onLayoutChange;
@@ -850,6 +862,10 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
     const tx = -(page * SCREEN_W) + dragX;
     const padCell = dockPlan?.landedCell != null ? dockPlan.landedCell - page * itemsPerPage() : overCell;
 
+    const parallaxOn = wallpaperParallax && visiblePages > 1;
+    const fracPage = page - dragX / SCREEN_W;
+    const parallaxTransform = `translateX(${(1 - (fracPage / (visiblePages - 1)) * 2) * PARALLAX_SHIFT}px) scale(${blurHome ? 1.08 : PARALLAX_SCALE})`;
+
     const dragWidget = dragW ? previewWidgets.find(w => w.uid === dragW.uid) : undefined;
     const dragWidgetDef = dragWidget ? widgetByKind(dragWidget.kind) : undefined;
     const dragWidgetBox = dragWidget ? widgetPx(dragWidget.size) : null;
@@ -864,7 +880,10 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                 style={{
                     backgroundImage: `url(${resolveWallpaper(wallpaper)})`,
                     filter:    blurHome ? 'blur(28px) saturate(0.85)' : undefined,
-                    transform: blurHome ? 'scale(1.08)'               : undefined,
+                    transform: parallaxOn ? parallaxTransform : (blurHome ? 'scale(1.08)' : undefined),
+                    transition: parallaxOn && !isDraggingRef.current
+                        ? 'transform 0.38s cubic-bezier(0.25,0.46,0.45,0.94)'
+                        : undefined,
                 }}
             />
             <div className="pointer-events-none absolute inset-0 z-0 bg-black/20" />
@@ -905,7 +924,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                 ref={stripRef}
                 className="relative z-10 overflow-hidden"
                 data-page-motion={pageMoving || undefined}
-                style={{ marginTop: stripTop, height: `calc(100% - ${stripTop}px - ${stripReserve(grid)}px)` }}
+                style={{ marginTop: stripTop, height: `calc(100% - ${stripTop}px - ${stripReserve(grid, dockHidden)}px)` }}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
@@ -1164,6 +1183,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                 )}
             </div>
 
+            {dockStyle !== 'hidden' && (
             <div
                 ref={dockRef}
                 className={DOCK_FILL
@@ -1176,7 +1196,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
             >
                 <div
                     ref={dockRowRef}
-                    className={`flex items-center rounded-[28px] border border-white/20 bg-white/15 py-3.5 backdrop-blur-2xl ${DOCK_FILL ? 'px-4' : 'gap-5 px-5'}`}
+                    className={`flex items-center rounded-[28px] py-3.5 ${DOCK_TRAY[dockStyle]} ${DOCK_FILL ? 'px-4' : 'gap-5 px-5'}`}
                 >
                     {dockView.map((app, di) => (
                         <div
@@ -1233,6 +1253,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                     )}
                 </div>
             </div>
+            )}
 
             {openFolder && folders[openFolder] && (
                 <FolderOverlay

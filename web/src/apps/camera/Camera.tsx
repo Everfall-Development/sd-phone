@@ -17,6 +17,7 @@ import { formatDuration } from '@/lib/time';
 import shutterSfx from '@/assets/camera/shutter.mp3';
 import { useSessionState } from '@/hooks/useSessionState';
 import { HINT_DEFAULTS, KeyHints, type HintConfig } from '@/ui/KeyHints';
+import { clampZoom, ZOOM_KEY_STEP, ZOOM_PRESETS, ZOOM_WHEEL_RATE, zoomLabel } from '@/shared/lens';
 import { CAMERA_FILTERS, filterCss, filterLabel } from './filters';
 import { FilterDefs } from './FilterDefs';
 
@@ -97,18 +98,6 @@ interface Photo {
     createdAt: string;
 }
 
-const ZOOM_PRESETS = [1, 2, 5] as const;
-const ZOOM_MIN = ZOOM_PRESETS[0];
-const ZOOM_MAX = ZOOM_PRESETS[ZOOM_PRESETS.length - 1];
-// Wheel zoom is multiplicative so a notch changes the framing by the same proportion at every
-// magnification; a fixed step crawls at 5× and lurches at 0.5×.
-const ZOOM_WHEEL_RATE = 0.0015;
-const ZOOM_KEY_STEP   = 1.15;
-
-const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
-
-// Labels drop the trailing zero the way iOS does: 1× not 1.0×, but 1.5× keeps its decimal.
-const zoomLabel = (z: number) => `${Number.isInteger(z) ? z : z.toFixed(1)}×`;
 const MODE_OPTIONS = ['VIDEO', 'PHOTO', 'LANDSCAPE'] as const;
 
 const CAPTURE_TIMEOUT_MS = 8000;

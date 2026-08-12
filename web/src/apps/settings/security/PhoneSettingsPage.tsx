@@ -164,7 +164,7 @@ function BlockedContactsPage({ onBack }: { onBack: () => void }) {
 
                     {blocked.length === 0 && (
                         <p className="text-center text-[14px] text-ios-gray px-4">
-                            {t('settings.blockedContactsFooter', "Blocked contacts can't call, message, or FaceTime you.")}
+                            {t('settings.blockedContactsFooter', "Blocked contacts can't call, message, or video call you.")}
                         </p>
                     )}
                 </div>

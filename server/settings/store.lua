@@ -81,6 +81,10 @@ function store.ensureSchema()
             phone_scale        TINYINT UNSIGNED NULL,
             brightness         TINYINT UNSIGNED NULL,
             phone_align        VARCHAR(16) NULL,
+            phone_tilt         VARCHAR(48) NULL,
+            dock_style         VARCHAR(12) NULL,
+            open_anim          VARCHAR(12) NULL,
+            wallpaper_parallax TINYINT(1)  NULL,
             hour24             TINYINT(1)   NULL,
             reopen_app         TINYINT(1)   NULL,
             setup_done         TINYINT(1)   NULL,
@@ -946,6 +950,90 @@ function store.setPhoneScale(citizenid, scale, device)
         INSERT INTO phone_settings (citizenid, device, phone_scale) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE phone_scale = VALUES(phone_scale)
     ]], { citizenid, device, clean })
+end
+
+---@type integer Degrees the phone may be turned or leaned in either direction. Mirrors TILT_LIMIT
+---in web/src/shell/phoneTilt.ts, which clamps to the same range before anything is sent here.
+local TILT_LIMIT <const> = 25
+
+---Rounds one tilt angle to a whole degree inside the supported range; nil for anything
+---non-numeric, so a half-broken payload cannot write a garbage axis.
+---@param v any client-supplied angle in degrees
+---@return integer|nil degrees
+local function clampTilt(v)
+    local n = tonumber(v)
+    if not n or n ~= n then return nil end
+    n = math.floor(n + 0.5)
+    if n < -TILT_LIMIT then n = -TILT_LIMIT elseif n > TILT_LIMIT then n = TILT_LIMIT end
+    return n
+end
+
+---Persists a player's 3D tilt: turn is the rotateY angle, lean the rotateX one. A flat 0/0 IS
+---stored rather than skipped, because that is how a player turns the effect back off - only a
+---payload with no usable axis at all is ignored.
+---@param citizenid string framework per-character id
+---@param tilt { turn?: number, lean?: number }
+function store.setPhoneTilt(citizenid, tilt, device)
+    device = device or 'phone'
+    if not citizenid or citizenid == '' or type(tilt) ~= 'table' then return end
+    local turn, lean = clampTilt(tilt.turn), clampTilt(tilt.lean)
+    if not turn and not lean then return end
+    MySQL.update.await([[
+        INSERT INTO phone_settings (citizenid, device, phone_tilt) VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE phone_tilt = VALUES(phone_tilt)
+    ]], { citizenid, device, json.encode({ turn = turn or 0, lean = lean or 0 }) })
+end
+
+---@type table<string, boolean> Dock tray treatments the UI offers. Mirrors DOCK_STYLES in
+---web/src/shell/shellLook.ts; anything else is dropped rather than stored, so a stale client
+---cannot park a value the shell has no rendering for.
+local DOCK_STYLES <const> = {
+    glass = true, tinted = true, solid = true, outline = true, clear = true, hidden = true,
+}
+
+---@type table<string, boolean> Phone open/close animation styles. Mirrors OPEN_ANIMS in the same
+---module, on the same terms.
+local OPEN_ANIMS <const> = { slide = true, fade = true, pop = true, flip = true }
+
+---Persists the caller's shell presentation preferences: dock treatment, open/close animation and
+---wallpaper parallax. Fields are individually optional, so flipping one control does not have to
+---echo the other two back, and an unrecognised value leaves that column as it was.
+---@param citizenid string framework per-character id
+---@param opts { dockStyle?: string, openAnim?: string, wallpaperParallax?: boolean }
+function store.setInterface(citizenid, opts, device)
+    device = device or 'phone'
+    if not citizenid or citizenid == '' or type(opts) ~= 'table' then return end
+
+    local sets, args = {}, {}
+    if opts.dockStyle ~= nil and DOCK_STYLES[opts.dockStyle] then
+        sets[#sets + 1] = 'dock_style'
+        args[#args + 1] = opts.dockStyle
+    end
+    if opts.openAnim ~= nil and OPEN_ANIMS[opts.openAnim] then
+        sets[#sets + 1] = 'open_anim'
+        args[#args + 1] = opts.openAnim
+    end
+    if opts.wallpaperParallax ~= nil then
+        sets[#sets + 1] = 'wallpaper_parallax'
+        args[#args + 1] = opts.wallpaperParallax == true and 1 or 0
+    end
+    if #sets == 0 then return end
+
+    -- Column names come from the fixed list above, never from the payload, so the concat cannot
+    -- carry anything a client chose. Values stay bound.
+    local cols, placeholders, updates = {}, {}, {}
+    for i = 1, #sets do
+        cols[i] = sets[i]
+        placeholders[i] = '?'
+        updates[i] = ('%s = VALUES(%s)'):format(sets[i], sets[i])
+    end
+    local insertArgs = { citizenid, device }
+    for i = 1, #args do insertArgs[#insertArgs + 1] = args[i] end
+
+    MySQL.update.await(([[
+        INSERT INTO phone_settings (citizenid, device, %s) VALUES (?, ?, %s)
+        ON DUPLICATE KEY UPDATE %s
+    ]]):format(table.concat(cols, ', '), table.concat(placeholders, ', '), table.concat(updates, ', ')), insertArgs)
 end
 
 ---Reads a player's screen brightness (slider value 0-100), or nil when never set.
@@ -2104,6 +2192,13 @@ function store.snapshot(citizenid, device)
     else
         hour24 = defaultHour24()
     end
+    -- Explicit if, not `cond and value or default`, for the same reason hour24 above spells it
+    -- out: parallax defaults ON, so an unset column has to reach the client as nil (take the
+    -- default) while a stored 0 has to survive as false. Collapsing both to false would make the
+    -- toggle impossible to turn off - the next hydrate would put it straight back.
+    local parallax
+    if row and row.wallpaper_parallax ~= nil then parallax = isTruthy(row.wallpaper_parallax) end
+
     local dark = row and row.dark_theme
     if type(dark) ~= 'string' or not (DARK_THEMES[dark] or isCustomPaletteId(dark)) then dark = 'graphite' end
     local light = row and row.light_theme
@@ -2162,6 +2257,10 @@ function store.snapshot(citizenid, device)
         phoneScale       = (row and row.phone_scale ~= nil) and tonumber(row.phone_scale) or nil,
         brightness       = (row and row.brightness ~= nil) and tonumber(row.brightness) or nil,
         phoneAlign       = (row and row.phone_align ~= '') and row.phone_align or nil,
+        phoneTilt        = row and decodeColumn(row.phone_tilt, nil) or nil,
+        dockStyle        = (row and row.dock_style ~= '') and row.dock_style or nil,
+        openAnim         = (row and row.open_anim ~= '') and row.open_anim or nil,
+        wallpaperParallax = parallax,
         ringtoneVol      = (row and row.ringtone_volume ~= nil) and tonumber(row.ringtone_volume) or nil,
         callVol          = (row and row.call_volume ~= nil) and tonumber(row.call_volume) or nil,
         locale           = (row and row.locale ~= '') and row.locale or nil,

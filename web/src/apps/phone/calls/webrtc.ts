@@ -29,6 +29,12 @@ export function stopVideo()                             { void fetchNui('sd-phon
 export function setVideoCamera(on: boolean, front = true) { return fetchNui<VideoCameraInfo>('sd-phone:video:camera', { on, front }); }
 export function setVideoCursor(on: boolean)             { void fetchNui('sd-phone:video:cursor', { on }); }
 
+export interface LensToggle { success?: boolean; on?: boolean }
+
+export function toggleVideoLock()    { return fetchNui<LensToggle>('sd-phone:video:lock'); }
+export function toggleVideoFaceCam() { return fetchNui<LensToggle>('sd-phone:video:faceCam'); }
+export function setVideoZoom(zoom: number) { void fetchNui('sd-phone:video:zoom', { zoom }); }
+
 export class VideoPeer {
     private pc: RTCPeerConnection;
     private remote = new MediaStream();

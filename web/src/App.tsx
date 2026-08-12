@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState  } from 'react';
 import type { CSSProperties } from 'react';
 
 import { device } from '@device';
-import { gridFor } from '@/device/grid';
+import { gridFor, gridForDock } from '@/device/grid';
 import { refitLayout } from '@/shell/widgets/geometry';
 import { isCustomPaletteId, rampFor, rampVars } from '@/apps/settings/appearance/paletteRamp';
 import { accentVars } from '@/apps/settings/appearance/accentRamp';
@@ -191,7 +191,7 @@ function AppContent() {
     // Tone/volume fields are deliberately NOT subscribed here — they're only
     // read inside event callbacks (via useThemeStore.getState()), so slider
     // drags in Control Center don't re-render the whole tree from the root.
-    const { theme, darkTheme, lightTheme, accent, customPalettes, wallpaperLock, wallpaperHome, setTheme, setWallpaper, statusLightOverride, statusBarAutoLight, hideHomeIndicator, airplaneMode, hour24, setHour24, setSecurity, appLabels, homeDensity } = useTheme('theme', 'darkTheme', 'lightTheme', 'accent', 'wallpaperLock', 'wallpaperHome', 'setTheme', 'setWallpaper', 'statusLightOverride', 'statusBarAutoLight', 'hideHomeIndicator', 'airplaneMode', 'hour24', 'setHour24', 'setSecurity', 'customPalettes', 'appLabels', 'homeDensity');
+    const { theme, darkTheme, lightTheme, accent, customPalettes, wallpaperLock, wallpaperHome, setTheme, setWallpaper, statusLightOverride, statusBarAutoLight, hideHomeIndicator, airplaneMode, hour24, setHour24, setSecurity, appLabels, homeDensity, dockStyle } = useTheme('theme', 'darkTheme', 'lightTheme', 'accent', 'wallpaperLock', 'wallpaperHome', 'setTheme', 'setWallpaper', 'statusLightOverride', 'statusBarAutoLight', 'hideHomeIndicator', 'airplaneMode', 'hour24', 'setHour24', 'setSecurity', 'customPalettes', 'appLabels', 'homeDensity', 'dockStyle');
     const activeThemeId = theme === 'dark' ? darkTheme : lightTheme;
     const themeVars = useMemo(() => {
         const vars: Record<string, string> = accentVars(theme === 'dark' ? 'dark' : 'light', accent);
@@ -778,12 +778,12 @@ function AppContent() {
         saveHomeLayout(layout);
     }, []);
 
-    const homeLayout = useMemo(
-        () => (savedLayout
-            ? refitLayout(savedLayout, gridFor(savedLayout.density ?? 'default'), gridFor(homeDensity), homeDensity)
-            : null),
-        [savedLayout, homeDensity],
-    );
+    const homeLayout = useMemo(() => {
+        if (!savedLayout) return null;
+        const saved = gridFor(savedLayout.density ?? 'default');
+        const from = savedLayout.rows ? { ...saved, rows: savedLayout.rows } : saved;
+        return refitLayout(savedLayout, from, gridForDock(homeDensity, dockStyle === 'hidden'), homeDensity);
+    }, [savedLayout, homeDensity, dockStyle]);
 
     // Stable-ish context handed to every deck app instance. Memoized so unrelated
     // App re-renders (notifications, battery, island state) don't rebuild app nodes;
@@ -1545,7 +1545,7 @@ function AppContent() {
                 ) : (
                     !cameraMode && appsReady && (
                         <Homescreen
-                            key={homeDensity}
+                            key={`${homeDensity}:${dockStyle}`}
                             apps={effectiveApps}
                             dock={view.dock}
                             wallpaper={homeWallpaper}

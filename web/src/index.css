@@ -217,6 +217,19 @@ html, body, #root {
 @keyframes phone-out-left   { from { transform: translateX(0); } to { transform: translateX(-130%); } }
 @keyframes phone-out-right  { from { transform: translateX(0); } to { transform: translateX(130%);  } }
 @keyframes phone-out-center { from { transform: scale(1); opacity: 1; } to { transform: scale(0.88); opacity: 0; } }
+@keyframes phone-in-fade  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes phone-out-fade { from { opacity: 1; } to { opacity: 0; } }
+@keyframes phone-in-pop   { from { transform: scale(0.72); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes phone-out-pop  { from { transform: scale(1); opacity: 1; } to { transform: scale(0.72); opacity: 0; } }
+@keyframes phone-in-flip {
+    from { transform: perspective(1600px) rotateY(-74deg); opacity: 0; }
+    to   { transform: perspective(1600px) rotateY(0deg);   opacity: 1; }
+}
+@keyframes phone-out-flip {
+    from { transform: perspective(1600px) rotateY(0deg);  opacity: 1; }
+    to   { transform: perspective(1600px) rotateY(74deg); opacity: 0; }
+}
+
 @keyframes phone-peek-in  { from { transform: translateY(118%); } to { transform: translateY(85%); } }
 @keyframes phone-peek-out { from { transform: translateY(85%);  } to { transform: translateY(118%); } }
 
@@ -571,6 +584,34 @@ input[type='number'] {
     border: none;
     cursor: pointer;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.30), 0 0.5px 1.5px rgba(0, 0, 0, 0.20);
+}
+
+.ios-slider-center::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background:
+        linear-gradient(
+            to right,
+            transparent min(var(--sp, 50%), 50%),
+            #0A84FF   min(var(--sp, 50%), 50%),
+            #0A84FF   max(var(--sp, 50%), 50%),
+            transparent max(var(--sp, 50%), 50%)
+        ),
+        var(--se, #E5E5EA);
+}
+
+.ios-slider-center::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background:
+        linear-gradient(
+            to right,
+            transparent min(var(--sp, 50%), 50%),
+            #0A84FF   min(var(--sp, 50%), 50%),
+            #0A84FF   max(var(--sp, 50%), 50%),
+            transparent max(var(--sp, 50%), 50%)
+        ),
+        var(--se, #E5E5EA);
 }
 @keyframes ios-app-open {
     from { transform: scale(0.01); }

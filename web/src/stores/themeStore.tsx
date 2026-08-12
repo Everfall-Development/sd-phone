@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 
 import { device } from '@device';
-import { isDensity, setDensity } from '@/device/grid';
+import { isDensity, setDensity, setExtraRow } from '@/device/grid';
 import type { Density, DeviceAlign } from '@/device/types';
 import lockscreenAsset from '@/assets/wallpapers/lockscreen.webp';
 import devDefaultAsset from '@/assets/photos/background5.webp';
@@ -15,6 +15,8 @@ import { isDemo } from '@/core/demo';
 import { wallpaperKey } from '@/shell/wallpapers';
 import { useIconThemeStore } from '@/stores/iconThemeStore';
 import { DEFAULT_LOCK_CLOCK, loadLockClockLocal, saveLockClockLocal, type LockClock } from '@/shell/lockClock';
+import { DEFAULT_PHONE_TILT, loadPhoneTiltLocal, normalizeTilt, savePhoneTiltLocal, type PhoneTilt } from '@/shell/phoneTilt';
+import { DEFAULT_SHELL_LOOK, isDockStyle, isOpenAnim, loadShellLookLocal, saveShellLookLocal, type DockStyle, type OpenAnim } from '@/shell/shellLook';
 import { DEFAULT_NOTIFICATION, DEFAULT_RINGTONE } from '@/apps/settings/tones';
 import type { CustomTone, ToneKind } from '@/apps/settings/tones';
 import { warmYouTube } from '@/apps/settings/tonePlayer';
@@ -277,6 +279,9 @@ function saveDensityLocal(v: Density) {
 const initialDensity: Density = isFiveM ? 'default' : loadDensityLocal();
 setDensity(initialDensity);
 
+const initialLook = isFiveM ? DEFAULT_SHELL_LOOK : loadShellLookLocal();
+setExtraRow(initialLook.dockStyle === 'hidden');
+
 const PHONE_SCALE_KEY = 'sd-phone:phoneScale';
 // Shared by the phone frame scale and screen brightness; both are 0-100 sliders.
 const clampPhoneScale = (n: number) => Math.min(100, Math.max(0, Math.round(n)));
@@ -355,6 +360,14 @@ interface ThemeState {
     resetAppLabels:    () => void;
     phoneAlign:        PhoneAlign;
     setPhoneAlign:     (v: PhoneAlign) => void;
+    phoneTilt:         PhoneTilt;
+    setPhoneTilt:      (v: PhoneTilt) => void;
+    dockStyle:         DockStyle;
+    setDockStyle:      (v: DockStyle) => void;
+    openAnim:          OpenAnim;
+    setOpenAnim:       (v: OpenAnim) => void;
+    wallpaperParallax:    boolean;
+    setWallpaperParallax: (v: boolean) => void;
     ringtoneVol:       number;
     setRingtoneVol:    (v: number) => void;
     callVol:           number;
@@ -436,6 +449,20 @@ function persistDebounced(key: string, send: () => void) {
     persistTimers[key] = window.setTimeout(send, PERSIST_DEBOUNCE_MS);
 }
 
+function persistLook(get: () => ThemeState): void {
+    if (isFiveM) {
+        persistDebounced('shellLook', () => {
+            const s = get();
+            void fetchNui('sd-phone:settings:setInterface', {
+                dockStyle: s.dockStyle, openAnim: s.openAnim, wallpaperParallax: s.wallpaperParallax,
+            }).catch(() => {});
+        });
+        return;
+    }
+    const s = get();
+    saveShellLookLocal({ dockStyle: s.dockStyle, openAnim: s.openAnim, wallpaperParallax: s.wallpaperParallax });
+}
+
 export const useThemeStore = create<ThemeState>((set, get) => ({
     theme: isFiveM ? 'light' : loadThemeLocal(),
     darkTheme: isFiveM ? 'graphite' : loadDarkThemeLocal(),
@@ -460,6 +487,10 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     homeDensity:  initialDensity,
     appLabels:    isFiveM ? {}    : loadAppLabelsLocal(),
     phoneAlign: isFiveM && device.id === 'phone' ? device.defaultAlign : loadPhoneAlignLocal(),
+    phoneTilt: isFiveM ? DEFAULT_PHONE_TILT : loadPhoneTiltLocal(),
+    dockStyle:         initialLook.dockStyle,
+    openAnim:          initialLook.openAnim,
+    wallpaperParallax: initialLook.wallpaperParallax,
     ringtoneVol: 40,
     callVol: 60,
     airplaneMode: false,
@@ -634,6 +665,17 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         else savePhoneScaleLocal(next);
     },
 
+    setPhoneTilt: (v) => {
+        const next = normalizeTilt(v);
+        set({ phoneTilt: next });
+        if (isFiveM) persistDebounced('phoneTilt', () => { void fetchNui('sd-phone:settings:setPhoneTilt', get().phoneTilt).catch(() => {}); });
+        else savePhoneTiltLocal(next);
+    },
+
+    setDockStyle:         (v) => { setExtraRow(v === 'hidden'); set({ dockStyle: v }); persistLook(get); },
+    setOpenAnim:          (v) => { set({ openAnim: v });          persistLook(get); },
+    setWallpaperParallax: (v) => { set({ wallpaperParallax: v }); persistLook(get); },
+
     setRingtoneVol: (v) => {
         set({ ringtoneVol: v });
         if (isFiveM) persistDebounced('volumes', () => { void fetchNui('sd-phone:settings:setVolumes', { ringtone: get().ringtoneVol, call: get().callVol }).catch(() => {}); });
@@ -780,6 +822,10 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
             blurHome: false,
             islandPet: 'none',
             lockClock: DEFAULT_LOCK_CLOCK,
+            phoneTilt: DEFAULT_PHONE_TILT,
+            dockStyle:         DEFAULT_SHELL_LOOK.dockStyle,
+            openAnim:          DEFAULT_SHELL_LOOK.openAnim,
+            wallpaperParallax: DEFAULT_SHELL_LOOK.wallpaperParallax,
             setupDone: null,
         });
     },
@@ -808,7 +854,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
             }
         };
         const keyAtRequest = wallpaperProfileKey;
-        void fetchNui<{ data?: { ringtone?: string; notificationTone?: string; customRingtones?: CustomTone[]; customNotificationTones?: CustomTone[]; airplaneMode?: boolean; hour24?: boolean; gameTime?: boolean; reopenApp?: boolean; setupDone?: boolean; lockClock?: Partial<LockClock>; passcode?: string | null; faceId?: boolean; wallpaper?: string; wallpaperHome?: string; blurLock?: boolean; blurHome?: boolean; islandPet?: string; customWallpapers?: string[]; chatTextScale?: number; motion?: number; boldText?: boolean; textScale?: number; homeDensity?: string; appLabels?: Record<string, string>; phoneScale?: number; brightness?: number; phoneAlign?: string; ringtoneVol?: number; callVol?: number; theme?: string; darkTheme?: string; lightTheme?: string; accent?: string; shell?: string; shellChoice?: boolean; shellsAllowed?: unknown[]; customPalettes?: unknown; iconTheme?: string; showAppNames?: boolean; customIconThemes?: unknown } }>('sd-phone:settings:get')
+        void fetchNui<{ data?: { ringtone?: string; notificationTone?: string; customRingtones?: CustomTone[]; customNotificationTones?: CustomTone[]; airplaneMode?: boolean; hour24?: boolean; gameTime?: boolean; reopenApp?: boolean; setupDone?: boolean; lockClock?: Partial<LockClock>; passcode?: string | null; faceId?: boolean; wallpaper?: string; wallpaperHome?: string; blurLock?: boolean; blurHome?: boolean; islandPet?: string; customWallpapers?: string[]; chatTextScale?: number; motion?: number; boldText?: boolean; textScale?: number; homeDensity?: string; appLabels?: Record<string, string>; phoneScale?: number; brightness?: number; phoneAlign?: string; phoneTilt?: { turn?: number; lean?: number }; dockStyle?: string; openAnim?: string; wallpaperParallax?: boolean; ringtoneVol?: number; callVol?: number; theme?: string; darkTheme?: string; lightTheme?: string; accent?: string; shell?: string; shellChoice?: boolean; shellsAllowed?: unknown[]; customPalettes?: unknown; iconTheme?: string; showAppNames?: boolean; customIconThemes?: unknown } }>('sd-phone:settings:get')
             .then(res => {
                 if (!res?.data) { retry(); return; }
                 const d = res.data;
@@ -864,6 +910,13 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
                     return out;
                 })();
                 if (typeof d.phoneScale === 'number') patch.phoneScale = clampPhoneScale(d.phoneScale);
+                patch.phoneTilt = d.phoneTilt ? normalizeTilt(d.phoneTilt) : DEFAULT_PHONE_TILT;
+                patch.dockStyle         = isDockStyle(d.dockStyle) ? d.dockStyle : DEFAULT_SHELL_LOOK.dockStyle;
+                setExtraRow(patch.dockStyle === 'hidden');
+                patch.openAnim          = isOpenAnim(d.openAnim)   ? d.openAnim  : DEFAULT_SHELL_LOOK.openAnim;
+                patch.wallpaperParallax = typeof d.wallpaperParallax === 'boolean'
+                    ? d.wallpaperParallax
+                    : DEFAULT_SHELL_LOOK.wallpaperParallax;
                 if (typeof d.brightness === 'number') patch.brightness = clampPhoneScale(d.brightness);
                 // Position is device-local (see setPhoneAlign): a companion must not adopt the
                 // phone's corner out of the shared settings row.

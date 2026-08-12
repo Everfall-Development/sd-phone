@@ -319,7 +319,11 @@ end
 local function canCreate(src)
     if CREATOR.Enabled == false then return false end
     if type(src) ~= 'number' or src <= 0 then return false end
-    return IsPlayerAceAllowed(src, CREATOR_ACE) == true
+    -- Truthy, NOT `== true`. This native answers with the NUMBER 1, and `1 == true` is false in
+    -- Lua, so the strict comparison refused every player who genuinely held the ace: the command
+    -- itself is gated by FiveM's own restricted-command check and let them through, and only this
+    -- re-check at save time turned them away. isAdmin above tests the same native truthily.
+    return IsPlayerAceAllowed(src, CREATOR_ACE) and true or false
 end
 
 ---Everything the tablet needs to render its shell: the caller's driver card, their HUD, the two

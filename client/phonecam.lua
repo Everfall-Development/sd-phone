@@ -4,17 +4,32 @@ local config = require 'configs.config'
 ---@type table Module table; the table returned at end of file.
 local phonecam = {}
 
----@type integer SKEL_Head bone index; the lens rides the head so it tracks look direction.
+---@type integer SKEL_Head bone TAG. The camera and bone-coordinate natives take the tag, NOT the
+---index GetPedBoneIndex returns - measured on this build, the tag lands 0.000 m from the head while
+---the index (98) silently lands on the ped's centre and frames the middle of their chest. The
+---official native reference says the opposite and its own example contradicts it.
 local HEAD_BONE <const> = 31086
+---@type integer SKEL_ROOT bone tag, the pelvis. Only used to measure how far the head has swung off
+---the torso this frame; the lens never hangs off it, because the root rises and falls WITH the head
+---(0.7 cm of differential) and anchoring there just lets the whole player bob through a still frame.
+local ROOT_BONE <const> = 0
+---@type number How much of the head's sway off the torso the lens follows. The head really does
+---travel ~9 cm sideways over the shoulders in GTA's walk cycle, and one rigid camera point cannot
+---hold both still: follow the head and the body swings, follow the body and the face swims. At 0.5
+---the error is halved and shared, which reads as neither. 0 pins the body, 1 pins the face.
+local SELFIE_SPLIT <const> = 0.5
 ---@type number Lens field of view, chosen to frame like the native cell cam.
 local CAM_FOV <const> = 50.0
 ---@type number Metres the rear lens sits ahead of the eyes.
 local REAR_OFFSET <const> = 0.12
 ---@type number Metres the lens rides above the head bone.
 local RISE <const> = 0.05
----@type number Metres the selfie lens sits out in front of the face: far enough out that the
----player's head and shoulders fit in frame at arm's length.
-local SELFIE_REACH <const> = 0.55
+---@type number Metres the selfie lens sits out in front of the face. Held further out than an arm
+---naturally reaches because the residual sway is a TRANSLATION, so the angle it subtends falls off
+---linearly with distance: the same 9 cm of sway is 9.2 degrees at 0.55 m and 3.4 degrees at 0.75 m.
+---SELFIE_FOV is narrowed to match, so the framing is unchanged and only the shake shrinks. Much past
+---0.9 m and the shot stops reading as something held in a hand.
+local SELFIE_REACH <const> = 0.75
 ---@type number Metres the selfie lens sits right of centre, where a right hand holds it.
 local SELFIE_RIGHT <const> = 0.05
 ---@type number Metres the selfie lens sits below the eyes, so it looks slightly up at the face.
@@ -39,9 +54,10 @@ local LOOK_DEADZONE <const> = 0.005
 local MOVING_SPEED <const> = 0.1
 ---@type number Degrees the selfie lens may tilt up or down under the mouse.
 local SELFIE_PITCH_LIMIT <const> = 45.0
----@type number Selfie field of view, wider than the rear lens so the player and some of the street
----behind them both fit at that reach.
-local SELFIE_FOV <const> = 60.0
+---@type number Selfie field of view. Narrowed from 60 to hold the SAME framing now the lens sits at
+---0.75 m instead of 0.55: 2*atan(tan(30 deg) * 0.55/0.75). Change one of these and the other has to
+---move with it or the shot re-crops.
+local SELFIE_FOV <const> = 46.0
 ---@type number Tightest field of view the lens will zoom to. Any narrower and the smallest aim
 ---movement throws the frame off the subject.
 local MIN_FOV <const> = 10.0
@@ -91,14 +107,6 @@ local zoomTarget = 1.0
 local fov = CAM_FOV
 ---@type integer|nil View mode the player was on before the lens borrowed a third-person one.
 local savedViewMode = nil
----@type integer The ped's ROOT bone. The selfie lens hangs off this rather than the head: the root
----carries smooth locomotion with none of the walk cycle's bob, so the shot holds still and the
----player animates inside it - which is what a phone held at arm's length actually does, since the
----arm rides the body and not the skull.
-local ROOT_BONE <const> = 0
----@type number Metres the face sits above the root bone, measured per ped when the lens opens so a
----tall model is framed like a short one.
-local faceHeight = 0.65
 ---@type boolean True while the selfie lens is attached to the ped by the engine.
 local selfieAttached = false
 
@@ -233,28 +241,43 @@ local function place()
 
     local pitch = clamp(view.x, SELFIE_PITCH_LIMIT)
 
-    -- The lens is handed to the engine, welded to the ROOT bone with its rotation supplied as part
-    -- of the attachment. Two things fall out of that, and both were what shook the old shot:
+    -- POSITION is welded to the head by the engine; ROTATION is set here in world space. The split
+    -- is deliberate and each half fixes a different failure:
     --
-    --  * the root carries locomotion without the walk cycle's bob, so nothing the animation does
-    --    to the head can move the camera, and
-    --  * the aim is a fixed rotation rather than a point-at constraint chasing a bone that moves
-    --    every frame, so it cannot oscillate no matter when the script thread happens to run.
-    --
-    -- The player is then free to bob naturally inside a still frame, which is how a phone held at
-    -- arm's length behaves - the arm rides the body, not the skull.
+    --  * welded to the head, the face keeps exactly one spot in frame. Hung off the ROOT instead,
+    --    the frame holds still and the head bobs through it - 15 cm a stride even at a walk. The
+    --    head and the body do not travel together in GTA's walk cycle, so only one of them can be
+    --    the thing that sits still, and for a selfie it has to be the face.
+    --  * the rotation does NOT go through AttachCamToPedBone_2, whose rotation is expressed in the
+    --    BONE's own frame. The root bone happens to be aligned with the ped, so it looked right
+    --    there, but the head bone's axes are not - the same call laid the whole image on its side.
+    --    Set in world space off the ped's heading, which measures 0.00 degrees of drift while
+    --    walking straight, the horizon stays level and the aim cannot oscillate.
     if selfieAttached then
         local p    = math.rad(pitch)
         local rad  = math.rad(selfieSwing)
         local out  = math.cos(p) * SELFIE_REACH
         local rise = math.sin(p) * SELFIE_REACH
 
-        AttachCamToPedBone_2(cam, ped, ROOT_BONE,
-            -pitch, 0.0, 180.0 + selfieSwing,
-            math.sin(rad) * out + math.cos(rad) * SELFIE_RIGHT,
-            math.cos(rad) * out - math.sin(rad) * SELFIE_RIGHT,
-            faceHeight + rise - SELFIE_DROP,
+        -- How far the head has swung off the torso sideways this frame. Followed only in part: the
+        -- lens gives up SELFIE_SPLIT of it, so the face drifts by that share and the shoulders by
+        -- the rest, instead of one of them carrying the whole ~9 cm.
+        local root  = GetPedBoneCoords(ped, ROOT_BONE, 0.0, 0.0, 0.0)
+        local hrad  = math.rad(GetEntityHeading(ped))
+        local sway  = (head.x - root.x) * math.cos(hrad) + (head.y - root.y) * math.sin(hrad)
+
+        -- The swing rotates the offset the SAME way the aim below swings, which means negative sine
+        -- on the local X: the attachment's local +X is the ped's RIGHT, and a rising world heading
+        -- turns toward the ped's LEFT. Match the two signs and the aim tracks the lens; get one of
+        -- them backwards and the lens orbits one way while the aim orbits the other, so the shot
+        -- misses the player by TWICE the swing - fine head-on, and off the player entirely by a
+        -- quarter turn, which is where the angle is worth having.
+        AttachCamToPedBone(cam, ped, HEAD_BONE,
+            -math.sin(rad) * out + math.cos(rad) * SELFIE_RIGHT - SELFIE_SPLIT * sway,
+             math.cos(rad) * out + math.sin(rad) * SELFIE_RIGHT,
+            rise - SELFIE_DROP,
             true)
+        SetCamRot(cam, -pitch, 0.0, GetEntityHeading(ped) + 180.0 + selfieSwing, 2)
 
         if faceCam then
             local now = GetGameTimer()
@@ -328,6 +351,14 @@ function phonecam.start()
         while cam do
             place()
             applyZoom()
+            -- Sprinting and jumping are held off while the selfie lens is live. Both roughly double
+            -- the sway the lens has to absorb (9 cm of sideways head travel at a walk against 11 cm
+            -- sprinting, and 5 cm of fore-aft pumping against 10 cm), and neither reads as something
+            -- you do while filming your own face. Walking is untouched.
+            if selfie then
+                DisableControlAction(0, 21, true)
+                DisableControlAction(0, 22, true)
+            end
             Wait(0)
         end
         loopRunning = false
@@ -359,15 +390,7 @@ function phonecam.setSelfie(on)
     if not cam then return end
     selfie = on and true or false
     selfieAttached = selfie
-    if selfie then
-        -- Measured per flip: the offset is a property of this ped's skeleton, and a model swap
-        -- between shots would otherwise frame the next one at the wrong height.
-        local ped  = cache.ped
-        local head = GetPedBoneCoords(ped, HEAD_BONE, 0.0, 0.0, 0.0)
-        local root = GetWorldPositionOfEntityBone(ped, ROOT_BONE)
-        local rise = head.z - root.z
-        if rise > 0.3 and rise < 1.2 then faceHeight = rise end
-    else
+    if not selfie then
         -- The rear lens drives its own coord and rotation, which an attachment silently overrides.
         DetachCam(cam)
         StopCamPointing(cam)

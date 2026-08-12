@@ -137,7 +137,8 @@ local SETTINGS_COLS = {
     'active_group_id', 'ringtone', 'notification_tone', 'card_name', 'card_avatar',
     'card_email', 'card_address', 'installed_apps', 'home_layout', 'lock_clock',
     'wallpaper', 'wallpaper_home', 'blur_lock', 'blur_home', 'custom_wallpapers', 'passcode',
-    'face_id', 'chat_text_scale', 'phone_scale', 'phone_align', 'hour24', 'ringtone_volume',
+    'face_id', 'chat_text_scale', 'phone_scale', 'phone_align', 'phone_tilt', 'dock_style', 'open_anim',
+    'wallpaper_parallax', 'hour24', 'ringtone_volume',
     'call_volume', 'locale', 'dark_theme', 'theme', 'icon_theme', 'icon_custom', 'show_app_names',
 }
 

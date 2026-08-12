@@ -7,6 +7,8 @@ import { useTheme } from '@/stores/themeStore';
 import type { PhoneAlign, DarkTheme, LightTheme } from '@/stores/themeStore';
 import { NavBar } from '@/ui/NavBar';
 import { Toggle } from '@/ui/Toggle';
+import { DEFAULT_PHONE_TILT, isTilted, TILT_LIMIT, tiltTransform, type PhoneTilt } from '@/shell/phoneTilt';
+import { OPEN_ANIMS, type OpenAnim } from '@/shell/shellLook';
 import { DarkAppearancePage } from './DarkAppearancePage';
 import { LightAppearancePage } from './LightAppearancePage';
 import { AccentColourPage } from './AccentColourPage';
@@ -49,10 +51,12 @@ export function DisplayBrightnessPage({ onBack }: { onBack: () => void }) {
         phoneScale, setPhoneScale,
         chatTextScale, setChatTextScale,
         phoneAlign, setPhoneAlign,
+        phoneTilt, setPhoneTilt,
+        openAnim, setOpenAnim,
         customPalettes,
         accent,
         shellChoice,
-    } = useTheme('theme', 'setTheme', 'darkTheme', 'lightTheme', 'brightness', 'setBrightness', 'phoneScale', 'setPhoneScale', 'chatTextScale', 'setChatTextScale', 'phoneAlign', 'setPhoneAlign', 'customPalettes', 'accent', 'shellChoice');
+    } = useTheme('theme', 'setTheme', 'darkTheme', 'lightTheme', 'brightness', 'setBrightness', 'phoneScale', 'setPhoneScale', 'chatTextScale', 'setChatTextScale', 'phoneAlign', 'setPhoneAlign', 'phoneTilt', 'setPhoneTilt', 'openAnim', 'setOpenAnim', 'customPalettes', 'accent', 'shellChoice');
 
     const isDark     = theme === 'dark';
     const trackEmpty = isDark ? 'rgb(var(--control))' : 'rgb(var(--surface))';
@@ -227,6 +231,78 @@ export function DisplayBrightnessPage({ onBack }: { onBack: () => void }) {
 
                     <section>
                         <p className="mb-2 text-[12px] uppercase tracking-widest text-ios-gray">
+                            {t('settings.phoneTilt', '3D Tilt')}
+                        </p>
+                        <div className="overflow-hidden rounded-[12px] bg-surface">
+                            <TiltPreview tilt={phoneTilt} isDark={isDark} />
+
+                            <div className="h-[0.5px] bg-ios-gray4 dark:bg-control" />
+
+                            <TiltSliderRow
+                                label={t('settings.phoneTiltTurn', 'Turn')}
+                                value={phoneTilt.turn}
+                                trackEmpty={trackEmpty}
+                                onChange={v => setPhoneTilt({ ...phoneTilt, turn: v })}
+                            />
+
+                            <div className="h-[0.5px] bg-ios-gray4 dark:bg-control" />
+
+                            <TiltSliderRow
+                                label={t('settings.phoneTiltLean', 'Lean')}
+                                value={phoneTilt.lean}
+                                trackEmpty={trackEmpty}
+                                onChange={v => setPhoneTilt({ ...phoneTilt, lean: v })}
+                            />
+
+                            {isTilted(phoneTilt) && (
+                                <>
+                                    <div className="h-[0.5px] bg-ios-gray4 dark:bg-control" />
+                                    <button
+                                        type="button"
+                                        onClick={() => setPhoneTilt(DEFAULT_PHONE_TILT)}
+                                        className="w-full px-4 py-3 text-[17px] font-normal text-ios-blue active:bg-black/5 dark:active:bg-white/5"
+                                    >
+                                        {t('settings.phoneTiltReset', 'Lay Flat')}
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                        <p className="mt-1.5 px-1 text-[12px] leading-snug text-ios-gray">
+                            {t('settings.phoneTiltHint', 'Angles the phone in 3D so it sits in the world instead of lying flat against the screen. Both at zero is the standard flat look. Steep angles can make dragging icons feel slightly off.')}
+                        </p>
+                    </section>
+
+                    <section>
+                        <p className="mb-2 text-[12px] uppercase tracking-widest text-ios-gray">
+                            {t('settings.openAnim', 'Open Animation')}
+                        </p>
+                        <div className="overflow-hidden rounded-[12px] bg-surface">
+                            {OPEN_ANIMS.map((a, i) => (
+                                <div key={a}>
+                                    {i > 0 && <div className="h-[0.5px] bg-ios-gray4 dark:bg-control" />}
+                                    <button
+                                        type="button"
+                                        onClick={() => setOpenAnim(a)}
+                                        className="flex w-full items-center px-4 py-3 text-left active:bg-black/5 dark:active:bg-white/5"
+                                    >
+                                        <span className="flex min-w-0 flex-1 flex-col">
+                                            <span className="text-[17px] font-normal text-black dark:text-white">{ANIM_LABEL[a]}</span>
+                                            <span className="text-[13px] leading-snug text-ios-gray">{ANIM_HINT[a]}</span>
+                                        </span>
+                                        {openAnim === a && (
+                                            <Check className="ml-3 h-[18px] w-[18px] shrink-0 text-ios-blue" strokeWidth={3} />
+                                        )}
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="mt-1.5 px-1 text-[12px] leading-snug text-ios-gray">
+                            {t('settings.openAnimHint', 'How the phone arrives on screen and leaves again when you put it away.')}
+                        </p>
+                    </section>
+
+                    <section>
+                        <p className="mb-2 text-[12px] uppercase tracking-widest text-ios-gray">
                             {t('settings.chatTextSize', 'Chat Text Size')}
                         </p>
                         <div className="overflow-hidden rounded-[12px] bg-surface">
@@ -371,6 +447,94 @@ function PositionPicker({
     );
 }
 
+
+const PREVIEW_W = 78;
+const PREVIEW_H = 118;
+
+const ANIM_LABEL: Record<OpenAnim, string> = {
+    slide: t('settings.openAnimSlide', 'Slide'),
+    fade:  t('settings.openAnimFade', 'Fade'),
+    pop:   t('settings.openAnimPop', 'Pop'),
+    flip:  t('settings.openAnimFlip', 'Flip'),
+};
+
+const ANIM_HINT: Record<OpenAnim, string> = {
+    slide: t('settings.openAnimSlideHint', 'Slides in from the edge it is anchored to.'),
+    fade:  t('settings.openAnimFadeHint', 'Fades in where it sits, with no movement.'),
+    pop:   t('settings.openAnimPopHint', 'Springs up from small to full size.'),
+    flip:  t('settings.openAnimFlipHint', 'Swings in on its side like a turning page.'),
+};
+
+function TiltSliderRow({ label, value, trackEmpty, onChange }: {
+    label:      string;
+    value:      number;
+    trackEmpty: string;
+    onChange:   (v: number) => void;
+}) {
+    const fill = ((value + TILT_LIMIT) / (TILT_LIMIT * 2)) * 100;
+    return (
+        <div className="flex items-center gap-3 px-4 py-3">
+            <span className="w-[46px] shrink-0 text-[17px] font-normal text-black dark:text-white">{label}</span>
+            <input
+                type="range"
+                min={-TILT_LIMIT} max={TILT_LIMIT}
+                value={value}
+                onChange={e => onChange(+e.target.value)}
+                className="ios-slider ios-slider-center flex-1"
+                style={{ '--sp': `${fill}%`, '--se': trackEmpty } as React.CSSProperties}
+            />
+            <span className="w-[38px] shrink-0 text-right text-[15px] tabular-nums text-ios-gray">{value}°</span>
+        </div>
+    );
+}
+
+function TiltPreview({ tilt, isDark }: { tilt: PhoneTilt; isDark: boolean }) {
+    const screen = isDark
+        ? 'linear-gradient(168deg, #2E1C72 0%, #221550 45%, #140b32 100%)'
+        : 'linear-gradient(168deg, #C7DEFA 0%, #93BEEA 48%, #6AA5DD 100%)';
+
+    return (
+        <div className="flex items-center justify-center px-4 pb-6 pt-7">
+            <div
+                style={{
+                    transform:       tiltTransform(tilt, PREVIEW_H),
+                    transformOrigin: 'center',
+                    transition:      'transform 0.16s ease-out',
+                }}
+            >
+                <div
+                    className="relative rounded-[15px]"
+                    style={{
+                        width:      PREVIEW_W,
+                        height:     PREVIEW_H,
+                        padding:    3,
+                        background: 'linear-gradient(105deg, #55555a 0%, #2c2c2e 42%, #414146 100%)',
+                        boxShadow:  '0 10px 22px rgba(0,0,0,0.34), inset 0 0 0 0.5px rgba(255,255,255,0.24)',
+                    }}
+                >
+                    <div className="relative h-full w-full overflow-hidden rounded-[12px]" style={{ background: screen }}>
+                        <div className="absolute left-1/2 top-[5px] h-[5px] w-[22px] -translate-x-1/2 rounded-full bg-black/85" />
+                        <div
+                            className="absolute left-0 right-0 top-[24px] text-center text-[15px] font-semibold leading-none"
+                            style={{ color: isDark ? '#fff' : '#1C1C1E' }}
+                        >
+                            9:41
+                        </div>
+                        <div className="absolute bottom-[10px] left-0 right-0 flex justify-center gap-[6px]">
+                            {[0, 1, 2, 3].map(i => (
+                                <span
+                                    key={i}
+                                    className="rounded-[4px]"
+                                    style={{ width: 12, height: 12, background: 'rgba(255,255,255,0.72)' }}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 function LightPreview() {
     return (

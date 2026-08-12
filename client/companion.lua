@@ -27,7 +27,7 @@ local hook = {
 local handlers = {}
 
 -- Voice calling is the phone's alone. A companion may neither invoke these nor be told about
--- them, so a tablet can never dial, answer, ring, or run the video (FaceTime) leg - and neither
+-- them, so a tablet can never dial, answer, ring, or run the video (video) leg - and neither
 -- can a hand-edited companion build, because the refusal lives on this side of the seam.
 local DENY_PREFIX = { 'sd-phone:call:', 'sd-phone:video:', 'sd-phone:payphone:' }
 local DENY = {

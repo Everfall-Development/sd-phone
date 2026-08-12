@@ -11,7 +11,7 @@ local CORNERS <const> = {
 
 ---The on-screen keybind hints, normalised so the page never has to defend against a typo in
 ---configs/phone.lua. Shared by every surface that can hand the mouse to the game, so the camera
----viewfinder and a FaceTime call place their hints the same way and one config key moves both.
+---viewfinder and a video call place their hints the same way and one config key moves both.
 ---@return { enabled: boolean, corner: string, columns: integer }
 function hints.config()
     local cfg    = config.Phone.CameraHints or {}

@@ -1,4 +1,4 @@
----@type table On-screen keybind hints (client.hints): placement config shared with FaceTime.
+---@type table On-screen keybind hints (client.hints): placement config shared with the video call.
 local hints = require 'client.hints'
 ---@type table Scripted phone camera (client.phonecam): owns the view whenever this surface is
 ---allowed to keep the player moving, since the native cell cam pins the ped at engine level.

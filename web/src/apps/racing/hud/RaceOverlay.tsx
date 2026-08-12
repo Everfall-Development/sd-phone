@@ -90,6 +90,10 @@ export function RaceOverlay() {
         }));
     }, []));
 
+    useNuiEvent('sd-phone:racing:hud:clock', useCallback(() => {
+        setStartedAt(performance.now());
+    }, []));
+
     useNuiEvent('sd-phone:racing:hud:countdown', useCallback((data) => {
         setCountdown(prev => ({ from: data.from, run: (prev?.run ?? 0) + 1 }));
     }, []));

@@ -49,6 +49,8 @@ writeCallback('sd-phone:settings:setHomeDensity',   'sd-phone:server:settings:se
 writeCallback('sd-phone:settings:setPhoneScale',    'sd-phone:server:settings:setPhoneScale')
 writeCallback('sd-phone:settings:setBrightness',    'sd-phone:server:settings:setBrightness')
 writeCallback('sd-phone:settings:setPhoneAlign',    'sd-phone:server:settings:setPhoneAlign')
+writeCallback('sd-phone:settings:setPhoneTilt',     'sd-phone:server:settings:setPhoneTilt')
+writeCallback('sd-phone:settings:setInterface',     'sd-phone:server:settings:setInterface')
 writeCallback('sd-phone:settings:setVolumes',       'sd-phone:server:settings:setVolumes')
 writeCallback('sd-phone:settings:setLocale',        'sd-phone:server:settings:setLocale')
 proxyCallback('sd-phone:settings:versionInfo',  'sd-phone:server:settings:versionInfo')

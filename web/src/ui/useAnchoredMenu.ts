@@ -1,7 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-import { ancestorZoom } from '@/lib/zoom';
-
 const GAP = 6;
 const EDGE = 8;
 
@@ -30,9 +28,17 @@ export function useAnchoredMenu({ anchor, onClose, align = 'end', matchWidth = f
         if (!host || !anchor) return;
 
         const parent = host.offsetParent as HTMLElement | null;
-        const zoom = ancestorZoom(host) || 1;
         const a = anchor.getBoundingClientRect();
         const p = parent?.getBoundingClientRect();
+
+        // How many rect pixels one layout pixel is worth, measured off the anchor itself rather
+        // than read from the zoom property. The two are NOT the same thing: this CEF reports
+        // getBoundingClientRect in unscaled layout pixels even inside a zoomed subtree, so
+        // dividing by the zoom threw every menu down and to the right of its trigger by 1/zoom
+        // (a 0.76 stage put a menu 61px right and 46px low, off the screen edge). Chrome 128+
+        // does scale rects, and there this measures the zoom back out. Same code, both worlds.
+        const measured = anchor.offsetWidth > 0 ? a.width / anchor.offsetWidth : 1;
+        const zoom = measured > 0.01 ? measured : 1;
 
         const boxW = parent ? parent.clientWidth : window.innerWidth;
         const boxH = parent ? parent.clientHeight : window.innerHeight;

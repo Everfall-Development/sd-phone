@@ -305,14 +305,6 @@ local function openMenu(state)
             end,
         },
     }
-    if state.myNumber then
-        options[#options + 1] = {
-            title = 'My Number',
-            description = state.myNumber,
-            icon = 'user',
-            onSelect = function() startCall(state.myNumber) end,
-        }
-    end
     for _, fav in ipairs(state.favorites or {}) do
         options[#options + 1] = {
             title = fav.name,

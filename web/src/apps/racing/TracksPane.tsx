@@ -150,7 +150,7 @@ export function TracksPane() {
                         value={sort}
                         onChange={setSort}
                         options={options}
-                        className="w-[136px]"
+                        className={isPhone ? 'w-[116px]' : 'w-[136px]'}
                         ariaLabel={t('racing.sortTracks', 'Sort tracks')}
                     />
                     <div className="flex shrink-0 items-center gap-1.5">

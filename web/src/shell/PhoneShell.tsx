@@ -18,6 +18,8 @@ import { SWITCHER_SCALE } from './AppSwitcher';
 import { DEFAULT_FRAME_COLOR, frameHex, frameStops } from './frameColors';
 import { BootSplash } from './BootSplash';
 import { chassisMetrics, rrect } from './chassis';
+import { tiltTransform } from './phoneTilt';
+import type { OpenAnim } from './shellLook';
 import type { ChassisMetrics, FacePart, RailButton } from './chassis';
 import { shellFor } from './shells';
 import { t } from '@/i18n';
@@ -44,7 +46,8 @@ const ALIGN_MAP: Record<string, string> = {
 
 const EDGE_PADDING = 24;
 
-function enterKeyframe(align: PhoneAlign): string {
+function enterKeyframe(align: PhoneAlign, anim: OpenAnim): string {
+    if (anim !== 'slide')           return `phone-in-${anim}`;
     if (align.startsWith('bottom')) return 'phone-in-bottom';
     if (align.startsWith('top'))    return 'phone-in-top';
     if (align === 'middle-left')    return 'phone-in-left';
@@ -52,7 +55,8 @@ function enterKeyframe(align: PhoneAlign): string {
     return 'phone-in-center';
 }
 
-function exitKeyframe(align: PhoneAlign): string {
+function exitKeyframe(align: PhoneAlign, anim: OpenAnim): string {
+    if (anim !== 'slide')           return `phone-out-${anim}`;
     if (align.startsWith('bottom')) return 'phone-out-bottom';
     if (align.startsWith('top'))    return 'phone-out-top';
     if (align === 'middle-left')    return 'phone-out-left';
@@ -403,7 +407,7 @@ function RailKey({ btn, m }: { btn: RailButton; m: ChassisMetrics }) {
 }
 
 export function PhoneShell({ children, cameraActive = false, entering = false, leaving = false, landscape = false, peek, onClose, radioIsland, alarmIsland, frameColor = DEFAULT_FRAME_COLOR }: PhoneShellProps) {
-    const { brightness, phoneScale, phoneAlign, ringtoneVol, setRingtoneVol, islandPet, shell } = useTheme('brightness', 'phoneScale', 'phoneAlign', 'ringtoneVol', 'setRingtoneVol', 'islandPet', 'shell');
+    const { brightness, phoneScale, phoneAlign, phoneTilt, openAnim, ringtoneVol, setRingtoneVol, islandPet, shell } = useTheme('brightness', 'phoneScale', 'phoneAlign', 'phoneTilt', 'openAnim', 'ringtoneVol', 'setRingtoneVol', 'islandPet', 'shell');
     const m = useMemo(() => chassisMetrics(shellFor(shell, device.id)), [shell]);
     const {
         SW, SH, W, H, SX, SY, BR, SR, SCREEN_MASK, BEZEL, hostsIsland, hasCutout, pillInCutout,
@@ -423,6 +427,7 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
     const [musicExpanded, setMusicExpanded] = useState(false);
 
     const callActive    = useCallStore(s => s.phase !== null);
+    const callRinging   = useCallStore(s => s.phase === 'incoming' || s.phase === 'outgoing');
     const callStartedAt = useCallStore(s => s.startedAt);
 
     const radioOn      = radioIsland?.on      ?? false;
@@ -496,14 +501,15 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
         : peek === 'in'
         ? 'phone-peek-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards'
         : leaving
-        ? `${exitKeyframe(phoneAlign)} 0.42s cubic-bezier(0.4, 0, 0.7, 1) both`
+        ? `${exitKeyframe(phoneAlign, openAnim)} 0.42s cubic-bezier(0.4, 0, 0.7, 1) both`
         : entering
-        ? `${enterKeyframe(phoneAlign)} 0.52s cubic-bezier(0.16, 1, 0.3, 1) both`
+        ? `${enterKeyframe(phoneAlign, openAnim)} 0.52s cubic-bezier(0.16, 1, 0.3, 1) both`
         : undefined;
 
     const dimOpacity = (1 - brightness / 100) * 0.85;
 
     const scale = 0.4 + (phoneScale / 100) * 0.6;
+    const tilt  = tiltTransform(phoneTilt, H);
 
     const stageH = Math.round(H);
     const effectiveAlign = peek ? peekAlign(phoneAlign) : phoneAlign;
@@ -526,464 +532,473 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
             style={{ padding: EDGE_PADDING }}
         >
             <div
-                className="relative shrink-0"
+                className="shrink-0"
                 style={{
-                    width:  W,
-                    height: stageH,
-                    zoom: scale,
-                    animation: motionAnimation,
-                    transform: !motionAnimation && landscape ? landscapeTransform : undefined,
+                    transform:       tilt,
                     transformOrigin: 'center',
-                    transition: motionAnimation ? undefined : 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                    transition:      'transform 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
                 }}
             >
                 <div
-                    data-phone-screen
-                    className="absolute overflow-hidden"
+                    className="relative shrink-0"
                     style={{
-                        left: SX, top: SY, width: SW, height: SH,
-                        borderRadius: SR,
-                        clipPath: `inset(0 round ${SR}px)`,
-                        WebkitClipPath: `inset(0 round ${SR}px)`,
-                        WebkitMaskImage: SCREEN_MASK,
-                        maskImage: SCREEN_MASK,
-                        WebkitMaskSize: '100% 100%',
-                        maskSize: '100% 100%',
-                        WebkitMaskRepeat: 'no-repeat',
-                        maskRepeat: 'no-repeat',
-                        // The switcher's card scale, for index.css's ios-app-expand. The deck
-                        // re-parents the opening app's host into this screen, so the value
-                        // inherits down to it - and unlike the switcher, this element stays.
-                        ...({ '--switcher-scale': String(SWITCHER_SCALE) } as React.CSSProperties),
+                        width:  W,
+                        height: stageH,
+                        zoom: scale,
+                        animation: motionAnimation,
+                        transform: !motionAnimation && landscape ? landscapeTransform : undefined,
+                        transformOrigin: 'center',
+                        transition: motionAnimation ? undefined : 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                     }}
                 >
-                    {!cameraActive && (
-                        <div className="absolute inset-0" style={{ background: '#000', borderRadius: SR }} />
-                    )}
-
-                    {children}
-
-                    <BootSplash radius={SR} tint={frameHex(frameColor)} />
-
                     <div
-                        className="pointer-events-none absolute inset-0"
-                        style={{ background: '#000', opacity: dimOpacity, zIndex: 9999, borderRadius: SR }}
-                    />
+                        data-phone-screen
+                        className="absolute overflow-hidden"
+                        style={{
+                            left: SX, top: SY, width: SW, height: SH,
+                            borderRadius: SR,
+                            clipPath: `inset(0 round ${SR}px)`,
+                            WebkitClipPath: `inset(0 round ${SR}px)`,
+                            WebkitMaskImage: SCREEN_MASK,
+                            maskImage: SCREEN_MASK,
+                            WebkitMaskSize: '100% 100%',
+                            maskSize: '100% 100%',
+                            WebkitMaskRepeat: 'no-repeat',
+                            maskRepeat: 'no-repeat',
+                            // The switcher's card scale, for index.css's ios-app-expand. The deck
+                            // re-parents the opening app's host into this screen, so the value
+                            // inherits down to it - and unlike the switcher, this element stays.
+                            ...({ '--switcher-scale': String(SWITCHER_SCALE) } as React.CSSProperties),
+                        }}
+                    >
+                        {!cameraActive && (
+                            <div className="absolute inset-0" style={{ background: '#000', borderRadius: SR }} />
+                        )}
 
-                    {flashing && (
+                        {children}
+
+                        <BootSplash radius={SR} tint={frameHex(frameColor)} />
+
                         <div
-                            data-screenshot-flash="1"
-                            className="pointer-events-none absolute inset-0 animate-screenshot-flash"
-                            style={{ background: '#fff', zIndex: 10000, borderRadius: SR }}
+                            className="pointer-events-none absolute inset-0"
+                            style={{ background: '#000', opacity: dimOpacity, zIndex: 9999, borderRadius: SR }}
                         />
-                    )}
-                </div>
 
-                <svg
-                    width={W}
-                    height={stageH}
-                    viewBox={`0 0 ${W} ${stageH}`}
-                    aria-hidden
-                    className="pointer-events-none absolute inset-0 select-none"
-                    style={{ overflow: 'visible', zIndex: 200 }}
-                >
-                    <defs>
-                        <linearGradient id={GID} x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%"    stopColor={rail.s0} />
-                            <stop offset="20%"   stopColor={rail.s20} />
-                            <stop offset="45%"   stopColor={rail.s45} />
-                            <stop offset="68%"   stopColor={rail.s68} />
-                            <stop offset="100%"  stopColor={rail.s100} />
-                        </linearGradient>
+                        {flashing && (
+                            <div
+                                data-screenshot-flash="1"
+                                className="pointer-events-none absolute inset-0 animate-screenshot-flash"
+                                style={{ background: '#fff', zIndex: 10000, borderRadius: SR }}
+                            />
+                        )}
+                    </div>
 
-                        <linearGradient id={`${GID}-sheen`} x1="0%" y1="0%" x2="60%" y2="100%">
-                            <stop offset="0%"   stopColor={`rgba(255,255,255,${SHEEN_TOP})`} />
-                            <stop offset="40%"  stopColor={`rgba(255,255,255,${SHEEN_MID})`} />
-                            <stop offset="100%" stopColor="rgba(255,255,255,0.00)" />
-                        </linearGradient>
+                    <svg
+                        width={W}
+                        height={stageH}
+                        viewBox={`0 0 ${W} ${stageH}`}
+                        aria-hidden
+                        className="pointer-events-none absolute inset-0 select-none"
+                        style={{ overflow: 'visible', zIndex: 200 }}
+                    >
+                        <defs>
+                            <linearGradient id={GID} x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%"    stopColor={rail.s0} />
+                                <stop offset="20%"   stopColor={rail.s20} />
+                                <stop offset="45%"   stopColor={rail.s45} />
+                                <stop offset="68%"   stopColor={rail.s68} />
+                                <stop offset="100%"  stopColor={rail.s100} />
+                            </linearGradient>
 
-                        <clipPath id={`${GID}-screen`}>
-                            <path d={SCREEN_RRECT} />
-                        </clipPath>
+                            <linearGradient id={`${GID}-sheen`} x1="0%" y1="0%" x2="60%" y2="100%">
+                                <stop offset="0%"   stopColor={`rgba(255,255,255,${SHEEN_TOP})`} />
+                                <stop offset="40%"  stopColor={`rgba(255,255,255,${SHEEN_MID})`} />
+                                <stop offset="100%" stopColor="rgba(255,255,255,0.00)" />
+                            </linearGradient>
 
-                        {CAPS.length > 0 && (
-                            <clipPath id={`${GID}-outer`}>
-                                <path d={OUTER_RRECT} />
+                            <clipPath id={`${GID}-screen`}>
+                                <path d={SCREEN_RRECT} />
                             </clipPath>
+
+                            {CAPS.length > 0 && (
+                                <clipPath id={`${GID}-outer`}>
+                                    <path d={OUTER_RRECT} />
+                                </clipPath>
+                            )}
+
+                            {RIM_PATH && (
+                                <linearGradient id={`${GID}-rim`} x1="0%" y1="0%" x2="0%" y2="100%">
+                                    <stop offset="0%"   stopColor="rgba(255,255,255,0.35)" />
+                                    <stop offset="100%" stopColor="rgba(0,0,0,0.35)" />
+                                </linearGradient>
+                            )}
+
+                            {GLASS.map(band => (
+                                <linearGradient
+                                    key={band.dir}
+                                    id={`${GID}-glass-${band.dir}`}
+                                    x1={band.dir === 'r' ? '100%' : '0%'}
+                                    y1={band.dir === 'b' ? '100%' : '0%'}
+                                    x2={band.dir === 'l' ? '100%' : '0%'}
+                                    y2={band.dir === 't' ? '100%' : '0%'}
+                                >
+                                    <stop offset="0%"   stopColor="rgba(0,0,0,0.50)" />
+                                    <stop offset="14%"  stopColor={`rgba(255,255,255,${GLASS_STRENGTH})`} />
+                                    <stop offset="52%"  stopColor={`rgba(255,255,255,${GLASS_STRENGTH * 0.18})`} />
+                                    <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+                                </linearGradient>
+                            ))}
+
+                            {softPatch && (
+                                <pattern id={`${GID}-udc`} width={3} height={3} patternUnits="userSpaceOnUse">
+                                    <circle cx={1.5} cy={1.5} r={0.5} fill="rgba(255,255,255,0.05)" />
+                                </pattern>
+                            )}
+
+                            {FACE.map((part, i) => part.t === 'slot' && part.style === 'dots' ? (
+                                <pattern
+                                    key={i}
+                                    id={`${GID}-perf-${i}`}
+                                    x={part.x}
+                                    y={part.y + (part.h - part.rows * part.pitchY) / 2}
+                                    width={part.pitchX}
+                                    height={part.pitchY}
+                                    patternUnits="userSpaceOnUse"
+                                >
+                                    <circle cx={part.pitchX / 2} cy={part.pitchY / 2} r={part.dotR} fill={part.color} />
+                                </pattern>
+                            ) : null)}
+                        </defs>
+
+                        <path d={BEZEL} fill={PLATE ?? `url(#${GID})`} fillRule="evenodd" />
+                        {RAIL_BAND && <path d={RAIL_BAND} fill={`url(#${GID})`} fillRule="evenodd" />}
+                        <path d={RAIL_BAND ?? BEZEL} fill={`url(#${GID}-sheen)`} fillRule="evenodd" />
+
+                        {CAPS.length > 0 && CAP_COLOR && (
+                            <g clipPath={`url(#${GID}-outer)`}>
+                                {CAPS.map((cap, i) => (
+                                    <g key={i}>
+                                        <rect x={cap.x} y={cap.y} width={cap.run} height={cap.run} fill={CAP_COLOR} />
+                                        <rect
+                                            x={cap.x === 0 ? cap.run - 0.75 : cap.x}
+                                            y={cap.y}
+                                            width={0.75}
+                                            height={cap.run}
+                                            fill="rgba(0,0,0,0.35)"
+                                        />
+                                        <rect
+                                            x={cap.x}
+                                            y={cap.y === 0 ? cap.run - 0.75 : cap.y}
+                                            width={cap.run}
+                                            height={0.75}
+                                            fill="rgba(0,0,0,0.35)"
+                                        />
+                                    </g>
+                                ))}
+                            </g>
                         )}
 
-                        {RIM_PATH && (
-                            <linearGradient id={`${GID}-rim`} x1="0%" y1="0%" x2="0%" y2="100%">
-                                <stop offset="0%"   stopColor="rgba(255,255,255,0.35)" />
-                                <stop offset="100%" stopColor="rgba(0,0,0,0.35)" />
-                            </linearGradient>
-                        )}
-
-                        {GLASS.map(band => (
-                            <linearGradient
-                                key={band.dir}
-                                id={`${GID}-glass-${band.dir}`}
-                                x1={band.dir === 'r' ? '100%' : '0%'}
-                                y1={band.dir === 'b' ? '100%' : '0%'}
-                                x2={band.dir === 'l' ? '100%' : '0%'}
-                                y2={band.dir === 't' ? '100%' : '0%'}
-                            >
-                                <stop offset="0%"   stopColor="rgba(0,0,0,0.50)" />
-                                <stop offset="14%"  stopColor={`rgba(255,255,255,${GLASS_STRENGTH})`} />
-                                <stop offset="52%"  stopColor={`rgba(255,255,255,${GLASS_STRENGTH * 0.18})`} />
-                                <stop offset="100%" stopColor="rgba(255,255,255,0)" />
-                            </linearGradient>
+                        {MARKS.map((mark, i) => (
+                            <g key={i}>
+                                <rect x={mark.x} y={mark.y} width={mark.w} height={mark.h} fill="rgba(255,255,255,0.10)" />
+                                <rect x={mark.x} y={mark.y} width={mark.w < mark.h ? 0.5 : mark.w} height={mark.w < mark.h ? mark.h : 0.5} fill="rgba(0,0,0,0.25)" />
+                            </g>
                         ))}
 
-                        {softPatch && (
-                            <pattern id={`${GID}-udc`} width={3} height={3} patternUnits="userSpaceOnUse">
-                                <circle cx={1.5} cy={1.5} r={0.5} fill="rgba(255,255,255,0.05)" />
-                            </pattern>
+                        {GRIPS.map((grip, i) => (
+                            <g key={i}>
+                                {Array.from({ length: grip.ticks }, (_, k) => {
+                                    const ty = grip.y + (k + 0.5) * (grip.h / grip.ticks);
+                                    return grip.style === 'hatch'
+                                        ? <path key={k} d={`M${grip.x},${ty + 2} L${grip.x + grip.w},${ty - 2}`} stroke="rgba(0,0,0,0.22)" strokeWidth={1} />
+                                        : <rect key={k} x={grip.x} y={ty - 1.5} width={grip.w} height={3} fill="rgba(0,0,0,0.22)" />;
+                                })}
+                            </g>
+                        ))}
+
+                        <path
+                            d={rrect(0.5, 0.5, W - 1, stageH - 1, BR)}
+                            fill="none"
+                            stroke={`rgba(255,255,255,${EDGE_LIGHT})`}
+                            strokeWidth="0.75"
+                        />
+
+                        {RIM_PATH && (
+                            <path
+                                d={RIM_PATH}
+                                fill="none"
+                                stroke={RIM_COLOR ?? `url(#${GID}-rim)`}
+                                strokeWidth={RIM_W}
+                            />
                         )}
 
-                        {FACE.map((part, i) => part.t === 'slot' && part.style === 'dots' ? (
-                            <pattern
-                                key={i}
-                                id={`${GID}-perf-${i}`}
-                                x={part.x}
-                                y={part.y + (part.h - part.rows * part.pitchY) / 2}
-                                width={part.pitchX}
-                                height={part.pitchY}
-                                patternUnits="userSpaceOnUse"
-                            >
-                                <circle cx={part.pitchX / 2} cy={part.pitchY / 2} r={part.dotR} fill={part.color} />
-                            </pattern>
-                        ) : null)}
-                    </defs>
+                        {FACE.map((part, i) => <FaceShape key={i} part={part} index={i} m={m} />)}
 
-                    <path d={BEZEL} fill={PLATE ?? `url(#${GID})`} fillRule="evenodd" />
-                    {RAIL_BAND && <path d={RAIL_BAND} fill={`url(#${GID})`} fillRule="evenodd" />}
-                    <path d={RAIL_BAND ?? BEZEL} fill={`url(#${GID}-sheen)`} fillRule="evenodd" />
-
-                    {CAPS.length > 0 && CAP_COLOR && (
-                        <g clipPath={`url(#${GID}-outer)`}>
-                            {CAPS.map((cap, i) => (
-                                <g key={i}>
-                                    <rect x={cap.x} y={cap.y} width={cap.run} height={cap.run} fill={CAP_COLOR} />
-                                    <rect
-                                        x={cap.x === 0 ? cap.run - 0.75 : cap.x}
-                                        y={cap.y}
-                                        width={0.75}
-                                        height={cap.run}
-                                        fill="rgba(0,0,0,0.35)"
-                                    />
-                                    <rect
-                                        x={cap.x}
-                                        y={cap.y === 0 ? cap.run - 0.75 : cap.y}
-                                        width={cap.run}
-                                        height={0.75}
-                                        fill="rgba(0,0,0,0.35)"
-                                    />
-                                </g>
-                            ))}
-                        </g>
-                    )}
-
-                    {MARKS.map((mark, i) => (
-                        <g key={i}>
-                            <rect x={mark.x} y={mark.y} width={mark.w} height={mark.h} fill="rgba(255,255,255,0.10)" />
-                            <rect x={mark.x} y={mark.y} width={mark.w < mark.h ? 0.5 : mark.w} height={mark.w < mark.h ? mark.h : 0.5} fill="rgba(0,0,0,0.25)" />
-                        </g>
-                    ))}
-
-                    {GRIPS.map((grip, i) => (
-                        <g key={i}>
-                            {Array.from({ length: grip.ticks }, (_, k) => {
-                                const ty = grip.y + (k + 0.5) * (grip.h / grip.ticks);
-                                return grip.style === 'hatch'
-                                    ? <path key={k} d={`M${grip.x},${ty + 2} L${grip.x + grip.w},${ty - 2}`} stroke="rgba(0,0,0,0.22)" strokeWidth={1} />
-                                    : <rect key={k} x={grip.x} y={ty - 1.5} width={grip.w} height={3} fill="rgba(0,0,0,0.22)" />;
-                            })}
-                        </g>
-                    ))}
-
-                    <path
-                        d={rrect(0.5, 0.5, W - 1, stageH - 1, BR)}
-                        fill="none"
-                        stroke={`rgba(255,255,255,${EDGE_LIGHT})`}
-                        strokeWidth="0.75"
-                    />
-
-                    {RIM_PATH && (
                         <path
-                            d={RIM_PATH}
+                            d={rrect(SX - 0.5, SY - 0.5, SW + 1, SH + 1, SR + 0.5)}
                             fill="none"
-                            stroke={RIM_COLOR ?? `url(#${GID}-rim)`}
-                            strokeWidth={RIM_W}
+                            stroke="rgba(0,0,0,0.70)"
+                            strokeWidth="1.5"
+                        />
+
+                        {hostsIsland && hasCutout && (() => {
+                            const lensR = Math.min(7, CUT_H / 2 - 3);
+                            const lensY = CUT_Y + CUT_H / 2;
+                            const irS = Math.max(6, Math.min(22, CUT_H - 8));
+                            return (
+                                <>
+                                    {CUT_COLLAR > 0 && (
+                                        <>
+                                            <rect
+                                                x={CUT_X - CUT_COLLAR * 1.6} y={CUT_Y - CUT_COLLAR * 1.6}
+                                                width={CUT_W + CUT_COLLAR * 3.2} height={CUT_H + CUT_COLLAR * 3.2}
+                                                rx={CUT_R + CUT_COLLAR * 1.6}
+                                                fill="rgba(0,0,0,0.55)"
+                                            />
+                                            <rect
+                                                x={CUT_X - CUT_COLLAR / 2} y={CUT_Y - CUT_COLLAR / 2}
+                                                width={CUT_W + CUT_COLLAR} height={CUT_H + CUT_COLLAR}
+                                                rx={CUT_R + CUT_COLLAR / 2}
+                                                fill="none"
+                                                stroke={`url(#${GID})`}
+                                                strokeWidth={CUT_COLLAR}
+                                            />
+                                            <path
+                                                d={`M${CUT_X + CUT_R * 0.4},${CUT_Y - CUT_COLLAR / 2} A${CUT_R + CUT_COLLAR / 2},${CUT_R + CUT_COLLAR / 2} 0 0 0 ${CUT_X - CUT_COLLAR / 2 - CUT_R * 0.1},${CUT_Y + CUT_H * 0.45}`}
+                                                fill="none"
+                                                stroke="rgba(255,255,255,0.45)"
+                                                strokeWidth={1}
+                                            />
+                                        </>
+                                    )}
+
+                                    {CUT_PATH
+                                        ? <path d={CUT_PATH} fill="#000" />
+                                        : (
+                                            <rect
+                                                x={CUT_X} y={CUT_Y}
+                                                width={CUT_W} height={CUT_H}
+                                                rx={CUT_R}
+                                                fill="#000"
+                                            />
+                                        )}
+
+                                    {CUT_OPTICS === 'lens' && <Lens cx={CUT_LENS_X} cy={lensY} r={lensR} />}
+
+                                    {CUT_OPTICS === 'twin' && (
+                                        <>
+                                            <Lens cx={CUT_X + CUT_W / 3}     cy={lensY} r={lensR} />
+                                            <Lens cx={CUT_X + CUT_W * 2 / 3} cy={lensY} r={lensR} />
+                                        </>
+                                    )}
+
+                                    {CUT_OPTICS === 'lensIr' && (
+                                        <>
+                                            <Lens cx={CUT_X + CUT_W / 6} cy={lensY} r={lensR} />
+                                            <rect
+                                                x={CUT_X + CUT_W * 5 / 6 - irS / 2} y={lensY - irS / 2}
+                                                width={irS} height={irS}
+                                                rx={irS * 0.3}
+                                                fill="#0a0a12"
+                                            />
+                                            <rect
+                                                x={CUT_X + CUT_W * 5 / 6 - irS / 4} y={lensY - irS / 4}
+                                                width={irS / 2} height={irS / 2}
+                                                rx={irS * 0.16}
+                                                fill="#12121c"
+                                            />
+                                        </>
+                                    )}
+
+                                    {cameraActive && (() => {
+                                        const dotCx = Math.max(CUT_X - 14, CUT_X + CUT_W - CUT_R * 2.5);
+                                        return (
+                                            <>
+                                                <circle cx={dotCx} cy={lensY} r={7}   fill="rgba(48,209,88,0.18)" />
+                                                <circle cx={dotCx} cy={lensY} r={3.6} fill="#30D158" />
+                                            </>
+                                        );
+                                    })()}
+                                </>
+                            );
+                        })()}
+
+                        {AUTO_FOREHEAD && (() => {
+                            const camX = W / 2 - 70;
+                            const camY = SY / 2;
+                            const camR = Math.min(7, (SY - 6) / 2);
+                            return (
+                                <>
+                                    <rect x={W / 2 - 42} y={camY - 2.5} width={84} height={5} rx={2.5} fill="rgba(0,0,0,0.55)" />
+                                    <circle cx={camX} cy={camY} r={camR}        fill="#0c0c14" />
+                                    <circle cx={camX} cy={camY} r={camR * 0.57} fill="#07070f" />
+                                    <circle cx={camX - camR * 0.21} cy={camY - camR * 0.29} r={camR * 0.21} fill="rgba(255,255,255,0.18)" />
+                                    <circle cx={W / 2 + 70} cy={camY} r={2.5} fill="rgba(0,0,0,0.6)" />
+
+                                    {cameraActive && (
+                                        <>
+                                            <circle cx={camX - camR - 13} cy={camY} r={6}   fill="rgba(48,209,88,0.18)" />
+                                            <circle cx={camX - camR - 13} cy={camY} r={3.2} fill="#30D158" />
+                                        </>
+                                    )}
+                                </>
+                            );
+                        })()}
+
+                        {softPatch && (
+                            <>
+                                <rect
+                                    x={CUT_X} y={CUT_Y}
+                                    width={CUT_W} height={CUT_H}
+                                    rx={CUT_R}
+                                    fill="rgba(255,255,255,0.045)"
+                                    stroke="rgba(255,255,255,0.06)"
+                                    strokeWidth={1}
+                                />
+                                <rect
+                                    x={CUT_X} y={CUT_Y}
+                                    width={CUT_W} height={CUT_H}
+                                    rx={CUT_R}
+                                    fill={`url(#${GID}-udc)`}
+                                />
+                            </>
+                        )}
+
+                        {GLASS.length > 0 && (
+                            <g clipPath={`url(#${GID}-screen)`}>
+                                {GLASS.map(band => (
+                                    <rect
+                                        key={band.dir}
+                                        x={band.x} y={band.y}
+                                        width={band.w} height={band.h}
+                                        fill={`url(#${GID}-glass-${band.dir})`}
+                                    />
+                                ))}
+                            </g>
+                        )}
+
+                        {BUTTONS.map((btn, i) => (
+                            <g key={i}>
+                                <RailKey btn={btn} m={m} />
+                            </g>
+                        ))}
+                    </svg>
+
+                    {VOL_UP_BTN && (
+                        <button
+                            type="button"
+                            aria-label={t('shell.volumeUp','Volume up')}
+                            onClick={() => bumpVolume(1)}
+                            className="absolute z-[300] cursor-pointer bg-transparent"
+                            style={{ left: VOL_UP_BTN.x - 6, top: VOL_UP_BTN.y, width: VOL_UP_BTN.w + 12, height: VOL_UP_BTN.h }}
+                        />
+                    )}
+                    {VOL_DOWN_BTN && (
+                        <button
+                            type="button"
+                            aria-label={t('shell.volumeDown','Volume down')}
+                            onClick={() => bumpVolume(-1)}
+                            className="absolute z-[300] cursor-pointer bg-transparent"
+                            style={{ left: VOL_DOWN_BTN.x - 6, top: VOL_DOWN_BTN.y, width: VOL_DOWN_BTN.w + 12, height: VOL_DOWN_BTN.h }}
                         />
                     )}
 
-                    {FACE.map((part, i) => <FaceShape key={i} part={part} index={i} m={m} />)}
-
-                    <path
-                        d={rrect(SX - 0.5, SY - 0.5, SW + 1, SH + 1, SR + 0.5)}
-                        fill="none"
-                        stroke="rgba(0,0,0,0.70)"
-                        strokeWidth="1.5"
-                    />
-
-                    {hostsIsland && hasCutout && (() => {
-                        const lensR = Math.min(7, CUT_H / 2 - 3);
-                        const lensY = CUT_Y + CUT_H / 2;
-                        const irS = Math.max(6, Math.min(22, CUT_H - 8));
-                        return (
-                            <>
-                                {CUT_COLLAR > 0 && (
-                                    <>
-                                        <rect
-                                            x={CUT_X - CUT_COLLAR * 1.6} y={CUT_Y - CUT_COLLAR * 1.6}
-                                            width={CUT_W + CUT_COLLAR * 3.2} height={CUT_H + CUT_COLLAR * 3.2}
-                                            rx={CUT_R + CUT_COLLAR * 1.6}
-                                            fill="rgba(0,0,0,0.55)"
-                                        />
-                                        <rect
-                                            x={CUT_X - CUT_COLLAR / 2} y={CUT_Y - CUT_COLLAR / 2}
-                                            width={CUT_W + CUT_COLLAR} height={CUT_H + CUT_COLLAR}
-                                            rx={CUT_R + CUT_COLLAR / 2}
-                                            fill="none"
-                                            stroke={`url(#${GID})`}
-                                            strokeWidth={CUT_COLLAR}
-                                        />
-                                        <path
-                                            d={`M${CUT_X + CUT_R * 0.4},${CUT_Y - CUT_COLLAR / 2} A${CUT_R + CUT_COLLAR / 2},${CUT_R + CUT_COLLAR / 2} 0 0 0 ${CUT_X - CUT_COLLAR / 2 - CUT_R * 0.1},${CUT_Y + CUT_H * 0.45}`}
-                                            fill="none"
-                                            stroke="rgba(255,255,255,0.45)"
-                                            strokeWidth={1}
-                                        />
-                                    </>
-                                )}
-
-                                {CUT_PATH
-                                    ? <path d={CUT_PATH} fill="#000" />
-                                    : (
-                                        <rect
-                                            x={CUT_X} y={CUT_Y}
-                                            width={CUT_W} height={CUT_H}
-                                            rx={CUT_R}
-                                            fill="#000"
-                                        />
-                                    )}
-
-                                {CUT_OPTICS === 'lens' && <Lens cx={CUT_LENS_X} cy={lensY} r={lensR} />}
-
-                                {CUT_OPTICS === 'twin' && (
-                                    <>
-                                        <Lens cx={CUT_X + CUT_W / 3}     cy={lensY} r={lensR} />
-                                        <Lens cx={CUT_X + CUT_W * 2 / 3} cy={lensY} r={lensR} />
-                                    </>
-                                )}
-
-                                {CUT_OPTICS === 'lensIr' && (
-                                    <>
-                                        <Lens cx={CUT_X + CUT_W / 6} cy={lensY} r={lensR} />
-                                        <rect
-                                            x={CUT_X + CUT_W * 5 / 6 - irS / 2} y={lensY - irS / 2}
-                                            width={irS} height={irS}
-                                            rx={irS * 0.3}
-                                            fill="#0a0a12"
-                                        />
-                                        <rect
-                                            x={CUT_X + CUT_W * 5 / 6 - irS / 4} y={lensY - irS / 4}
-                                            width={irS / 2} height={irS / 2}
-                                            rx={irS * 0.16}
-                                            fill="#12121c"
-                                        />
-                                    </>
-                                )}
-
-                                {cameraActive && (() => {
-                                    const dotCx = Math.max(CUT_X - 14, CUT_X + CUT_W - CUT_R * 2.5);
-                                    return (
-                                        <>
-                                            <circle cx={dotCx} cy={lensY} r={7}   fill="rgba(48,209,88,0.18)" />
-                                            <circle cx={dotCx} cy={lensY} r={3.6} fill="#30D158" />
-                                        </>
-                                    );
-                                })()}
-                            </>
-                        );
-                    })()}
-
-                    {AUTO_FOREHEAD && (() => {
-                        const camX = W / 2 - 70;
-                        const camY = SY / 2;
-                        const camR = Math.min(7, (SY - 6) / 2);
-                        return (
-                            <>
-                                <rect x={W / 2 - 42} y={camY - 2.5} width={84} height={5} rx={2.5} fill="rgba(0,0,0,0.55)" />
-                                <circle cx={camX} cy={camY} r={camR}        fill="#0c0c14" />
-                                <circle cx={camX} cy={camY} r={camR * 0.57} fill="#07070f" />
-                                <circle cx={camX - camR * 0.21} cy={camY - camR * 0.29} r={camR * 0.21} fill="rgba(255,255,255,0.18)" />
-                                <circle cx={W / 2 + 70} cy={camY} r={2.5} fill="rgba(0,0,0,0.6)" />
-
-                                {cameraActive && (
-                                    <>
-                                        <circle cx={camX - camR - 13} cy={camY} r={6}   fill="rgba(48,209,88,0.18)" />
-                                        <circle cx={camX - camR - 13} cy={camY} r={3.2} fill="#30D158" />
-                                    </>
-                                )}
-                            </>
-                        );
-                    })()}
-
-                    {softPatch && (
-                        <>
-                            <rect
-                                x={CUT_X} y={CUT_Y}
-                                width={CUT_W} height={CUT_H}
-                                rx={CUT_R}
-                                fill="rgba(255,255,255,0.045)"
-                                stroke="rgba(255,255,255,0.06)"
-                                strokeWidth={1}
-                            />
-                            <rect
-                                x={CUT_X} y={CUT_Y}
-                                width={CUT_W} height={CUT_H}
-                                rx={CUT_R}
-                                fill={`url(#${GID}-udc)`}
-                            />
-                        </>
+                    {POWER_BTN && onClose && (
+                        <button
+                            type="button"
+                            aria-label={t('shell.power','Power')}
+                            onClick={onClose}
+                            className="absolute z-[300] cursor-pointer bg-transparent"
+                            style={{ left: POWER_BTN.x - 6, top: POWER_BTN.y, width: POWER_BTN.w + 12, height: POWER_BTN.h }}
+                        />
                     )}
 
-                    {GLASS.length > 0 && (
-                        <g clipPath={`url(#${GID}-screen)`}>
-                            {GLASS.map(band => (
-                                <rect
-                                    key={band.dir}
-                                    x={band.x} y={band.y}
-                                    width={band.w} height={band.h}
-                                    fill={`url(#${GID}-glass-${band.dir})`}
-                                />
-                            ))}
-                        </g>
+                    {SCREENSHOT_BTN && (
+                        <button
+                            type="button"
+                            aria-label={t('shell.screenshot','Screenshot (double-click the Action button)')}
+                            onDoubleClick={() => void takeScreenshot()}
+                            className="absolute z-[300] cursor-pointer bg-transparent"
+                            style={{ left: SCREENSHOT_BTN.x - 6, top: SCREENSHOT_BTN.y, width: SCREENSHOT_BTN.w + 12, height: SCREENSHOT_BTN.h }}
+                        />
                     )}
 
-                    {BUTTONS.map((btn, i) => (
-                        <g key={i}>
-                            <RailKey btn={btn} m={m} />
-                        </g>
-                    ))}
-                </svg>
+                    {pillInCutout && islandPet !== 'none' && (
+                        <IslandPet
+                            id={islandPet}
+                            stage={petStageNow}
+                            top={PET_TOP}
+                            height={PET_H}
+                            battery={batteryLevel}
+                            playing={musicPlaying && !musicExpanded}
+                            ringing={callRinging || alarmRinging}
+                        />
+                    )}
 
-                {VOL_UP_BTN && (
-                    <button
-                        type="button"
-                        aria-label={t('shell.volumeUp','Volume up')}
-                        onClick={() => bumpVolume(1)}
-                        className="absolute z-[300] cursor-pointer bg-transparent"
-                        style={{ left: VOL_UP_BTN.x - 6, top: VOL_UP_BTN.y, width: VOL_UP_BTN.w + 12, height: VOL_UP_BTN.h }}
-                    />
-                )}
-                {VOL_DOWN_BTN && (
-                    <button
-                        type="button"
-                        aria-label={t('shell.volumeDown','Volume down')}
-                        onClick={() => bumpVolume(-1)}
-                        className="absolute z-[300] cursor-pointer bg-transparent"
-                        style={{ left: VOL_DOWN_BTN.x - 6, top: VOL_DOWN_BTN.y, width: VOL_DOWN_BTN.w + 12, height: VOL_DOWN_BTN.h }}
-                    />
-                )}
+                    {hostsIsland && islandTrack && !callActive && !radioOn && !radioStandby && !alarmRinging && (
+                        <MusicIsland m={m}
+                            track={islandTrack}
+                            playing={musicPlaying}
+                            expanded={musicExpanded}
+                            closing={islandClosing}
+                            onToggle={() => setMusicExpanded(v => !v)}
+                            onPlayPause={toggleMusic}
+                            onNext={nextMusic}
+                            onPrev={prevMusic}
+                            onOpenApp={() => { setMusicExpanded(false); openMusic(); }}
+                        />
+                    )}
 
-                {POWER_BTN && onClose && (
-                    <button
-                        type="button"
-                        aria-label={t('shell.power','Power')}
-                        onClick={onClose}
-                        className="absolute z-[300] cursor-pointer bg-transparent"
-                        style={{ left: POWER_BTN.x - 6, top: POWER_BTN.y, width: POWER_BTN.w + 12, height: POWER_BTN.h }}
-                    />
-                )}
-
-                {SCREENSHOT_BTN && (
-                    <button
-                        type="button"
-                        aria-label={t('shell.screenshot','Screenshot (double-click the Action button)')}
-                        onDoubleClick={() => void takeScreenshot()}
-                        className="absolute z-[300] cursor-pointer bg-transparent"
-                        style={{ left: SCREENSHOT_BTN.x - 6, top: SCREENSHOT_BTN.y, width: SCREENSHOT_BTN.w + 12, height: SCREENSHOT_BTN.h }}
-                    />
-                )}
-
-                {pillInCutout && islandPet !== 'none' && (
-                    <IslandPet
-                        id={islandPet}
-                        stage={petStageNow}
-                        top={PET_TOP}
-                        height={PET_H}
-                        battery={batteryLevel}
-                        playing={musicPlaying && !musicExpanded}
-                        ringing={callActive || alarmRinging}
-                    />
-                )}
-
-                {hostsIsland && islandTrack && !callActive && !radioOn && !radioStandby && !alarmRinging && (
-                    <MusicIsland m={m}
-                        track={islandTrack}
-                        playing={musicPlaying}
-                        expanded={musicExpanded}
-                        closing={islandClosing}
-                        onToggle={() => setMusicExpanded(v => !v)}
-                        onPlayPause={toggleMusic}
-                        onNext={nextMusic}
-                        onPrev={prevMusic}
-                        onOpenApp={() => { setMusicExpanded(false); openMusic(); }}
-                    />
-                )}
-
-                {hostsIsland && device.calls && (
-                    <IslandPill m={m}
-                        active={callActive}
-                        onClick={() => void fetchNui('sd-phone:requestOpen')}
-                        compactX={DI_X} compactW={DI_W} expandedX={CALL_X} expandedW={CALL_W}
-                    >
-                        <span className="absolute left-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
-                            <Phone className="h-[14px] w-[14px]" style={{ color: '#30D158' }} fill="currentColor" strokeWidth={0} />
-                            <span className="text-[13px] font-semibold tabular-nums" style={{ color: '#30D158' }}>
-                                {callStartedAt ? <RingDuration since={callStartedAt} /> : t('shell.mobile','Mobile')}
+                    {hostsIsland && device.calls && (
+                        <IslandPill m={m}
+                            active={callActive}
+                            onClick={() => void fetchNui('sd-phone:requestOpen')}
+                            compactX={DI_X} compactW={DI_W} expandedX={CALL_X} expandedW={CALL_W}
+                        >
+                            <span className="absolute left-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
+                                <Phone className="h-[14px] w-[14px]" style={{ color: '#30D158' }} fill="currentColor" strokeWidth={0} />
+                                <span className="text-[13px] font-semibold tabular-nums" style={{ color: '#30D158' }}>
+                                    {callStartedAt ? <RingDuration since={callStartedAt} /> : t('shell.mobile','Mobile')}
+                                </span>
                             </span>
-                        </span>
-                    </IslandPill>
-                )}
+                        </IslandPill>
+                    )}
 
-                {hostsIsland && (
-                    <IslandPill m={m}
-                        active={(radioOn || radioStandby) && !callActive && !alarmRinging}
-                        onClick={() => { if (radioOn) void fetchNui('sd-phone:radio:leave'); else void fetchNui('sd-phone:radio:set', { on: true }); }}
-                        compactX={DI_X} compactW={DI_W} expandedX={CALL_X} expandedW={CALL_W}
-                    >
-                        <span className="absolute left-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
-                            <Radio className={`h-[16px] w-[16px] ${radioOnAir ? 'animate-pulse' : ''}`} style={{ color: radioOn ? '#30D158' : '#FF453A', transition: 'color 0.2s ease' }} strokeWidth={2.4} />
-                            <span className="text-[13px] font-semibold tabular-nums" style={{ color: radioOn ? '#30D158' : '#FF453A', transition: 'color 0.2s ease' }}>{radioFreq.toFixed(1)}</span>
-                        </span>
-                    </IslandPill>
-                )}
+                    {hostsIsland && (
+                        <IslandPill m={m}
+                            active={(radioOn || radioStandby) && !callActive && !alarmRinging}
+                            onClick={() => { if (radioOn) void fetchNui('sd-phone:radio:leave'); else void fetchNui('sd-phone:radio:set', { on: true }); }}
+                            compactX={DI_X} compactW={DI_W} expandedX={CALL_X} expandedW={CALL_W}
+                        >
+                            <span className="absolute left-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
+                                <Radio className={`h-[16px] w-[16px] ${radioOnAir ? 'animate-pulse' : ''}`} style={{ color: radioOn ? '#30D158' : '#FF453A', transition: 'color 0.2s ease' }} strokeWidth={2.4} />
+                                <span className="text-[13px] font-semibold tabular-nums" style={{ color: radioOn ? '#30D158' : '#FF453A', transition: 'color 0.2s ease' }}>{radioFreq.toFixed(1)}</span>
+                            </span>
+                        </IslandPill>
+                    )}
 
-                {hostsIsland && (
-                    <IslandPill m={m}
-                        active={alarmRinging && !callActive}
-                        compactX={DI_X} compactW={DI_W} expandedX={CALL_X} expandedW={CALL_W}
-                    >
-                        <span className="absolute left-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
-                            <AlarmClock className="h-[15px] w-[15px]" style={{ color: '#FF9F0A' }} strokeWidth={2.5} />
-                            <span className="text-[13px] font-semibold tabular-nums" style={{ color: '#FF9F0A' }}><RingDuration since={alarmSince} /></span>
-                        </span>
-                    </IslandPill>
-                )}
+                    {hostsIsland && (
+                        <IslandPill m={m}
+                            active={alarmRinging && !callActive}
+                            compactX={DI_X} compactW={DI_W} expandedX={CALL_X} expandedW={CALL_W}
+                        >
+                            <span className="absolute left-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
+                                <AlarmClock className="h-[15px] w-[15px]" style={{ color: '#FF9F0A' }} strokeWidth={2.5} />
+                                <span className="text-[13px] font-semibold tabular-nums" style={{ color: '#FF9F0A' }}><RingDuration since={alarmSince} /></span>
+                            </span>
+                        </IslandPill>
+                    )}
 
-                {hostsIsland && pillInCutout && (
-                    <span
-                        className="pointer-events-none absolute z-[320] rounded-full"
-                        style={{ left: DI_X + DI_W - DI_R * 1.12 - 7, top: DI_Y + DI_H / 2 - 7, width: 14, height: 14, background: '#0c0c14' }}
-                    >
-                        <span className="absolute rounded-full" style={{ left: 3, top: 3, width: 8, height: 8, background: '#07070f' }} />
-                        <span className="absolute rounded-full" style={{ left: 2.5, top: 1.5, width: 3, height: 3, background: 'rgba(255,255,255,0.18)' }} />
-                    </span>
-                )}
+                    {hostsIsland && pillInCutout && (
+                        <span
+                            className="pointer-events-none absolute z-[320] rounded-full"
+                            style={{ left: DI_X + DI_W - DI_R * 1.12 - 7, top: DI_Y + DI_H / 2 - 7, width: 14, height: 14, background: '#0c0c14' }}
+                        >
+                            <span className="absolute rounded-full" style={{ left: 3, top: 3, width: 8, height: 8, background: '#07070f' }} />
+                            <span className="absolute rounded-full" style={{ left: 2.5, top: 1.5, width: 3, height: 3, background: 'rgba(255,255,255,0.18)' }} />
+                        </span>
+                    )}
+                </div>
             </div>
         </div>
     );

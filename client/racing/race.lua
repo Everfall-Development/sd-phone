@@ -647,6 +647,12 @@ function race.begin(data)
         countdownFrozen = nil
         blips, props    = ownBlips, ownProps
 
+        -- The HUD's clock starts HERE, at the green light, off the same instant `active.startedAt`
+        -- below is stamped from. The panel itself went up COUNTDOWN_SECONDS earlier so the
+        -- countdown had somewhere to draw, and a clock started with the panel counts the whole
+        -- countdown: the running time then reads seconds over the finish time the server keeps.
+        SendNUIMessage({ action = 'sd-phone:racing:hud:clock' })
+
         local cpPerLap     = #targets
         local totalLaps    = math.max(1, math.floor(tonumber(data.laps) or 1))
         local sectorBounds = {}

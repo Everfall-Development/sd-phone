@@ -83,7 +83,7 @@ return {
     -- the player while framing a shot. Needs AllowMovement.
     AllowMovementInCamera = true,
 
-    -- The same, for a FaceTime video call. The mouse keeps driving the call
+    -- The same, for a video call. The mouse keeps driving the call
     -- buttons, so hold LookKeybind to steer while you walk. Set false to freeze
     -- the player for the length of the video call. Needs AllowMovement.
     AllowMovementInVideoCall = true,

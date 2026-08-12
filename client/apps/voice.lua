@@ -1,5 +1,8 @@
 ---@type table sd-phone config root (configs/config.lua): Voice section drives transmit gating.
 local config = require 'configs.config'
+---@type table Voice backend (bridge.client.voice): reads the local transmit state, whichever
+---voice script provides it.
+local voiceBridge = require 'bridge.client.voice'
 
 ---@type fun(nuiAction: string, serverEvent: string) NUI->server pass-through registrar (client.nui).
 local proxyCallback = require 'client.nui'
@@ -31,20 +34,20 @@ end)
 
 -- Transmit gating: while a nearby player records us, our voice only streams while we're
 -- transmitting in-game. Disabled via configs/voice.lua TransmitGated = false.
----@type boolean Whether outgoing voice is gated on the in-game transmit state.
+---@type boolean Whether outgoing voice is gated on the in-game transmit state. Forced off when no
+---voice script is running: the gate would then read "not talking" forever and record silence.
 local GATED = not (config.Voice and config.Voice.TransmitGated == false)
+    and voiceBridge.capabilities().transmitState
 ---@type boolean Whether the transmit-watch loop should keep running (mic shared to a recorder).
 local talkLoopActive = false
 ---@type integer Generation stamp for the transmit-watch loop; bumped on every start.
 local talkLoopGen = 0
 
----Returns whether the local player is transmitting voice in-game; fails open (treated as
----talking) when the Mumble native is unavailable.
+---Returns whether the local player is transmitting voice in-game. The bridge reads the Mumble
+---native or SaltyChat's own talk-state event, and fails open when neither can answer.
 ---@return boolean transmitting
 local function isTransmitting()
-    local ok, talking = pcall(MumbleIsPlayerTalking, cache.playerId)
-    if not ok then return true end
-    return talking == true or talking == 1
+    return voiceBridge.isTransmitting()
 end
 
 ---Mic-share start/stop from the NUI. Ungated, start reports talking = true for the whole share;

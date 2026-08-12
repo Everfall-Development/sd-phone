@@ -9,6 +9,8 @@ local HUD = require 'bridge.client.providers.ef_hud'
 local hints = require 'client.hints'
 ---@type table Call-audio submixes (client.callaudio): which earpiece the call sounds like.
 local callaudio = require 'client.callaudio'
+---@type table Voice backend (bridge.client.voice): one API over pma-voice and SaltyChat.
+local voice = require 'bridge.client.voice'
 
 -- Thin delegates: each call action proxies straight into its server callback.
 proxyCallback('sd-phone:call:dial',    'sd-phone:server:call:dial')
@@ -32,21 +34,13 @@ end
 ---@type boolean True while the local mic is muted for the active call.
 local micMuted = false
 
----Mutes/unmutes the local mic entirely (call AND proximity).
----Switching the voice target to 0 (the default, which carries no call channels) prevents audio
----from reaching the pma-voice call channel; zeroing the input distance silences proximity too.
----The target is only touched when pma-voice is running, since the index is its own.
+---Mutes/unmutes the local mic entirely (call AND proximity), through whichever voice script is
+---running. A backend with no mute (SaltyChat) leaves the flag alone, so the phone never reports
+---itself muted when nothing was actually silenced.
 ---@param on boolean
 local function setMicMuted(on)
+    if not voice.setMuted(on == true) then return end
     micMuted = on == true
-    local pma = GetResourceState('pma-voice') == 'started'
-    if micMuted then
-        if pma then MumbleSetVoiceTarget(0) end
-        MumbleSetAudioInputDistance(0.0)
-    else
-        if pma then MumbleSetVoiceTarget(1) end
-        MumbleSetAudioInputDistance(9999.0)
-    end
 end
 
 ---React to Lua: the call UI's Mute button.
@@ -76,9 +70,17 @@ RegisterNUICallback('sd-phone:call:setVolume', function(data, cb)
     local volume = tonumber(data and data.volume)
     if volume then
         if volume < 0 then volume = 0 elseif volume > 100 then volume = 100 end
-        pcall(function() exports['pma-voice']:setCallVolume(volume) end)
+        voice.setCallVolume(volume)
     end
     cb('ok')
+end)
+
+---React -> Lua: what the running voice script can actually do, so the call UI never offers a
+---control it cannot honour. Asked rather than pushed because it is fixed for the session.
+---@param _ any unused
+---@param cb fun(caps: { mute: boolean, callVolume: boolean, transmitState: boolean, radio: boolean })
+RegisterNUICallback('sd-phone:call:voiceCapabilities', function(_, cb)
+    cb(voice.capabilities())
 end)
 
 ---Incoming call: pushes the ringing payload, then tries to bring the phone up for it.
@@ -153,21 +155,28 @@ local function hideNativeHUDThisFrame()
     end
 end
 
--- Keyboard controls for a FaceTime call (control group 0). The video surface hands the mouse to
+-- Keyboard controls for a video call (control group 0). The video surface hands the mouse to
 -- the game exactly the way the Camera app's viewfinder does, so it answers to the same keys.
 ---@type integer Left Alt (INPUT_CHARACTER_WHEEL) - take the cursor back.
 local CTRL_CURSOR <const> = 19
 ---@type integer Up arrow (INPUT_CELLPHONE_UP) - flip rear/selfie.
 local CTRL_FLIP <const> = 172
+---@type integer Down arrow (INPUT_CELLPHONE_DOWN) - the angle lock's default bind. Suppressed like
+---its siblings so the game's own action never fires underneath the keybind.
+local CTRL_LOCK <const> = 173
+---@type integer Wheel up (INPUT_CURSOR_SCROLL_UP) - zoom in.
+local CTRL_ZOOM_IN <const> = 241
+---@type integer Wheel down (INPUT_CURSOR_SCROLL_DOWN) - zoom out.
+local CTRL_ZOOM_OUT <const> = 242
 
----@type integer[] Both call keys, suppressed for as long as the call view is up whether the cursor
+---@type integer[] Every call key, suppressed for as long as the call view is up whether the cursor
 ---is on or not: with movement allowed the game still reads them, so Alt would open the character
 ---wheel underneath the player reaching to take the cursor back.
-local CONTROLS_VIDEO <const> = { CTRL_CURSOR, CTRL_FLIP }
+local CONTROLS_VIDEO <const> = { CTRL_CURSOR, CTRL_FLIP, CTRL_LOCK, CTRL_ZOOM_IN, CTRL_ZOOM_OUT }
 
 ---@type boolean True while NUI focus (clickable cursor) is on.
 local cursorOn = true
----@type boolean True while the FaceTime keyboard-control thread is alive.
+---@type boolean True while the video-call keyboard-control thread is alive.
 local inputLoopRunning = false
 ---@type boolean Mirror of the phone's open state (sd-phone:client:openState).
 local phoneOpen = false
@@ -179,10 +188,16 @@ end)
 ---Records the call's cursor state and announces it, so client.main knows whether the mouse is
 ---steering the view rather than clicking the call UI - that flag is what stops the phone
 ---suppressing mouse-look. Call it after SetNuiFocus, so the keep-input re-sync lands last.
+---
+---The page is told as well as client.main, because the control tray is only reachable while the
+---cursor is up: hand the mouse to the game and those buttons cannot be clicked at all, so the tray
+---stands down rather than sitting over the caller doing nothing. The keybind hints stay up, since
+---the keys are the whole interface in that mode.
 ---@param on boolean whether the NUI cursor is showing
 local function setVideoCursor(on)
     cursorOn = on
     TriggerEvent('sd-phone:client:cameraCursor', on)
+    SendNUIMessage({ action = 'sd-phone:video:cursorState', data = { on = on } })
 end
 
 ---Pushes a key action into the NUI.
@@ -191,7 +206,7 @@ local function sendKey(key)
     SendNUIMessage({ action = 'sd-phone:video:key', data = { key = key } })
 end
 
----Runs the FaceTime keyboard loop: disables each control's default action for as long as the call
+---Runs the video-call keyboard loop: disables each control's default action for as long as the call
 ---view is up, and relays presses into the NUI while the cursor is off.
 ---
 ---The set is added once and dropped on the way out rather than reissued per frame, but
@@ -208,7 +223,11 @@ local function startVideoInputLoop()
             lib.disableControls()
 
             if not cursorOn then
-                if IsDisabledControlJustPressed(0, CTRL_CURSOR) then
+                if IsDisabledControlJustPressed(0, CTRL_ZOOM_IN) then
+                    sendKey('zoomIn')
+                elseif IsDisabledControlJustPressed(0, CTRL_ZOOM_OUT) then
+                    sendKey('zoomOut')
+                elseif IsDisabledControlJustPressed(0, CTRL_CURSOR) then
                     SetNuiFocus(true, true)
                     setVideoCursor(true)
                 elseif IsDisabledControlJustPressed(0, CTRL_FLIP) then
@@ -230,7 +249,7 @@ local function setVideoCamera(on, front)
     if on then
         if not videoCamActive then
             videoCamActive = true
-            -- The picture coming up is also the moment the leg goes wideband: a FaceTime is not
+            -- The picture coming up is also the moment the leg goes wideband: a video call is not
             -- meant to sound like the same narrow cell line the audio call was on.
             callaudio.setVideo(true)
             setVideoCursor(true)
@@ -310,10 +329,45 @@ RegisterNUICallback('sd-phone:video:cursor', function(data, cb)
     cb({ success = true })
 end)
 
+---React -> Lua: angle lock toggled from the call's on-screen control (or the Down key, which
+---reaches phonecam through the global keybind and reports back over the push instead).
+---
+---The lens is asked for the state it ended up in rather than the page being trusted for it: every
+---flip clears the lock in Lua, so a page copy can describe a lens that stopped behaving that way.
+---A nil refusal is the outward lens or the native cell cam, neither of which can swing.
+---@param _ any unused
+---@param cb fun(result: { success: boolean, on: boolean|nil }) NUI response
+RegisterNUICallback('sd-phone:video:lock', function(_, cb)
+    if not videoCamActive then cb({ success = false }) return end
+    local on = phonecam.toggleLock()
+    if on == nil then cb({ success = false }) return end
+    cb({ success = true, on = on })
+end)
+
+---React -> Lua: head tracking toggled from the call's on-screen control (or the R Shift keybind).
+---Same refusal and same reporting as the lock above.
+---@param _ any unused
+---@param cb fun(result: { success: boolean, on: boolean|nil }) NUI response
+RegisterNUICallback('sd-phone:video:faceCam', function(_, cb)
+    if not videoCamActive then cb({ success = false }) return end
+    local on = phonecam.toggleFaceCam()
+    if on == nil then cb({ success = false }) return end
+    cb({ success = true, on = on })
+end)
+
+---React -> Lua: call-camera magnification. Zooming the lens optically keeps the picture sharp,
+---where cropping the captured frame sends the peer fewer pixels the further in you go.
+---@param data { zoom: number }
+---@param cb fun(result: { success: boolean }) NUI response
+RegisterNUICallback('sd-phone:video:zoom', function(data, cb)
+    phonecam.setZoom(data and data.zoom)
+    cb({ success = true })
+end)
+
 -- Server to NUI relays: the peer's video request/accept/stop and signaling messages forward
 -- unchanged into the React call overlay.
 RegisterNetEvent('sd-phone:client:call:video:request', function()      pushCall('sd-phone:video:request', nil) end)
----An answered FaceTime opens on both ends at once; `initiator` decides which side makes the offer.
+---An answered video call opens on both ends at once; `initiator` decides which side makes the offer.
 RegisterNetEvent('sd-phone:client:call:video:begin',   function(data)  pushCall('sd-phone:video:begin',    data) end)
 RegisterNetEvent('sd-phone:client:call:video:accept',  function()      pushCall('sd-phone:video:accept',  nil) end)
 RegisterNetEvent('sd-phone:client:call:video:stop',    function()      pushCall('sd-phone:video:stop',    nil) end)

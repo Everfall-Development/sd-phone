@@ -34,7 +34,6 @@ function fmtClock(secs: number): string {
 // ---------------------------------------------------------------------------
 
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
-const HAND = '"Great Vibes", "Snell Roundhand", "Segoe Script", cursive';
 
 /** Fine noise texture multiplied into the steel for grain + wear. */
 const GRAIN = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/></svg>")`;
@@ -288,7 +287,6 @@ export function PayphoneUI() {
     const [lcdNote,   setLcdNote]   = useState<string | null>(null);
     const [elapsed,   setElapsed]   = useState(0);
     const [booth,     setBooth]     = useState<{ number: string; anonymous: boolean }>({ number: '', anonymous: false });
-    const [myNumber,  setMyNumber]  = useState<string | null>(null);
     const [favorites, setFavorites] = useState<Favorite[]>([]);
     // Coin toll (configs/payphone.lua Coin): `credit` is a paid, unspent coin.
     const [coin,      setCoin]      = useState<{ enabled: boolean; cost: number }>({ enabled: false, cost: 1 });
@@ -296,6 +294,7 @@ export function PayphoneUI() {
     const [coinAnim,  setCoinAnim]  = useState(false);
     // Channel of a ring on THIS booth while it is already open, so it can be answered in place.
     const [incoming,  setIncoming]  = useState<number | null>(null);
+    const [phoneUp,   setPhoneUp]   = useState(false);
     const coinBusy   = useRef(false);
     const channelRef = useRef<number | null>(null);
     const phaseRef   = useRef(phase);
@@ -309,7 +308,6 @@ export function PayphoneUI() {
         if (leaveTimer.current) { window.clearTimeout(leaveTimer.current); leaveTimer.current = null; }
         setLeaving(false);
         setBooth({ number: data.number, anonymous: data.anonymous });
-        setMyNumber(data.myNumber ?? null);
         setFavorites(Array.isArray(data.favorites) ? data.favorites : []);
         setCoin(data.coin ?? { enabled: false, cost: 1 });
         setCredit(data.credited === true);
@@ -323,6 +321,9 @@ export function PayphoneUI() {
         channelRef.current = null;
         setOpen(true);
     }, []));
+
+    useNuiEvent('sd-phone:open', useCallback(() => setPhoneUp(true), []));
+    useNuiEvent('sd-phone:close', useCallback(() => setPhoneUp(false), []));
 
     useNuiEvent('sd-phone:payphone:incoming', useCallback((data) => {
         if (typeof data?.channel === 'number') setIncoming(data.channel);
@@ -512,7 +513,7 @@ export function PayphoneUI() {
 
     return (
         <div
-            className="fixed inset-0 z-[400] flex items-center justify-center font-sf"
+            className={`fixed inset-0 flex items-center justify-center font-sf ${phoneUp ? '-z-10 pointer-events-none' : 'z-[400]'}`}
             onMouseDown={() => { if (!inCall) close(); }}
         >
             {/* coin-toll animations: the drop, the slot's clink flash + idle
@@ -943,16 +944,6 @@ export function PayphoneUI() {
                         </TapedNote>
                         <div className="mt-3">
                             <TapedNote tilt={1.5}>
-                                {myNumber && (
-                                    <button
-                                        type="button"
-                                        onClick={() => { if (phase === 'idle') setDigits(myNumber.replace(/\D/g, '')); }}
-                                        className="flex w-full items-baseline justify-between gap-2 text-left active:opacity-60"
-                                    >
-                                        <span className="shrink-0 text-[11px] font-semibold uppercase leading-[21px] tracking-[0.06em] text-[#9a4638]" style={NOTE_LABEL}>{t('payphone.myNumber', 'My number')}</span>
-                                        <span className="text-[14.5px] font-semibold leading-[21px] text-[#27357f]" style={NOTE_NUMBER}>{formatPhone(myNumber)}</span>
-                                    </button>
-                                )}
                                 {favorites.map(f => (
                                     <button
                                         key={f.phone}
@@ -964,8 +955,8 @@ export function PayphoneUI() {
                                         <span className="shrink-0 text-[14.5px] font-semibold leading-[21px] text-[#27357f]" style={NOTE_NUMBER}>{formatPhone(f.phone)}</span>
                                     </button>
                                 ))}
-                                {!myNumber && favorites.length === 0 && (
-                                    <span className="block text-[15px] italic text-[#8a7a55]" style={{ fontFamily: HAND }}>
+                                {favorites.length === 0 && (
+                                    <span className="block text-[11.5px] font-semibold leading-[21px] text-[#8a7a55]" style={NOTE_LABEL}>
                                         {t('payphone.emptyNotepad', 'No numbers scribbled here yet.')}
                                     </span>
                                 )}

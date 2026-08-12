@@ -93,8 +93,17 @@ local function nearLocation(src, location)
     return #(pos - vector3(tonumber(x), tonumber(y), tonumber(z))) < 6.0
 end
 
----Booth state for the dial UI: the booth's static number, the caller's own number, and their
----favourite contacts for the notepad. Read-only.
+---The caller's own phone number, or nil when their character has none yet.
+---@param src number player server id
+---@return string|nil number
+local function playerNumber(src)
+    local cid = player.getIdentifier(src)
+    return cid and settings.getPhoneNumber(cid) or nil
+end
+
+---Booth state for the dial UI: the booth's static number and the caller's favourite contacts for
+---the notepad. The caller's OWN number is deliberately not sent: a booth cannot ring the phone in
+---your own pocket, so a shortcut for it is a control that can only fail. Read-only.
 lib.callback.register('sd-phone:server:payphone:state', function(src, payload)
     if not cfg.Enabled then return fail('Payphones are disabled') end
     payload = type(payload) == 'table' and payload or {}
@@ -102,13 +111,11 @@ lib.callback.register('sd-phone:server:payphone:state', function(src, payload)
     if not location or not nearLocation(src, location) then return fail('No payphone here') end
 
     local favorites = {}
-    local myNumber = nil
     local cid = player.getIdentifier(src)
     -- Bounds the contacts read this callback pays for; opening a booth is a target interaction,
     -- so no player reaches a second one inside the gap.
     if not util.cooldown(cid, 'payphone:state', 500) then return fail('Slow down') end
     if cid then
-        myNumber = settings.getPhoneNumber(cid)
         if cfg.ShowFavorites ~= false then
             for _, row in ipairs(contacts.listContacts(cid)) do
                 if util.truthy(row.favorite) and #favorites < 6 then
@@ -121,7 +128,6 @@ lib.callback.register('sd-phone:server:payphone:state', function(src, payload)
     return ok({
         number    = boothNumber(src, location),
         anonymous = cfg.Anonymous == true,
-        myNumber  = myNumber,
         favorites = favorites,
         coin      = { enabled = coinEnabled(), cost = tonumber(coinCfg().Cost) or 1 },
         credited  = credits[src] == true,
@@ -162,6 +168,15 @@ lib.callback.register('sd-phone:server:payphone:dial', function(src, payload)
     payload = type(payload) == 'table' and payload or {}
     local location = locationKey(payload.location)
     if not location or not nearLocation(src, location) then return fail('No payphone here') end
+
+    -- The one number a booth must never reach is the phone in the caller's own pocket: it rings
+    -- a device standing at the booth, and answering it means driving two screens at once. The
+    -- phone's own dialler refuses this for the same reason (server.calls.actions), and the booth
+    -- offers the number as a shortcut, so the refusal has to live here rather than in the UI.
+    local mine = playerNumber(src)
+    if mine and digits(mine) ~= '' and digits(mine) == digits(payload.number) then
+        return fail('You can\'t call yourself')
+    end
 
     -- Coin toll: dialing without a paid credit is refused server-side, and a
     -- successful dial consumes the credit (failed dials keep it for a retry).

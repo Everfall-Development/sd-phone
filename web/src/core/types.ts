@@ -345,6 +345,9 @@ export type NuiMessage =
     | { action: 'sd-phone:video:stop' }
     | { action: 'sd-phone:video:signal';   data: { kind: 'offer' | 'answer' | 'ice'; sdp?: string; candidate?: unknown } }
     | { action: 'sd-phone:video:key';      data: { key: string } }
+    | { action: 'sd-phone:video:lock';     data: { on: boolean } }
+    | { action: 'sd-phone:video:faceCam';  data: { on: boolean } }
+    | { action: 'sd-phone:video:cursorState'; data: { on: boolean } }
     | { action: 'sd-phone:video:begin';    data: { initiator?: boolean } }
     | { action: 'sd-phone:voice:added';        data: { id: string; name: string; url: string; duration: number; date: string } }
     | { action: 'sd-phone:notes:added';        data: { id: string; body: string; sketches: string[]; images: string[]; createdAt: string; updatedAt: string } }
@@ -407,6 +410,7 @@ export type NuiMessage =
     | { action: 'sd-phone:racing:hud:hide' }
     | { action: 'sd-phone:racing:hud:state';  data: Partial<HudState> }
     | { action: 'sd-phone:racing:hud:countdown'; data: { from: number } }
+    | { action: 'sd-phone:racing:hud:clock' }
     | { action: 'sd-phone:racing:hud:dnf';    data: { seconds: number } }
     | { action: 'sd-phone:racing:markers';    data: { markers: HudMarker[]; color: string; colorClosest: string } }
     | { action: 'sd-phone:racing:board:show'; data: StartBoard }

@@ -13,8 +13,13 @@ export function isDensity(v: unknown): v is Density {
     return typeof v === 'string' && (DENSITIES as readonly string[]).includes(v);
 }
 
-export function stripReserve(g: DeviceGrid): number {
-    return g.icon + 26;
+export const DOTS_RESERVE = 34;
+const LABEL_H = 28;
+const DOTS_CLEARANCE = 58;
+const MIN_ROW_GAP = 20;
+
+export function stripReserve(g: DeviceGrid, dockHidden = false): number {
+    return dockHidden ? DOTS_RESERVE : g.icon + 26;
 }
 
 export function deriveGrid(screen: Pick<DeviceScreen, 'w'>, base: DeviceGrid, p: DeviceDensity): DeviceGrid {
@@ -42,11 +47,36 @@ export function gridFor(d: Density): DeviceGrid {
     return out;
 }
 
+const plusCache = new Map<Density, DeviceGrid>();
+
+export function gridForDock(d: Density, dockHidden: boolean): DeviceGrid {
+    if (!dockHidden) return gridFor(d);
+    const hit = plusCache.get(d);
+    if (hit) return hit;
+
+    const base = gridFor(d);
+    const rows = base.rows + 1;
+    const available = device.screen.h - base.stripTop - DOTS_CLEARANCE;
+    const stride = Math.floor((available - base.rowY0 - base.icon - LABEL_H) / (rows - 1));
+    const out = stride >= base.icon + MIN_ROW_GAP
+        ? { ...base, rows, rowStride: Math.min(base.rowStride, stride) }
+        : base;
+    plusCache.set(d, out);
+    return out;
+}
+
 let active: Density = 'default';
+let extraRow = false;
 const listeners = new Set<() => void>();
 
 export function getGrid(): DeviceGrid {
-    return gridFor(active);
+    return gridForDock(active, extraRow);
+}
+
+export function setExtraRow(v: boolean): void {
+    if (v === extraRow) return;
+    extraRow = v;
+    for (const fn of listeners) fn();
 }
 
 export function getDensity(): Density {

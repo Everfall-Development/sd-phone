@@ -2,7 +2,26 @@
 -- mixed in client-side; the settings below govern capturing NEARBY players' voices, done with a
 -- real WebRTC mesh (each nearby player's client streams their mic peer-to-peer, mixed into the
 -- recording).
+--
+-- Provider/Resources pick which voice script carries CALLS and the RADIO. The two supported
+-- dialects are not interchangeable: pma-voice takes numeric call channels and Mumble natives,
+-- SaltyChat takes string call identifiers and has no mic-mute API at all, so the phone hides its
+-- in-call Mute button there rather than offering one that does nothing.
 return {
+    -- Which voice API the phone speaks. 'auto' takes the first started entry of Resources
+    -- below; naming a dialect outright pins it, which is what you want when both scripts are
+    -- installed or the resource has been renamed.
+    --   'auto' | 'pma-voice' | 'saltychat'
+    Provider = 'auto',
+
+    -- Detection order for 'auto', and the map from a resource name to the dialect it speaks.
+    -- Add an entry for a renamed fork rather than editing the bridge: a fork of SaltyChat
+    -- called something else still speaks 'saltychat'.
+    Resources = {
+        { name = 'pma-voice', provider = 'pma-voice' },
+        { name = 'saltychat', provider = 'saltychat' },
+    },
+
     -- Master switch. When false, recordings carry only the recorder's own voice. Note:
     -- capturing other players' microphones may have privacy implications on your server.
     RecordNearbyVoices = true,
