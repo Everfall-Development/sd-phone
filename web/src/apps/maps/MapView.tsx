@@ -3,24 +3,27 @@ import {
     useImperativeHandle, useLayoutEffect, useMemo, useRef, useState,
 } from 'react';
 import type { ReactNode } from 'react';
-import { Layers, Locate, Minus, Plus } from 'lucide-react';
+import { Locate, Minus, Plus } from 'lucide-react';
 
-import { getMapStyles, loadStyleId, MAX_NATIVE_PX, pctToWorld, projectPct, saveStyleId, styleMaxZoom, stylePx, tileUrl } from './data';
-import type { MapStyle, MapStyleId } from './data';
+import { MAP_HEIGHT, MAP_STYLE, MAP_WIDTH, MAX_NATIVE_PX, MAX_NATIVE_PY, MIN_TILE_ZOOM, mapTileGrid, pctToWorld, projectPct, styleMaxZoom, tileUrl } from './data';
+import type { MapStyle } from './data';
 import { t } from '@/i18n';
 
 const MIN_SCALE = 1;
 const OVERZOOM = 0.7;
-function maxScaleFor(side: number): number {
-    if (!side) return 16;
-    return Math.max(MIN_SCALE + 2, (MAX_NATIVE_PX / side) * OVERZOOM);
+function maxScaleFor(width: number, height: number): number {
+    if (!width || !height) return 16;
+    return Math.max(
+        MIN_SCALE + 2,
+        Math.min(MAX_NATIVE_PX / width, MAX_NATIVE_PY / height) * OVERZOOM,
+    );
 }
 
-function maxLevelFor(side: number): number {
-    return Math.max(2, Math.floor(Math.log2(maxScaleFor(side))));
+function maxLevelFor(width: number, height: number): number {
+    return Math.max(MIN_TILE_ZOOM, Math.floor(Math.log2(maxScaleFor(width, height))));
 }
-function snapLevel(level: number, side: number): number {
-    return 2 ** Math.max(0, Math.min(maxLevelFor(side), Math.round(level)));
+function snapLevel(level: number, width: number, height: number): number {
+    return 2 ** Math.max(0, Math.min(maxLevelFor(width, height), Math.round(level)));
 }
 
 function ancestorZoom(el: HTMLElement | null): number {
@@ -32,14 +35,14 @@ function ancestorZoom(el: HTMLElement | null): number {
     return z || 1;
 }
 
-interface MapTransform { scale: number; tx: number; ty: number; side: number; vw: number; vh: number; pow: number; gesturing: boolean }
-const MapTransformContext = createContext<MapTransform>({ scale: 1, tx: 0, ty: 0, side: 0, vw: 0, vh: 0, pow: 1, gesturing: false });
+interface MapTransform { scale: number; tx: number; ty: number; width: number; height: number; vw: number; vh: number; pow: number; gesturing: boolean }
+const MapTransformContext = createContext<MapTransform>({ scale: 1, tx: 0, ty: 0, width: 0, height: 0, vw: 0, vh: 0, pow: 1, gesturing: false });
 
 export function usePinStyle(x: number, y: number): React.CSSProperties {
-    const { scale, tx, ty, side, vw, vh, gesturing } = useContext(MapTransformContext);
+    const { scale, tx, ty, width, height, vw, vh, gesturing } = useContext(MapTransformContext);
     const pct = projectPct(x, y);
-    const left = vw / 2 + ((pct.left / 100) * side - side / 2) * scale + tx;
-    const top  = vh / 2 + ((pct.top  / 100) * side - side / 2) * scale + ty;
+    const left = vw / 2 + ((pct.left / 100) * width - width / 2) * scale + tx;
+    const top  = vh / 2 + ((pct.top  / 100) * height - height / 2) * scale + ty;
     return {
         position: 'absolute', left, top, transform: 'translate(-50%, -50%)',
         transition: gesturing
@@ -49,12 +52,13 @@ export function usePinStyle(x: number, y: number): React.CSSProperties {
 }
 
 export function useStageProjector(): (x: number, y: number) => { x: number; y: number } {
-    const { side, pow } = useContext(MapTransformContext);
-    const sideP = side * pow;
+    const { width, height, pow } = useContext(MapTransformContext);
+    const widthP = width * pow;
+    const heightP = height * pow;
     return useCallback((x: number, y: number) => {
         const pct = projectPct(x, y);
-        return { x: (pct.left / 100) * sideP, y: (pct.top / 100) * sideP };
-    }, [sideP]);
+        return { x: (pct.left / 100) * widthP, y: (pct.top / 100) * heightP };
+    }, [widthP, heightP]);
 }
 
 export interface MapViewHandle {
@@ -93,27 +97,12 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     const [vh, setVh] = useState(0);
     const [dragging, setDragging] = useState(false);
     const [pinching, setPinching] = useState(false);
-    const side = fit ? Math.min(vw, vh) : Math.max(vw, vh);
-
-    const [styleId, setStyleId] = useState<MapStyleId>(() => loadStyleId());
-    const [layersOpen, setLayersOpen] = useState(false);
-    const mapStyles = getMapStyles();
-    const style = mapStyles.find(s => s.id === styleId) ?? mapStyles[0];
-
-    const [prevStyle, setPrevStyle] = useState<MapStyle | null>(null);
-    const styleFadeTimer = useRef<number | null>(null);
-    useEffect(() => () => { if (styleFadeTimer.current) window.clearTimeout(styleFadeTimer.current); }, []);
-
-    function chooseStyle(id: MapStyleId) {
-        if (id !== styleId) {
-            setPrevStyle(style);
-            if (styleFadeTimer.current) window.clearTimeout(styleFadeTimer.current);
-            styleFadeTimer.current = window.setTimeout(() => setPrevStyle(null), 450);
-        }
-        setStyleId(id);
-        saveStyleId(id);
-        setLayersOpen(false);
-    }
+    const mapAspect = MAP_WIDTH / MAP_HEIGHT;
+    const height = fit
+        ? Math.min(vh, vw / mapAspect)
+        : Math.max(vh, vw / mapAspect);
+    const width = height * mapAspect;
+    const style = MAP_STYLE;
 
     useLayoutEffect(() => {
         const el = viewportRef.current;
@@ -125,13 +114,15 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         return () => ro.disconnect();
     }, []);
 
-    const minScale = side ? Math.min(1, vw / (side * 0.72)) : 1;
+    const minScale = width && height
+        ? Math.min(1, vw / (width * 0.72), vh / (height * 0.72))
+        : 1;
 
     const stepScale = (dir: 1 | -1): number => {
         const lvl = Math.log2(scale);
         if (dir > 0) {
             const up = Math.floor(lvl + 1e-6) + 1;
-            return up <= 0 ? 1 : 2 ** Math.min(maxLevelFor(side), up);
+            return up <= 0 ? 1 : 2 ** Math.min(maxLevelFor(width, height), up);
         }
         const down = Math.ceil(lvl - 1e-6) - 1;
         return down < 0 ? minScale : 2 ** down;
@@ -141,14 +132,15 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         const vp = viewportRef.current;
         const W = vp?.clientWidth ?? 0;
         const H = vp?.clientHeight ?? 0;
-        const scaled = side * s;
-        const maxX = Math.max(0, (scaled - W) / 2);
-        const maxY = Math.max(0, (scaled - H) / 2);
+        const scaledWidth = width * s;
+        const scaledHeight = height * s;
+        const maxX = Math.max(0, (scaledWidth - W) / 2);
+        const maxY = Math.max(0, (scaledHeight - H) / 2);
         return {
             x: Math.max(-maxX, Math.min(maxX, nx)),
             y: Math.max(-(maxY + insetBottom), Math.min(maxY + insetTop, ny)),
         };
-    }, [side, insetBottom, insetTop]);
+    }, [width, height, insetBottom, insetTop]);
 
     const zoomAround = useCallback((clientX: number, clientY: number, nextScale: number) => {
         const vp = viewportRef.current;
@@ -158,13 +150,13 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         const cx = (clientX / z - rect.left) - vw / 2;
         const cy = (clientY / z - rect.top)  - vh / 2;
         setScale(prevS => {
-            const s = Math.max(minScale, Math.min(maxScaleFor(side), nextScale));
+            const s = Math.max(minScale, Math.min(maxScaleFor(width, height), nextScale));
             const ratio = s / prevS;
             setTx(prevTx => clampPan(cx - (cx - prevTx) * ratio, ty, s).x);
             setTy(prevTy => clampPan(tx, cy - (cy - prevTy) * ratio, s).y);
             return s;
         });
-    }, [clampPan, tx, ty, vw, vh, minScale, side]);
+    }, [clampPan, tx, ty, vw, vh, minScale, width, height]);
 
     const lastWheelStep = useRef(0);
     function onWheel(e: React.WheelEvent) {
@@ -185,48 +177,48 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
 
     const centerOnWorld = useCallback((x: number, y: number, minZoom = 2.4) => {
         const pct = projectPct(x, y);
-        const s = snapLevel(Math.log2(Math.max(scale, minZoom)), side);
-        const ox = (pct.left / 100 - 0.5) * side;
-        const oy = (pct.top  / 100 - 0.5) * side;
+        const s = snapLevel(Math.log2(Math.max(scale, minZoom)), width, height);
+        const ox = (pct.left / 100 - 0.5) * width;
+        const oy = (pct.top  / 100 - 0.5) * height;
         const c = clampPan(-ox * s, -oy * s, s);
         setScale(s); setTx(c.x); setTy(c.y);
-    }, [scale, side, clampPan]);
+    }, [scale, width, height, clampPan]);
 
     const fitWorld = useCallback((pts: { x: number; y: number }[], padFrac = 0.16) => {
-        if (!pts.length || !side || !vw || !vh) return;
+        if (!pts.length || !width || !height || !vw || !vh) return;
         const ps = pts.map(p => projectPct(p.x, p.y));
         const minL = Math.min(...ps.map(p => p.left)), maxL = Math.max(...ps.map(p => p.left));
         const minT = Math.min(...ps.map(p => p.top)),  maxT = Math.max(...ps.map(p => p.top));
         const midL = (minL + maxL) / 2, midT = (minT + maxT) / 2;
-        const spanX = Math.max(1, ((maxL - minL) / 100) * side);
-        const spanY = Math.max(1, ((maxT - minT) / 100) * side);
+        const spanX = Math.max(1, ((maxL - minL) / 100) * width);
+        const spanY = Math.max(1, ((maxT - minT) / 100) * height);
         const target = Math.min((vw * (1 - 2 * padFrac)) / spanX, (vh * (1 - 2 * padFrac)) / spanY);
         const s = target < 1
             ? minScale
-            : Math.max(minScale, Math.min(maxScaleFor(side), 2 ** Math.min(maxLevelFor(side), Math.floor(Math.log2(target) + 1e-6))));
-        const ox = (midL / 100 - 0.5) * side;
-        const oy = (midT / 100 - 0.5) * side;
+            : Math.max(minScale, Math.min(maxScaleFor(width, height), 2 ** Math.min(maxLevelFor(width, height), Math.floor(Math.log2(target) + 1e-6))));
+        const ox = (midL / 100 - 0.5) * width;
+        const oy = (midT / 100 - 0.5) * height;
         const c = clampPan(-ox * s, -oy * s, s);
         setScale(s); setTx(c.x); setTy(c.y);
-    }, [side, vw, vh, minScale, clampPan]);
+    }, [width, height, vw, vh, minScale, clampPan]);
 
     useImperativeHandle(ref, () => ({ centerOnWorld, fitWorld, reset: resetView }), [centerOnWorld, fitWorld]);
 
     const didFit = useRef(false);
     useLayoutEffect(() => { didFit.current = false; }, [fitTo]);
     useLayoutEffect(() => {
-        if (didFit.current || !fitTo || !fitTo.length || !side || !vw || !vh) return;
+        if (didFit.current || !fitTo || !fitTo.length || !width || !height || !vw || !vh) return;
         didFit.current = true;
         fitWorld(fitTo);
-    }, [fitTo, side, vw, vh, fitWorld]);
+    }, [fitTo, width, height, vw, vh, fitWorld]);
 
     const didCenter = useRef(false);
     useLayoutEffect(() => { didCenter.current = false; }, [centerTo]);
     useLayoutEffect(() => {
-        if (didCenter.current || !centerTo || !side || !vw || !vh) return;
+        if (didCenter.current || !centerTo || !width || !height || !vw || !vh) return;
         didCenter.current = true;
         centerOnWorld(centerTo.x, centerTo.y);
-    }, [centerTo, side, vw, vh, centerOnWorld]);
+    }, [centerTo, width, height, vw, vh, centerOnWorld]);
 
     const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
     const gesture  = useRef({ startX: 0, startY: 0, tx: 0, ty: 0, moved: 0, pinchDist: 0, pinchScale: 1, z: 1 });
@@ -312,7 +304,7 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
                 const live = pendingZoom.current?.scale ?? scale;
                 const snapped = live <= Math.sqrt(minScale)
                     ? minScale
-                    : snapLevel(Math.log2(live), side);
+                    : snapLevel(Math.log2(live), width, height);
                 zoomAround((rect.left + rect.width / 2) * az, (rect.top + rect.height / 2) * az, snapped);
             }
             const rest = [...pointers.current.values()][0];
@@ -320,7 +312,6 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
                 gesture.current = { ...gesture.current, startX: rest.x, startY: rest.y, tx, ty };
             }
         }
-        if (layersOpen) { setLayersOpen(false); return; }
         if (wasTap && placing && onPlace) {
             const vp = viewportRef.current;
             if (!vp || !vp.clientWidth) return;
@@ -328,8 +319,8 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
             const z = ancestorZoom(vp);
             const localX = e.clientX / z - vpRect.left;
             const localY = e.clientY / z - vpRect.top;
-            const rawL = (((localX - vw / 2 - tx) / scale + side / 2) / side) * 100;
-            const rawT = (((localY - vh / 2 - ty) / scale + side / 2) / side) * 100;
+            const rawL = (((localX - vw / 2 - tx) / scale + width / 2) / width) * 100;
+            const rawT = (((localY - vh / 2 - ty) / scale + height / 2) / height) * 100;
             const leftPct = Math.max(0, Math.min(100, rawL));
             const topPct  = Math.max(0, Math.min(100, rawT));
             const w = pctToWorld(leftPct, topPct);
@@ -344,16 +335,17 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         if (c.x !== tx) setTx(c.x);
         if (c.y !== ty) setTy(c.y);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [side, insetBottom, insetTop]);
+    }, [width, height, insetBottom, insetTop]);
 
     const powRef = useRef(1);
     if (!pinching || powRef.current < 1) {
         powRef.current = 2 ** Math.max(0, Math.min(6, Math.round(Math.log2(Math.max(1, scale)))));
     }
     const pow = powRef.current;
-    const stageSide = side * pow;
+    const stageWidth = width * pow;
+    const stageHeight = height * pow;
 
-    const transform: MapTransform = { scale, tx, ty, side, vw, vh, pow, gesturing: dragging || pinching };
+    const transform: MapTransform = { scale, tx, ty, width, height, vw, vh, pow, gesturing: dragging || pinching };
 
     const painted = useRef<{ scale: number; tx: number; ty: number; pow: number } | null>(null);
     const glide = useRef<Animation | null>(null);
@@ -395,22 +387,17 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
                 ref={stageRef}
                 className="absolute"
                 style={{
-                    width: stageSide, height: stageSide,
-                    left: (vw - stageSide) / 2,
-                    top:  (vh - stageSide) / 2,
+                    width: stageWidth, height: stageHeight,
+                    left: (vw - stageWidth) / 2,
+                    top:  (vh - stageHeight) / 2,
                     transform: `translate(${tx}px, ${ty}px) scale(${scale / pow})`,
                     transformOrigin: 'center',
                     willChange: 'transform',
                 }}
             >
-                <div className="absolute inset-0" style={{ background: '#0b2838' }} />
-                {prevStyle && (
-                    <div className="absolute inset-0">
-                        <TileGrid style={prevStyle} side={side} pow={pow} scale={scale} tx={Math.round(tx / 64) * 64} ty={Math.round(ty / 64) * 64} vpW={vw} vpH={vh} />
-                    </div>
-                )}
-                <div key={style.id} className={prevStyle ? 'absolute inset-0 animate-fade-in' : 'absolute inset-0'}>
-                    <TileGrid style={style} side={side} pow={pow} scale={scale} tx={Math.round(tx / 64) * 64} ty={Math.round(ty / 64) * 64} vpW={vw} vpH={vh} />
+                <div className="absolute inset-0" style={{ background: style.bg }} />
+                <div className="absolute inset-0">
+                    <TileGrid style={style} width={width} height={height} pow={pow} scale={scale} tx={Math.round(tx / 64) * 64} ty={Math.round(ty / 64) * 64} vpW={vw} vpH={vh} />
                 </div>
                 {style.wash && (
                     <div className="absolute inset-0" style={{ background: style.wash, pointerEvents: 'none' }} />
@@ -451,53 +438,6 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
                 >
                     <Locate className="h-[18px] w-[18px]" />
                 </button>
-                <button
-                    onClick={() => setLayersOpen(o => !o)}
-                    aria-label={t('maps.mapStyle', 'Map style')}
-                    className={'flex h-9 w-9 items-center justify-center rounded-[10px] shadow-md ring-1 transition-colors ' +
-                        (layersOpen
-                            ? 'bg-ios-blue text-white ring-black/5'
-                            : 'bg-elevated/90 text-ios-blue ring-black/5 dark:bg-elevated/90 dark:ring-white/10')}
-                >
-                    <Layers className="h-[18px] w-[18px]" />
-                </button>
-
-                {layersOpen && (
-                    <div
-                        className="animate-slide-down-fade overflow-hidden rounded-2xl bg-elevated/95 p-2.5 shadow-xl ring-1 ring-black/5 dark:bg-surface/95 dark:ring-white/10"
-                        onPointerDown={e => e.stopPropagation()}
-                    >
-                        <p className="px-1 pb-2 pt-0.5 text-[13px] font-semibold uppercase tracking-wider text-ios-gray">{t('maps.mapStyleTitle', 'Map Style')}</p>
-                        <div className="flex gap-2.5">
-                        {mapStyles.map(s => (
-                            <button
-                                key={s.id}
-                                onClick={() => chooseStyle(s.id)}
-                                className="flex w-[112px] flex-col items-center gap-2 active:opacity-80"
-                            >
-                                <span
-                                    className={'block h-[94px] w-[108px] overflow-hidden rounded-[14px] transition-shadow ' +
-                                        (s.id === styleId
-                                            ? 'ring-2 ring-ios-blue'
-                                            : 'ring-1 ring-black/10 dark:ring-white/15')}
-                                    style={{ background: s.bg }}
-                                >
-                                    <img
-                                        src={tileUrl(s.tiles, 4, 6, 10)}
-                                        alt=""
-                                        draggable={false}
-                                        className="h-full w-full object-cover"
-                                    />
-                                </span>
-                                <span className={'text-[15px] font-semibold ' +
-                                    (s.id === styleId ? 'text-ios-blue' : 'text-black/70 dark:text-white/70')}>
-                                    {s.label}
-                                </span>
-                            </button>
-                        ))}
-                        </div>
-                    </div>
-                )}
             </div>
             )}
 
@@ -512,28 +452,31 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     );
 });
 
-const BACKDROP_Z = 2;
+const BACKDROP_Z = MIN_TILE_ZOOM;
 
 const DEBUG_TILES = (() => { try { return localStorage.getItem('sd-phone:maps:debug') === '1'; } catch { return false; } })();
 const DBG_COLOR: Record<number, string> = { 2: '#ff0000', 3: '#ff8800', 4: '#00ff00', 5: '#00ffff', 6: '#ff00ff', 7: '#ffff00' };
 
 function tileLayer(
-    style: MapStyle, z: number, side: number, scale: number, tx: number, ty: number,
+    style: MapStyle, z: number, width: number, height: number, scale: number, tx: number, ty: number,
     vpW: number, vpH: number, keyPrefix: string, fullGrid: boolean,
 ): ReactNode[] {
-    const n = 2 ** z;
-    const ts = side / n;
-    const clamp = (v: number) => Math.max(0, Math.min(n - 1, v));
+    const grid = mapTileGrid(z);
+    const tileWidth = width / grid.columns;
+    const tileHeight = height / grid.rows;
+    const clampX = (v: number) => Math.max(0, Math.min(grid.columns - 1, v));
+    const clampY = (v: number) => Math.max(0, Math.min(grid.rows - 1, v));
 
-    let iMin = 0, iMax = n - 1, jMin = 0, jMax = n - 1;
+    let iMin = 0, iMax = grid.columns - 1, jMin = 0, jMax = grid.rows - 1;
     if (!fullGrid) {
-        const qx0 = (-vpW / 2 - tx) / scale + side / 2;
-        const qx1 = ( vpW / 2 - tx) / scale + side / 2;
-        const qy0 = (-vpH / 2 - ty) / scale + side / 2;
-        const qy1 = ( vpH / 2 - ty) / scale + side / 2;
-        const margin = 1 + Math.round(32 / Math.max(1, ts * scale));
-        iMin = clamp(Math.floor(qx0 / ts) - margin); iMax = clamp(Math.floor(qx1 / ts) + margin);
-        jMin = clamp(Math.floor(qy0 / ts) - margin); jMax = clamp(Math.floor(qy1 / ts) + margin);
+        const qx0 = (-vpW / 2 - tx) / scale + width / 2;
+        const qx1 = ( vpW / 2 - tx) / scale + width / 2;
+        const qy0 = (-vpH / 2 - ty) / scale + height / 2;
+        const qy1 = ( vpH / 2 - ty) / scale + height / 2;
+        const marginX = 1 + Math.round(32 / Math.max(1, tileWidth * scale));
+        const marginY = 1 + Math.round(32 / Math.max(1, tileHeight * scale));
+        iMin = clampX(Math.floor(qx0 / tileWidth) - marginX); iMax = clampX(Math.floor(qx1 / tileWidth) + marginX);
+        jMin = clampY(Math.floor(qy0 / tileHeight) - marginY); jMax = clampY(Math.floor(qy1 / tileHeight) + marginY);
     }
 
     const dbg = DEBUG_TILES ? (DBG_COLOR[z] ?? '#ffffff') : undefined;
@@ -551,13 +494,13 @@ function tileLayer(
                     decoding="async"
                     onError={e => {
                         const t = e.currentTarget as HTMLImageElement;
-                        if (DEBUG_TILES) { t.style.background = 'rgba(255,0,0,0.5)'; return; }
+                        if (DEBUG_TILES) { t.style.setProperty('background-color', 'rgba(255,0,0,0.5)'); return; }
                         t.style.opacity = '0';
                         const tries = Number(t.dataset.retry ?? '0');
                         if (tries < 2) {
                             t.dataset.retry = String(tries + 1);
-                            const base = t.src.replace(/&r=\d+$/, '');
-                            window.setTimeout(() => { t.src = `${base}&r=${tries + 1}`; }, 900 * (tries + 1));
+                            const base = t.src.split('?')[0];
+                            window.setTimeout(() => { t.src = `${base}?r=${tries + 1}`; }, 900 * (tries + 1));
                         }
                     }}
                     // Reveal with opacity, NOT visibility: a loaded tile set to visibility:visible
@@ -566,8 +509,8 @@ function tileLayer(
                     onLoad={e => { (e.currentTarget as HTMLImageElement).style.opacity = '1'; }}
                     className="absolute select-none"
                     style={{
-                        left: i * ts, top: j * ts,
-                        width: ts + seam, height: ts + seam,   // hairline overlap hides seams
+                        left: i * tileWidth, top: j * tileHeight,
+                        width: tileWidth + seam, height: tileHeight + seam,   // hairline overlap hides seams
                         filter: style.filter,
                         outline: dbg ? `1px solid ${dbg}` : undefined,
                         outlineOffset: dbg ? '-1px' : undefined,
@@ -577,7 +520,7 @@ function tileLayer(
             if (dbg) {
                 tiles.push(
                     <div key={`${keyPrefix}-lbl-${i}-${j}`} className="pointer-events-none absolute select-none"
-                        style={{ left: i * ts + 1, top: j * ts + 1, fontSize: Math.max(7, Math.min(11, ts / 6)), lineHeight: 1, color: dbg, textShadow: '0 0 2px #000,0 0 2px #000', fontFamily: 'monospace', fontWeight: 700 }}>
+                        style={{ left: i * tileWidth + 1, top: j * tileHeight + 1, fontSize: Math.max(7, Math.min(11, tileWidth / 6)), lineHeight: 1, color: dbg, textShadow: '0 0 2px #000,0 0 2px #000', fontFamily: 'monospace', fontWeight: 700 }}>
                         {z}/{i}/{j}
                     </div>,
                 );
@@ -587,27 +530,28 @@ function tileLayer(
     return tiles;
 }
 
-const TileGrid = memo(function TileGrid({ style, side, pow, scale, tx, ty, vpW, vpH }: {
-    style: MapStyle; side: number; pow: number; scale: number; tx: number; ty: number; vpW: number; vpH: number;
+const TileGrid = memo(function TileGrid({ style, width, height, pow, scale, tx, ty, vpW, vpH }: {
+    style: MapStyle; width: number; height: number; pow: number; scale: number; tx: number; ty: number; vpW: number; vpH: number;
 }) {
-    const sideP  = side * pow;
+    const widthP  = width * pow;
+    const heightP = height * pow;
     const scaleP = scale / pow;
 
     const backdrop = useMemo(
-        () => (side ? tileLayer(style, BACKDROP_Z, sideP, scaleP, 0, 0, vpW, vpH, `${style.tiles}bg`, true) : []),
-        [style, sideP, vpW, vpH],
+        () => (width && height ? tileLayer(style, BACKDROP_Z, widthP, heightP, scaleP, 0, 0, vpW, vpH, `${style.tiles}bg`, true) : []),
+        [style, width, height, widthP, heightP, scaleP, vpW, vpH],
     );
 
-    if (!side) return null;
+    if (!width || !height) return null;
 
     const maxZ = styleMaxZoom(style.tiles);
-    const need = Math.ceil(Math.log2(Math.max(1, (side * scale) / stylePx(style.tiles))));
+    const need = Math.ceil(Math.log2(Math.max(1, (width * scale) / MAP_WIDTH)));
     const detailZ = Math.max(BACKDROP_Z, Math.min(maxZ, need));
 
     const detail: ReactNode[] = [];
     for (let z = Math.max(BACKDROP_Z + 1, detailZ - 1); z <= detailZ; z++) {
         detail.push(
-            ...tileLayer(style, z, sideP, scaleP, tx, ty, vpW, vpH, `${style.tiles}${z}`, false),
+            ...tileLayer(style, z, widthP, heightP, scaleP, tx, ty, vpW, vpH, `${style.tiles}${z}`, false),
         );
     }
     return <>{backdrop}{detail}</>;

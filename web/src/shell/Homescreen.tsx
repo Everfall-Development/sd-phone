@@ -17,7 +17,7 @@ import { AlertDialog } from '@/ui/AlertDialog';
 import type { SavedLayout, WidgetAlign, WidgetPlacement, WidgetSize, WidgetTheme } from '@/apps/appstore/appsApi';
 import type { DockDrag, DockPlan } from './dockMoves';
 import { DOCK_MAX, planDockDrag } from './dockMoves';
-import { coveredCells, firstFit, jiggleDeg, landingCell, pageMoves, placeNewApps, reflowAround, spanOf, trySwap, widgetPx } from './widgets/geometry';
+import { coveredCells, firstFit, jiggleDeg, landingCell, pageMoves, placeNewApps, reflowAround, seedHomeSlots, spanOf, trySwap, widgetPx } from './widgets/geometry';
 import { useDockReflow } from './useDockReflow';
 import { PARALLAX_SCALE, PARALLAX_SHIFT, type DockStyle } from './shellLook';
 import { widgetByKind } from './widgets/registry';
@@ -194,31 +194,18 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
         if (savedLayout && savedLayout.slots.length) return normalize(savedLayout.slots);
         const seeded = new Set(Object.values(folders).flatMap(f => f.appIds));
         const loose = apps.filter(a => !dockIds.includes(a.id) && !seeded.has(a.id)).map(a => a.id);
-        // A seeding count, not a grid measure: how many apps land on page one before it spills.
-        const FIRST_PAGE = 12;
-        const arr: (string | null)[] = Array(itemsPerPage() * 2).fill(null);
-        loose.slice(0, FIRST_PAGE).forEach((id, i) => { arr[i] = id; });
-        loose.slice(FIRST_PAGE).forEach((id, i) => { arr[itemsPerPage() + i] = id; });
-        return normalize(arr);
+        return seedHomeSlots(loose, itemsPerPage());
     });
 
-    useEffect(() => {
-        const known = new Set(apps.map(a => a.id));
-        setFolders(prev => {
-            let changed = false;
-            const next: typeof prev = {};
-            for (const [key, f] of Object.entries(prev)) {
-                const kept = f.appIds.filter(id => known.has(id));
-                if (kept.length !== f.appIds.length) changed = true;
-                if (kept.length >= 2) next[key] = kept.length === f.appIds.length ? f : { ...f, appIds: kept };
-                else changed = true;
-            }
-            return changed ? next : prev;
-        });
-    }, [apps]);
+    const visibleSlotIds = useMemo(() => {
+        const ids = new Set(appMap.keys());
+        for (const [key, folder] of Object.entries(folders)) {
+            if (folder.appIds.some(id => appMap.has(id))) ids.add(`${FOLDER_PREFIX}${key}`);
+        }
+        return ids;
+    }, [appMap, folders]);
 
     useEffect(() => {
-        const known = new Set(apps.map(a => a.id));
         const folderKeys = new Set(Object.keys(folders));
         const docked = new Set(dockIds);
         setSlots(prev => {
@@ -227,16 +214,19 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                 if (isFolderId(id)) return folderKeys.has(folderKeyOf(id)) ? id : null;
                 if (folderedIds.has(id)) return null;
                 if (docked.has(id)) return null;
-                return known.has(id) ? id : null;
+                // Keep unavailable app ids in the canonical layout. Rendering is already
+                // appMap-gated below, so disabled apps disappear without silently rewriting
+                // their saved positions and can return to the same place when re-enabled.
+                return id;
             });
             const placed = new Set(cleaned.filter((x): x is string => !!x && !isFolderId(x)));
             const missing = apps
                 .filter(a => !docked.has(a.id) && !folderedIds.has(a.id) && !placed.has(a.id))
                 .map(a => a.id);
             if (!missing.length && cleaned.every((v, i) => v === prev[i])) return prev;
-            return normalize(placeNewApps(cleaned, missing, widgets, itemsPerPage()));
+            return normalize(placeNewApps(cleaned, missing, widgets, itemsPerPage(), visibleSlotIds));
         });
-    }, [apps, dockIds, folders, folderedIds, widgets]);
+    }, [apps, dockIds, folders, folderedIds, visibleSlotIds, widgets]);
 
     // Read by the drag listeners, which are bound once per drag and would otherwise close over
     // the widget list as it was when the drag started.
@@ -889,13 +879,14 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
             <div className="pointer-events-none absolute inset-0 z-0 bg-black/20" />
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-52 bg-gradient-to-t from-black/40 to-transparent" />
 
-            {galleryOpen && <WidgetGallery onAdd={addWidget} onClose={() => setGalleryOpen(false)} wallpaper={wallpaper} />}
+            {galleryOpen && <WidgetGallery availableAppIds={new Set(appMap.keys())} onAdd={addWidget} onClose={() => setGalleryOpen(false)} wallpaper={wallpaper} />}
 
             {stackFor && (() => {
                 const host = widgets.find(w => w.uid === stackFor);
                 if (!host) return null;
                 return (
                     <WidgetGallery
+                        availableAppIds={new Set(appMap.keys())}
                         lockSize={host.size}
                         onAdd={(kind, _size, align, theme) => addToStack(host.uid, kind, align, theme)}
                         onClose={() => setStackFor(null)}
@@ -961,7 +952,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                                 const cards = cardsOf(w);
                                 const at = Math.min(stackAt[w.uid] ?? 0, cards.length - 1);
                                 const def = widgetByKind(cards[at].kind);
-                                if (!def) return null;
+                                if (!def || !appMap.has(def.appId)) return null;
                                 const pos = slot(w.row * COLS + w.col);
                                 const { width, height } = widgetPx(w.size);
                                 return (
@@ -1013,7 +1004,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                                                 editing={editing}
                                                 render={(card, ci) => {
                                                     const cd = widgetByKind(card.kind);
-                                                    if (!cd) return null;
+                                                    if (!cd || !appMap.has(cd.appId)) return null;
                                                     return cd.render({ size: w.size, width, height, align: card.align ?? 'left', theme: card.theme ?? 'dark', picks: card.picks,
                                                         onPicks: ids => setWidgets(prev => prev.map(o => (o.uid === w.uid ? patchCard(o, ci, { picks: ids.length ? ids : undefined }) : o))) });
                                                 }}
@@ -1055,7 +1046,8 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                                 const fkey = folder ? folderKeyOf(id) : '';
                                 const def = folder ? folders[fkey] : null;
                                 const app = folder ? null : appMap.get(id);
-                                if (folder ? !def : !app) return null;
+                                const visibleFolderApps = folder ? folderApps(fkey) : [];
+                                if (folder ? !def || visibleFolderApps.length === 0 : !app) return null;
 
                                 if (!editing) {
                                     return (
@@ -1063,7 +1055,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                                             {/* Scale/opacity live on this inner div so the positioned parent's translate is untouched. */}
                                             <div style={bloom ? { animation: `${folder ? 'home-folder-in' : 'home-icon-in'} 0.38s cubic-bezier(0.34,1.3,0.64,1) both`, animationDelay: `${li * 20}ms` } : undefined}>
                                                 {folder
-                                                    ? <FolderTile label={def!.name} apps={folderApps(fkey)} badge={folderBadge(fkey)} onOpen={() => setOpenFolder(fkey)} />
+                                                    ? <FolderTile label={def!.name} apps={visibleFolderApps} badge={folderBadge(fkey)} onOpen={() => setOpenFolder(fkey)} />
                                                     : <AppIcon app={app!} onOpen={launch} badge={badges?.[app!.id]} />}
                                             </div>
                                         </div>
@@ -1084,7 +1076,7 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
                                             style={{ position: 'absolute', left: 0, top: 0, width: ICON, transform: `translate(${pos.x}px, ${pos.y}px)`, transition: 'transform 0.26s cubic-bezier(0.2,0.8,0.3,1)', zIndex: isMergeTarget ? 2 : 1 }}
                                         >
                                             <div className="animate-app-jiggle" style={{ animationDelay: `${jiggleDelay(id)}ms` }}>
-                                                <FolderTile label={def!.name} apps={folderApps(fkey)} badge={folderBadge(fkey)} merging={isMergeTarget} onOpen={() => { /* edit mode: drag, don't open */ }} />
+                                                <FolderTile label={def!.name} apps={visibleFolderApps} badge={folderBadge(fkey)} merging={isMergeTarget} onOpen={() => { /* edit mode: drag, don't open */ }} />
                                             </div>
                                         </div>
                                     );

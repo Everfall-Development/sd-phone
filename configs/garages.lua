@@ -3,7 +3,7 @@
 -- Read-only apart from Valet below, which is the one path that takes a vehicle
 -- out of its garage; with Valet.Enabled = false nothing here ever writes.
 return {
-    Enabled = true,
+    Enabled = false,
 
     -- 'auto' picks the first started resource from the list below. Override
     -- with an exact resource name if auto-detect guesses wrong (e.g. you run

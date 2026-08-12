@@ -17,7 +17,7 @@ CreateThread(function()
 end)
 
 -- Authoritative Ryde callbacks: thin delegates into server.ryde.actions.
-lib.callback.register('sd-phone:server:ryde:config',        function()             return actions.config() end)
+lib.callback.register('sd-phone:server:ryde:config',        function(src)          return actions.config(src) end)
 lib.callback.register('sd-phone:server:ryde:me',            function(src)          return actions.me(src) end)
 lib.callback.register('sd-phone:server:ryde:sync',          function(src)          return actions.sync(src) end)
 lib.callback.register('sd-phone:server:ryde:deleteAccount', function(src)          return actions.deleteAccount(src) end)

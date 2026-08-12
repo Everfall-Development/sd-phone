@@ -470,7 +470,7 @@ function actions.updateProfile(source, payload)
 
     local function imageUrl(v, fallback)
         local u = trimmed(v)
-        if u and lib.string.startsWith(u, 'http') then return u:sub(1, 512) end
+        if u and u:sub(1, 4) == 'http' then return u:sub(1, 512) end
         if v == false then return nil end
         return fallback
     end
@@ -876,8 +876,9 @@ end
 ---Lists the viewer's notifications, serialized into the React union shape. Reply notifications
 ---embed the reply post; like/follow rows resolve the actor's public profile. Read-only.
 ---@param source number player server id
+---@param payload { markSeen?: boolean }|nil
 ---@return table envelope
-function actions.notifications(source)
+function actions.notifications(source, payload)
     local prof = viewer(source); if not prof then return fail('Player not found') end
     local rows = store.listNotifications(prof.handle, birdyCfg.NotificationLimit)
 
@@ -914,8 +915,10 @@ function actions.notifications(source)
         end
     end
 
-    store.markNotificationsSeen(prof.handle)
-    badges.pushApp(source, 'birdy')
+    if not (type(payload) == 'table' and payload.markSeen == false) then
+        store.markNotificationsSeen(prof.handle)
+        badges.pushApp(source, 'birdy')
+    end
 
     return ok({ notifications = items })
 end

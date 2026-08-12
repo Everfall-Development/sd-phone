@@ -233,7 +233,7 @@ local function buildConversation(viewerCid, viewerNumber, conversation, rows, co
     local messages = {}
     for i = 1, #rows do messages[i] = serializeMessage(rows[i], viewerNumber, viewerCid, reactionsByMid) end
 
-    if lib.string.startsWith(conversation, 'g-') then
+    if conversation:sub(1, 2) == 'g-' then
         local groupId = conversation:sub(3)
         local group   = store.getGroup(groupId)
         return {
@@ -756,7 +756,7 @@ function actions.send(source, payload)
     local meta = sanitizeMeta(kind, payload)
     if not hasContent(kind, body, meta) then return fail('Empty message') end
 
-    local isGroup = lib.string.startsWith(conversation, 'g-')
+    local isGroup = conversation:sub(1, 2) == 'g-'
 
     -- Number-dependent: a phone with no number in service can't send (device mode with the SIM
     -- out; in legacy/stock a resolvable caller always has a number, so this never trips). Gate
@@ -907,7 +907,7 @@ function actions.addGroupMember(source, payload)
     if not cid then return fail('Player not found') end
 
     local key = tostring(payload.conversation or '')
-    if not lib.string.startsWith(key, 'g-') then return fail('Not a group conversation') end
+    if key:sub(1, 2) ~= 'g-' then return fail('Not a group conversation') end
     local groupId = key:sub(3)
     if not store.isGroupMember(groupId, cid) then return fail('You are not in this group') end
 
@@ -973,7 +973,7 @@ function actions.updateGroup(source, payload)
     if not cid then return fail('Player not found') end
 
     local key = tostring(payload.conversation or '')
-    if not lib.string.startsWith(key, 'g-') then return fail('Not a group conversation') end
+    if key:sub(1, 2) ~= 'g-' then return fail('Not a group conversation') end
     local groupId = key:sub(3)
 
     local group = store.getGroup(groupId)
@@ -1026,7 +1026,7 @@ function actions.removeGroupMember(source, payload)
     if not cid then return fail('Player not found') end
 
     local key = tostring(payload.conversation or '')
-    if not lib.string.startsWith(key, 'g-') then return fail('Not a group conversation') end
+    if key:sub(1, 2) ~= 'g-' then return fail('Not a group conversation') end
     local groupId = key:sub(3)
 
     local group = store.getGroup(groupId)
@@ -1104,7 +1104,7 @@ function actions.deleteConversation(source, payload)
 
     store.deleteThread(cid, conversation)
 
-    if lib.string.startsWith(conversation, 'g-') then
+    if conversation:sub(1, 2) == 'g-' then
         local groupId = conversation:sub(3)
         store.removeGroupMember(groupId, cid)
         if store.groupMemberCount(groupId) == 0 then store.deleteGroup(groupId) end
@@ -1196,7 +1196,7 @@ end
 function actions.uploadVoice(source, payload)
     payload = type(payload) == 'table' and payload or {}
     local audio = payload.audio
-    if type(audio) ~= 'string' or not lib.string.startsWith(audio, 'data:audio/') then return fail('Bad audio payload') end
+    if type(audio) ~= 'string' or audio:sub(1, 11) ~= 'data:audio/' then return fail('Bad audio payload') end
 
     local maxBytes = (config.VoiceMemos and config.VoiceMemos.MaxAudioBytes) or (8 * 1024 * 1024)
     if #audio > maxBytes then return fail('Recording is too long') end

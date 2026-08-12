@@ -1,5 +1,7 @@
----@type table Yellow Pages persistence layer (server.pages.store): post row CRUD.
-local pagesStore = require 'server.pages.store'
+---@type table Shared server helpers (server.util): ids and app capabilities.
+local util       = require 'server.util'
+---@type table|nil Yellow Pages persistence, absent while Pages is disabled.
+local pagesStore = util.appEnabled('pages') and require 'server.pages.store' or nil
 ---@type table Marketplace persistence layer (server.marketplace.store): listing row CRUD.
 local mpStore    = require 'server.marketplace.store'
 ---@type table Contacts persistence layer (server.contacts.store): contact + call-log row CRUD.
@@ -10,8 +12,6 @@ local messagesStore = require 'server.messages.store'
 local settingsStore = require 'server.settings.store'
 ---@type table Badge engine (server.badges.init): unread-count push after seeding unread rows.
 local badges     = require 'server.badges.init'
----@type table Shared server helpers (server.util): newId for row ids.
-local util       = require 'server.util'
 ---@type table Player bridge (bridge.server.player): citizenid/name/phone-number lookups.
 local player     = require 'bridge.server.player'
 
@@ -35,6 +35,7 @@ local VEH = 'https://docs.fivem.net/vehicles/'
 ---/seedclassifieds - DEV TOOL: seeds the Yellow Pages + Marketplace tables with the entries from
 ---the web dev mock data (web/src/apps/{pages,marketplace}/data.ts). Idempotent; admin-gated.
 ---@param source integer player server id
+if pagesStore then
 lib.addCommand('seedclassifieds', {
     help = 'Dev: seed Yellow Pages + Marketplace with the dev mock entries',
     restricted = 'group.admin',
@@ -91,6 +92,7 @@ lib.addCommand('seedclassifieds', {
         app = 'phone', title = 'Dev Seed', body = 'Seeded Yellow Pages + Marketplace entries. Reopen the apps to view.',
     })
 end)
+end
 
 ---@type string[] First names for filler contacts.
 local FIRST = {

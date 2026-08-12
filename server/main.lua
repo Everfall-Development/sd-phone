@@ -9,6 +9,8 @@ end
 local config    = require 'configs.config'
 ---@type table Inventory bridge (bridge.server.inventory): backend-agnostic item ops.
 local inv       = require 'bridge.server.inventory'
+---@type table Authoritative app availability gate and disabled callback refusals.
+local appgate   = require 'server.appgate'
 
 -- Loaded for side effects: each module self-registers its callbacks, events, commands and exports on require.
 -- SIM first: when unique phones are enabled it wraps player.getIdentifier before any app module
@@ -20,7 +22,7 @@ require 'server.service'
 require 'server.wifi'
 require 'server.bluetooth.init'
 require 'server.apps.init'
-require 'server.groups.init'
+if appgate.enabled('groups') then require 'server.groups.init' end
 require 'server.mail.init'
 require 'server.messages.init'
 require 'server.photos.init'
@@ -31,11 +33,13 @@ require 'server.calls.init'
 require 'server.payphone.init'
 require 'server.badges.init'
 require 'server.gifs.init'
-require 'server.garages.init'
-require 'server.garages.valet'
+if appgate.enabled('garages') then
+    require 'server.garages.init'
+    require 'server.garages.valet'
+end
 require 'server.darkchat.init'
 require 'server.marketplace.init'
-require 'server.pages.init'
+if appgate.enabled('pages') then require 'server.pages.init' end
 require 'server.review.init'
 require 'server.weazelnews.init'
 require 'server.banking.init'
@@ -51,7 +55,7 @@ require 'server.notifications.init'
 require 'server.notes.init'
 require 'server.calendar.init'
 require 'server.documents.init'
-require 'server.homes.init'
+if appgate.enabled('homes') then require 'server.homes.init' end
 require 'server.maps.init'
 require 'server.friends.init'
 require 'server.cherry.init'
@@ -61,12 +65,11 @@ require 'server.voice.init'
 require 'server.streaks.init'
 require 'server.mdt.init'
 require 'server.racing.init'
-require 'server.appgate'
 require 'server.ryde.init'
-require 'server.radio.init'
+if appgate.enabled('radio') then require 'server.radio.init' end
 require 'server.clock.init'
 require 'server.cookie.init'
-require 'server.stocks.init'
+if appgate.enabled('stocks') then require 'server.stocks.init' end
 require 'server.chess.init'
 require 'server.connectfour.init'
 require 'server.games.chips'

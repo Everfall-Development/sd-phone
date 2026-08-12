@@ -18,9 +18,10 @@ export default defineConfig(({ mode }) => ({
     // read it. The production build (rollup) resolves the relative import fine.
     server: { fs: { allow: ['..'] } },
     build: {
-        // FiveM's CEF and the dev browser (Edge) are both modern Chromium, so
-        // skip downleveling to the generic es2020 baseline.
-        target: 'chrome110',
+        // FiveM's production CEF baseline is Chromium 103. Keep both the
+        // JavaScript and CSS output within that browser contract.
+        target: 'chrome103',
+        cssTarget: 'chrome103',
         // Output to `web/build/` so fxmanifest.lua's `ui_page` reference
         // (`web/build/index.html`) resolves both pre-build (vanilla
         // fallback) and post-build (Vite-rendered React). The website demo

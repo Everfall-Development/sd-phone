@@ -1,7 +1,7 @@
 import { memo, useRef, useState, type ReactNode } from 'react';
 import { MapPin, Pause, Play, Reply, Smile } from 'lucide-react';
 
-import { projectPct, styleMaxZoom, tileUrl } from '@/apps/maps/data';
+import { TILE_SIZE, mapTileGrid, projectPct, styleMaxZoom, tileUrl } from '@/apps/maps/data';
 import { decodeWaypoint } from '@/lib/waypointCode';
 import { isVideoUrl } from '@/core/photosApi';
 import type { Message } from './data';
@@ -9,7 +9,6 @@ import { t } from '@/i18n';
 
 const REACTIONS = ['❤️', '👍', '👎', '😂'];
 
-const TILE_PX    = 256;
 const PREVIEW_W  = 230;
 const PREVIEW_H  = 140;
 
@@ -21,22 +20,23 @@ function locationCoords(msg: Message): { x: number; y: number } {
 }
 
 function LocationMapPreview({ x, y }: { x: number; y: number }) {
-    const zMax = styleMaxZoom('satellite');
-    const n = 2 ** zMax;
+    const zMax = styleMaxZoom('everfall');
+    const maxGrid = mapTileGrid(zMax);
     const { left, top } = projectPct(x, y);
-    const px = (left / 100) * n * TILE_PX;
-    const py = (top  / 100) * n * TILE_PX;
+    const px = (left / 100) * maxGrid.columns * TILE_SIZE;
+    const py = (top  / 100) * maxGrid.rows * TILE_SIZE;
     const originX = PREVIEW_W / 2 - px;
     const originY = PREVIEW_H / 2 - py;
 
     const layer = (z: number): ReactNode[] => {
-        const span = TILE_PX * 2 ** (zMax - z);
-        const nz   = 2 ** z;
-        const clampIdx = (v: number) => Math.max(0, Math.min(nz - 1, v));
-        const iMin = clampIdx(Math.floor((px - PREVIEW_W / 2) / span));
-        const iMax = clampIdx(Math.floor((px + PREVIEW_W / 2) / span));
-        const jMin = clampIdx(Math.floor((py - PREVIEW_H / 2) / span));
-        const jMax = clampIdx(Math.floor((py + PREVIEW_H / 2) / span));
+        const grid = mapTileGrid(z);
+        const span = TILE_SIZE * 2 ** (zMax - z);
+        const clampX = (v: number) => Math.max(0, Math.min(grid.columns - 1, v));
+        const clampY = (v: number) => Math.max(0, Math.min(grid.rows - 1, v));
+        const iMin = clampX(Math.floor((px - PREVIEW_W / 2) / span));
+        const iMax = clampX(Math.floor((px + PREVIEW_W / 2) / span));
+        const jMin = clampY(Math.floor((py - PREVIEW_H / 2) / span));
+        const jMax = clampY(Math.floor((py + PREVIEW_H / 2) / span));
 
         const tiles: ReactNode[] = [];
         for (let j = jMin; j <= jMax; j++) {
@@ -44,7 +44,7 @@ function LocationMapPreview({ x, y }: { x: number; y: number }) {
                 tiles.push(
                     <img
                         key={`${z}-${i}-${j}`}
-                        src={tileUrl('satellite', z, i, j)}
+                        src={tileUrl('everfall', z, i, j)}
                         alt=""
                         draggable={false}
                         decoding="async"
@@ -54,8 +54,8 @@ function LocationMapPreview({ x, y }: { x: number; y: number }) {
                             const tries = Number(imgEl.dataset.retry ?? '0');
                             if (tries < 2) {
                                 imgEl.dataset.retry = String(tries + 1);
-                                const base = imgEl.src.replace(/&r=\d+$/, '');
-                                window.setTimeout(() => { imgEl.src = `${base}&r=${tries + 1}`; }, 900 * (tries + 1));
+                                const base = imgEl.src.split('?')[0];
+                                window.setTimeout(() => { imgEl.src = `${base}?r=${tries + 1}`; }, 900 * (tries + 1));
                             }
                         }}
                         // Reveal with opacity, not visibility, so a loaded image can't override the

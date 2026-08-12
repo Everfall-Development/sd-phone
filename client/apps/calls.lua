@@ -83,22 +83,18 @@ RegisterNUICallback('sd-phone:call:voiceCapabilities', function(_, cb)
     cb(voice.capabilities())
 end)
 
----Incoming call: pushes the ringing payload, then tries to bring the phone up for it.
----
----The push goes FIRST and is never gated on the open. The call session lives above the phone shell
----in the NUI, so the ring, the island and the ringtone land whether or not the phone is on screen -
----and OpenPhone refuses outright while the player is dead, swimming, phone-disabled or has another
----resource's NUI focused, which used to swallow the call entirely.
+---Incoming call: lets the tablet retain presentation when it owns the call, otherwise opens the
+---phone before sending the ringing payload. A refused phone open must not leave a hidden ringing
+---overlay behind; the server's normal timeout and missed-call path remains authoritative.
 ---@param data table incoming-call payload from the server
 RegisterNetEvent('sd-phone:client:call:incoming', function(data)
-    pushCall('sd-phone:call:incoming', data)
-
     if LocalPlayer.state.tabletOpen == true then
         lib.print.debug('[sd-phone] Incoming call retained on active tablet')
         return
     end
 
-    exports['sd-phone']:open()
+    if not exports['sd-phone']:open() then return end
+    pushCall('sd-phone:call:incoming', data)
 end)
 
 -- Call-lifecycle relays: outgoing ring-back, connect, and end push straight into the React

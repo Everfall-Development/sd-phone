@@ -1,9 +1,25 @@
--- Services app. Maps framework JOBS to "companies" the phone surfaces: a public directory
--- (locate / call / message) plus boss management of the company's shared balance and employee
--- roster. Society money + employee reads route through bridge/server/society.lua (adapts
--- ef_banking / ef_management / qb-banking / Renewed-Banking / qbx_management /
--- qb-management / esx_addonaccount).
+-- Businesses app. The stable `services` app id is retained so installed layouts continue to
+-- work, while the release surface is limited to a public directory and customer/staff messages.
 return {
+    -- The public Businesses directory is built live from ef_businesses. These
+    -- values only cover presentation/contact exceptions; they never replace
+    -- ef_businesses as the source of business identity or location.
+    DirectoryOverrides = {
+        -- ['job_name'] = {
+        --     hidden = true,
+        --     label = 'Display name',
+        --     location = 'Short location',
+        --     color = '#16B8A6',
+        --     emoji = '🏪',
+        --     canCall = true,
+        --     canMessage = true,
+        -- },
+    },
+
+    -- Emergency services are deliberately included beside the live
+    -- ef_businesses directory even though they are not business locations.
+    EmergencyCompanies = { 'police', 'ambulance' },
+
     -- ESX-ONLY fallback. On QBCore/QBox boss status is read from the grade's
     -- `isboss` flag and this is ignored. On ESX (no isboss flag) it's the minimum
     -- grade treated as a boss when a company has no own `bossGrade`.
@@ -62,6 +78,7 @@ return {
             callNumber = '911',
             bossGrade = 3,
             coords = { x = 425.1, y = -979.5, z = 30.7 },
+            emergency = true,
         },
         {
             job = 'ambulance',
@@ -73,6 +90,7 @@ return {
             callNumber = '912',
             bossGrade = 3,
             coords = { x = 307.7, y = -1433.4, z = 29.9 },
+            emergency = true,
         },
         {
             job = 'mechanic',

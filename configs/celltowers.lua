@@ -133,7 +133,7 @@ return {
         'settings', 'phone', 'apps', 'sim', 'admin', 'badges', 'compat',
         'notes', 'documents', 'photos', 'albums', 'music', 'clock', 'voice',
         'contacts', 'call', 'calls', 'messages', 'payphone', 'share', 'airshare',
-        'radio', 'cookie',
+        'cookie',
     },
 
     -- Single actions that need Thresholds.Data even though the app around them is offline-safe,
@@ -168,9 +168,9 @@ return {
         'vibez:savedPosts', 'vibez:comments', 'vibez:activity', 'vibez:counts', 'vibez:followList',
         -- Everything else that opens onto a list
         'mail:list', 'mail:savedEmails', 'darkchat:rooms', 'darkchat:notifications',
-        'cherry:state', 'cherry:thread', 'marketplace:list', 'pages:list', 'review:list',
-        'review:business', 'weazelnews:feed', 'weazelnews:view', 'stocks:market',
-        'banking:overview', 'garages:list', 'homes:list', 'services:directory', 'services:inbox',
+        'cherry:state', 'cherry:thread', 'marketplace:list', 'review:list',
+        'review:business', 'weazelnews:feed', 'banking:overview',
+        'services:directory', 'services:inbox',
         'ryde:history', 'ryde:leaderboard',
         -- Police terminal. Reads only, and `mdt` is deliberately absent from Offline above: a
         -- terminal with no signal must refuse rather than pretend, and a stale record is still

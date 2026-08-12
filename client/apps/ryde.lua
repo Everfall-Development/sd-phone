@@ -92,6 +92,7 @@ forward('offer')
 forward('offerRemoved')
 forward('ratingReceived')
 forward('peerLocation')
+forward('driverAccess')
 
 ---Relays trip updates into the NUI and drops a GPS waypoint for the driver when one is attached.
 ---@param data table { role: string, waypoint?: { x: number, y: number } } plus trip fields

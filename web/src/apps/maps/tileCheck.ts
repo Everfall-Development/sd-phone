@@ -1,7 +1,8 @@
 import { fetchNui } from '@/core/nui';
-import { TILE_SOURCES, tileUrl } from './data';
+import { MAX_TILE_ZOOM, MIN_TILE_ZOOM, TILE_SOURCES, mapTileGrid, tileUrl } from './data';
+import type { MapTileStyle } from './data';
 
-const BASE_LAYER_Z = 3;
+const BASE_LAYER_Z = MIN_TILE_ZOOM;
 
 function testTile(url: string): Promise<boolean> {
     return new Promise(resolve => {
@@ -16,21 +17,22 @@ function testTile(url: string): Promise<boolean> {
 }
 
 interface StyleReport {
-    name: 'satellite' | 'atlas';
+    name: MapTileStyle;
     base: string;
     maxZoom: number;
     deepestOk: number;
     levels: { z: number; ok: boolean }[];
 }
 
-async function checkStyle(name: 'satellite' | 'atlas'): Promise<StyleReport> {
+async function checkStyle(name: MapTileStyle): Promise<StyleReport> {
     const src = TILE_SOURCES[name];
-    const top = Math.min(9, src.maxZoom + 2);
+    const top = Math.min(MAX_TILE_ZOOM + 2, src.maxZoom + 2);
     const levels: { z: number; ok: boolean }[] = [];
     for (let z = BASE_LAYER_Z; z <= top; z++) {
-        const n = 2 ** z;
-        const c = Math.floor(n / 2);
-        levels.push({ z, ok: await testTile(tileUrl(name, z, c, c)) });
+        const grid = mapTileGrid(z);
+        const x = Math.floor(grid.columns / 2);
+        const y = Math.floor(grid.rows / 2);
+        levels.push({ z, ok: await testTile(tileUrl(name, z, x, y)) });
     }
     let deepestOk = -1;
     for (const l of levels) if (l.ok) deepestOk = l.z;
@@ -45,8 +47,7 @@ export function initTileCheck(): void {
         if (!msg || msg.action !== 'sd-phone:maps:tilecheck' || running) return;
         running = true;
         try {
-            const styles: StyleReport[] = [];
-            for (const name of ['satellite', 'atlas'] as const) styles.push(await checkStyle(name));
+            const styles: StyleReport[] = [await checkStyle('everfall')];
             await fetchNui('sd-phone:maps:tilecheckResult', { styles });
         } finally {
             running = false;

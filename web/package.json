@@ -3,10 +3,13 @@
     "private": true,
     "version": "0.9.0",
     "type": "module",
+    "packageManager": "pnpm@11.21.0",
+    "browserslist": ["Chrome 103"],
     "scripts": {
         "dev": "vite",
         "build": "tsc --noEmit && vite build",
         "build:demo": "tsc --noEmit && vite build --mode demo",
+        "compat:check": "node scripts/cef-compat-check.mjs",
         "preview": "vite preview",
         "lint": "oxlint --quiet src",
         "lint:fix": "oxlint --fix --quiet src",

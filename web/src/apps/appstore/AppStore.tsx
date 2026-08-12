@@ -38,7 +38,7 @@ function getDescriptions(): Record<string, string> {
         passwords:   t('appstore.descPasswords', 'Store your logins securely'),
         groups:      t('appstore.descGroups', 'Create and join crews'),
         birdy:       t('appstore.descBirdy', 'Short posts from around the city'),
-        services:    t('appstore.descServices', 'Hire local services'),
+        services:    t('appstore.descServices', 'Call and message local businesses'),
         pages:       t('appstore.descPages', "The city's business directory"),
         marketplace: t('appstore.descMarketplace', 'List what you sell, find what you need'),
         darkchat:    t('appstore.descDarkchat', 'Rooms with no names attached'),

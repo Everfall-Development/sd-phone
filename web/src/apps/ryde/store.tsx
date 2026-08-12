@@ -12,7 +12,7 @@ import {
 } from './data';
 import type { DriverProfile, Place, Ride, RideOffer, RideStatus, RyderState } from './data';
 import { ryde } from './rydeApi';
-import type { RydeActiveRide } from './rydeApi';
+import type { RydeActiveRide, RydeDriverAccess } from './rydeApi';
 
 resetLiveState();
 
@@ -21,6 +21,7 @@ type Tab = 'home' | 'activity' | 'driver' | 'leaderboard';
 interface RydeCtx {
     rides: Ride[];
     driver: DriverProfile;
+    driverAccess: RydeDriverAccess;
     state: RyderState;
     requests: Ride[];
     waitingCount: number;
@@ -61,6 +62,16 @@ const Ctx = createContext<RydeCtx | null>(null);
 export function useRyde(): RydeCtx { const c = useContext(Ctx); if (!c) throw new Error('useRyde'); return c; }
 
 const ACTIVE: RideStatus[] = ['finding', 'offered', 'enroute_pickup', 'arriving', 'in_progress'];
+
+function readDriverAccess(data: Partial<RydeDriverAccess>): RydeDriverAccess | null {
+    if (typeof data.driverAllowed !== 'boolean' || typeof data.duty !== 'boolean' || typeof data.policy !== 'string') return null;
+    return {
+        driverAllowed: data.driverAllowed,
+        job: typeof data.job === 'string' ? data.job : undefined,
+        duty: data.duty,
+        policy: data.policy,
+    };
+}
 
 function reqToRide(p: RydeRequestPush): Ride {
     return {
@@ -143,6 +154,11 @@ function devRequest(seed = 0): Ride {
 export function RydeProvider({ children }: { children: ReactNode }) {
     const [rides, setRides] = useState<Ride[]>(() => loadRides());
     const [driver, setDriverState] = useState<DriverProfile>(() => loadDriver());
+    const [driverAccess, setDriverAccess] = useState<RydeDriverAccess>(() => ({
+        driverAllowed: !isFiveM,
+        duty: !isFiveM,
+        policy: 'Active taxi or taxi_tuggers job, on duty',
+    }));
     const [state, setStateRaw] = useState<RyderState>(() => loadState());
     const [requests, setRequests] = useState<Ride[]>([]);
     const [waitingCount, setWaitingCount] = useState(0);
@@ -186,6 +202,8 @@ export function RydeProvider({ children }: { children: ReactNode }) {
         const driverRide = atMount.find(r => r.role === 'driver' && ACTIVE.includes(r.status));
         void ryde.sync().then(res => {
             if (!res) return;
+            const access = readDriverAccess(res);
+            if (access) setDriverAccess(access);
             let next = loadRides();
             let dirty = false;
             const replaceOrAdd = (id: string | undefined, synced: Ride) => {
@@ -307,13 +325,15 @@ export function RydeProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const becomeDriver = useCallback((car: string, plate: string, color: string) => {
+        if (isFiveM && !driverAccess.driverAllowed) return;
         commitDriver({ ...driver, enabled: true, car, plate, color: color || CAR_COLORS[0] });
-    }, [driver, commitDriver]);
+    }, [driver, driverAccess.driverAllowed, commitDriver]);
     const unregisterDriver = useCallback(() => {
         commitDriver({ ...driver, enabled: false, online: false, onlineSince: undefined });
         setRequests([]);
     }, [driver, commitDriver]);
     const setOnline = useCallback((v: boolean) => {
+        if (isFiveM && v && !driverAccess.driverAllowed) return;
         commitDriver({ ...driver, online: v, onlineSince: v ? Date.now() : undefined });
         if (!v) {
             if (!isFiveM) setWaitingCount(requestsRef.current.length);
@@ -323,6 +343,13 @@ export function RydeProvider({ children }: { children: ReactNode }) {
         }
         if (isFiveM) {
             void ryde.setOnline(true, { vehicle: driver.car, plate: driver.plate, color: driver.color }).then(res => {
+                const access = res && readDriverAccess(res);
+                if (access) setDriverAccess(access);
+                if (res && !res.driverAllowed) {
+                    commitDriver({ ...driver, online: false, onlineSince: undefined });
+                    setRequests([]);
+                    return;
+                }
                 setRequests((res?.requests ?? []).map(reqToRide));
                 if (res) setWaitingCount(res.waiting ?? res.requests?.length ?? 0);
             });
@@ -330,9 +357,10 @@ export function RydeProvider({ children }: { children: ReactNode }) {
             const n = Math.max(0, Math.min(5, waitingCountRef.current));
             setRequests(n > 0 ? Array.from({ length: n }, (_, i) => devRequest(i)) : []);
         }
-    }, [driver, commitDriver]);
+    }, [driver, driverAccess.driverAllowed, commitDriver]);
 
     const suggestPrice = useCallback((requestId: string, amount: number) => {
+        if (isFiveM && !driverAccess.driverAllowed) return;
         const req = requestsRef.current.find(r => r.id === requestId);
         if (!req) return;
         setRequests(prev => prev.filter(r => r.id !== requestId));
@@ -347,7 +375,7 @@ export function RydeProvider({ children }: { children: ReactNode }) {
                 commitRides(loadRides().map(x => (x.id === ride.id && x.status === 'offered') ? { ...x, status: 'enroute_pickup' } : x));
             }, 3500);
         }
-    }, [commitRides]);
+    }, [commitRides, driverAccess.driverAllowed]);
 
     const driverAdvance = useCallback(() => {
         const cur = loadRides();
@@ -461,9 +489,18 @@ export function RydeProvider({ children }: { children: ReactNode }) {
     useNuiEvent('sd-phone:ryde:waitingCount', useCallback((d) => {
         if (d && typeof d.count === 'number') setWaitingCount(d.count);
     }, []));
+    useNuiEvent('sd-phone:ryde:driverAccess', useCallback((d) => {
+        const access = readDriverAccess(d);
+        if (!access) return;
+        setDriverAccess(access);
+        if (!d.driverAllowed || !d.online) {
+            setDriverState(current => ({ ...current, online: false, onlineSince: undefined }));
+            setRequests([]);
+        }
+    }, []));
 
     const value: RydeCtx = {
-        rides, driver, state, requests, waitingCount, tab, activeRider, activeDriver, pendingRating,
+        rides, driver, driverAccess, state, requests, waitingCount, tab, activeRider, activeDriver, pendingRating,
         authChecked, authed, me, setAuth, accountOpen, setAccountOpen, wipeAccount,
         setTab, setPayment, setSaved, requestRide, cancelRider, acceptOffer, declineOffer, switchOffer, submitRating, skipRating,
         becomeDriver, unregisterDriver, setOnline, suggestPrice, driverAdvance, driverCancel,

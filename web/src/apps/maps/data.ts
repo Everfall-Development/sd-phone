@@ -3,19 +3,57 @@ import { newId as libNewId } from '@/lib/format';
 import { readJson, writeJson } from '@/lib/storage';
 import { ICON_KEYS } from '@/lib/waypointCode';
 
-export const WORLD = { xMin: -5355, xMax: 6167, yMin: -3833, yMax: 7688 };
+/**
+ * The phone must use the same simple CRS as the other Everfall maps. Keep
+ * these coordinates private to the renderer; every public phone contract
+ * continues to exchange GTA world `{ x, y }` values.
+ */
+export const MAP_CENTER: [number, number] = [-119.43, 58.84];
+export const MAP_SCALE = 1.421 / 100;
+export const MAP_BOUNDS = { north: 0, south: -192, west: 0, east: 128 };
+export const MAP_WIDTH = MAP_BOUNDS.east - MAP_BOUNDS.west;
+export const MAP_HEIGHT = MAP_BOUNDS.north - MAP_BOUNDS.south;
+export const TILE_SIZE = 256;
+export const MIN_TILE_ZOOM = 2;
+export const MAX_TILE_ZOOM = 7;
+
+export function gameToMap(x: number, y: number): [number, number] {
+    return [MAP_CENTER[0] + MAP_SCALE * y, MAP_CENTER[1] + MAP_SCALE * x];
+}
+
+export function mapToGame(latitude: number, longitude: number): { x: number; y: number } {
+    return {
+        x: (longitude - MAP_CENTER[1]) / MAP_SCALE,
+        y: (latitude - MAP_CENTER[0]) / MAP_SCALE,
+    };
+}
+
+export const WORLD = {
+    xMin: (MAP_BOUNDS.west - MAP_CENTER[1]) / MAP_SCALE,
+    xMax: (MAP_BOUNDS.east - MAP_CENTER[1]) / MAP_SCALE,
+    yMin: (MAP_BOUNDS.south - MAP_CENTER[0]) / MAP_SCALE,
+    yMax: (MAP_BOUNDS.north - MAP_CENTER[0]) / MAP_SCALE,
+};
 
 export function projectPct(x: number, y: number) {
+    const [latitude, longitude] = gameToMap(x, y);
     return {
-        left: ((x - WORLD.xMin) / (WORLD.xMax - WORLD.xMin)) * 100,
-        top:  ((WORLD.yMax - y) / (WORLD.yMax - WORLD.yMin)) * 100,
+        left: ((longitude - MAP_BOUNDS.west) / MAP_WIDTH) * 100,
+        top:  ((MAP_BOUNDS.north - latitude) / MAP_HEIGHT) * 100,
     };
 }
 
 export function pctToWorld(leftPct: number, topPct: number) {
+    const longitude = MAP_BOUNDS.west + (leftPct / 100) * MAP_WIDTH;
+    const latitude = MAP_BOUNDS.north - (topPct / 100) * MAP_HEIGHT;
+    return mapToGame(latitude, longitude);
+}
+
+export function mapTileGrid(z: number): { columns: number; rows: number } {
+    const scale = 2 ** z;
     return {
-        x: WORLD.xMin + (leftPct / 100) * (WORLD.xMax - WORLD.xMin),
-        y: WORLD.yMax - (topPct  / 100) * (WORLD.yMax - WORLD.yMin),
+        columns: Math.ceil((MAP_WIDTH * scale) / TILE_SIZE),
+        rows: Math.ceil((MAP_HEIGHT * scale) / TILE_SIZE),
     };
 }
 
@@ -41,69 +79,53 @@ export function timeAgo(ms?: number): string {
 }
 
 
-export type MapStyleId = 'satellite' | 'atlas';
+export type MapStyleId = 'everfall';
+export type MapTileStyle = 'everfall';
 
 export interface TileSource {
     base:    string;
-    ext:     'jpg' | 'png';
+    ext:     'png';
     maxZoom: number;
     px:      number;
 }
 
-const CDN = 'https://sd-maptiles.pages.dev';
+const TILE_BASE = 'https://files.coolgingerginger.me/tiles';
 
-export const TILE_SOURCES: Record<'satellite' | 'atlas', TileSource> = {
-    satellite: { base: CDN, ext: 'jpg', maxZoom: 6, px: 1024 },
-    atlas:     { base: CDN, ext: 'jpg', maxZoom: 5, px: 1024 },
+export const TILE_SOURCES: Record<MapTileStyle, TileSource> = {
+    everfall: { base: TILE_BASE, ext: 'png', maxZoom: MAX_TILE_ZOOM, px: TILE_SIZE },
 };
 
-export const MAX_NATIVE_PX = Math.max(
-    ...Object.values(TILE_SOURCES).map(s => (2 ** s.maxZoom) * s.px),
-);
+export const MAX_NATIVE_PX = MAP_WIDTH * 2 ** MAX_TILE_ZOOM;
+export const MAX_NATIVE_PY = MAP_HEIGHT * 2 ** MAX_TILE_ZOOM;
 
 export interface MapStyle {
     id:     MapStyleId;
     label:  string;
-    tiles:  'atlas' | 'satellite';
+    tiles:  MapTileStyle;
     filter: string;
     wash?:  string;
     bg:     string;
 }
 
-export function getMapStyles(): MapStyle[] {
-    return [
-        { id: 'satellite', label: t('maps.styleSatellite', 'Satellite'), tiles: 'satellite', filter: 'none', bg: '#0c1219' },
-        { id: 'atlas',     label: t('maps.styleAtlas', 'Atlas'),     tiles: 'atlas',     filter: 'none', bg: '#acc6e0' },
-    ];
-}
+export const MAP_STYLE: MapStyle = {
+    id: 'everfall',
+    label: t('maps.styleEverfall', 'Everfall map'),
+    tiles: 'everfall',
+    filter: 'none',
+    bg: '#0b2838',
+};
 
-const TILE_V = 5;
-
-export function tileUrl(tiles: 'atlas' | 'satellite', z: number, x: number, y: number): string {
+export function tileUrl(tiles: MapTileStyle, z: number, x: number, y: number): string {
     const s = TILE_SOURCES[tiles];
-    return `${s.base}/${tiles}/${z}/${x}/${y}.${s.ext}?v=${TILE_V}`;
+    return `${s.base}/${z}/${x}/${y}.${s.ext}`;
 }
 
-export function styleMaxZoom(tiles: 'atlas' | 'satellite'): number {
+export function styleMaxZoom(tiles: MapTileStyle): number {
     return TILE_SOURCES[tiles].maxZoom;
 }
 
-export function stylePx(tiles: 'atlas' | 'satellite'): number {
+export function stylePx(tiles: MapTileStyle): number {
     return TILE_SOURCES[tiles].px;
-}
-
-const STYLE_KEY = 'sd-phone:maps:style:v1';
-
-export function loadStyleId(): MapStyleId {
-    try {
-        const raw = window.localStorage.getItem(STYLE_KEY);
-        if (raw && getMapStyles().some(s => s.id === raw)) return raw as MapStyleId;
-    } catch { /* ignore */ }
-    return 'satellite';
-}
-
-export function saveStyleId(id: MapStyleId): void {
-    try { window.localStorage.setItem(STYLE_KEY, id); } catch { /* ignore */ }
 }
 
 

@@ -1,6 +1,11 @@
 -- Ryde app settings. The destination list shown in "Where to?" (pickup is
 -- always the rider's live position), plus the fare/payout rules.
 return {
+    -- Only players whose active framework job is listed here may drive. The value is the
+    -- minimum grade level; riders do not need either job.
+    DriverJobs           = { taxi = 0, taxi_tuggers = 0 },
+    DriverPolicy         = 'Active taxi or taxi_tuggers job, on duty',
+
     -- Saved destinations offered in the Ryde "Where to?" picker. Riders can
     -- also drop a custom pin on the map; these are just the quick-pick shortcuts.
     -- `x`/`y` are GTA world coords (same projection the Maps app uses).

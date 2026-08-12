@@ -3,7 +3,7 @@
 -- resource's tables. Each system is read via its own adapter (server export
 -- where one exists, otherwise a defensive DB query).
 return {
-    Enabled = true,
+    Enabled = false,
 
     -- 'auto' picks the first started resource from the list below. Override
     -- with an exact resource name if auto-detect guesses wrong.

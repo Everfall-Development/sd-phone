@@ -8,12 +8,13 @@ import { t } from '@/i18n';
 import { useCustomApps } from '@/stores/customAppsStore';
 import { CustomWidgetFrame, customWidgetKind, parseCustomWidgetKind } from './CustomWidgetFrame';
 import { ActivityWidget } from './ActivityWidget';
+import { BusinessesWidget } from './BusinessesWidget';
 import { ClockWidget } from './ClockWidget';
 import { ContactsWidget } from './ContactsWidget';
-import { GarageWidget } from './GarageWidget';
 import { NewsWidget } from './NewsWidget';
 import { NowPlayingWidget } from './NowPlayingWidget';
-import { StocksWidget } from './StocksWidget';
+import { QuipActivityWidget } from './QuipActivityWidget';
+import { RydeWidget } from './RydeWidget';
 import { TimersWidget } from './TimersWidget';
 import { WalletWidget } from './WalletWidget';
 import { WeatherWidget } from './WeatherWidget';
@@ -99,28 +100,36 @@ const ALL_WIDGETS: WidgetDef[] = [
         render: o => <ContactsWidget size={o.size} width={o.width} height={o.height} theme={o.theme} picks={o.picks} onPicks={o.onPicks} />,
     },
     {
-        kind: 'garage',
-        label: () => t('widgets.garage', 'Garage'),
-        sizes: ['sm', 'md', 'lg'],
-        appId: 'garages',
-        themes: true,
-        render: o => <GarageWidget size={o.size} width={o.width} height={o.height} theme={o.theme} />,
-    },
-    {
-        kind: 'stocks',
-        label: () => t('widgets.stocks', 'Stocks'),
-        sizes: ['sm', 'md', 'lg'],
-        appId: 'stocks',
-        themes: true,
-        render: o => <StocksWidget size={o.size} width={o.width} height={o.height} theme={o.theme} />,
-    },
-    {
         kind: 'news',
         label: () => t('widgets.news', 'Weazel News'),
         sizes: ['sm', 'md', 'lg'],
         appId: 'weazelnews',
         themes: true,
         render: o => <NewsWidget size={o.size} width={o.width} height={o.height} theme={o.theme} />,
+    },
+    {
+        kind: 'quipactivity',
+        label: () => t('widgets.quipActivity', 'Quip Activity'),
+        sizes: ['sm', 'md', 'lg'],
+        appId: 'birdy',
+        themes: true,
+        render: o => <QuipActivityWidget size={o.size} width={o.width} height={o.height} theme={o.theme} />,
+    },
+    {
+        kind: 'businesses',
+        label: () => t('widgets.businesses', 'Businesses'),
+        sizes: ['sm', 'md'],
+        appId: 'services',
+        themes: true,
+        render: o => <BusinessesWidget size={o.size} width={o.width} height={o.height} theme={o.theme} />,
+    },
+    {
+        kind: 'rydetrip',
+        label: () => t('widgets.ryde', 'Ryde'),
+        sizes: ['sm', 'md'],
+        appId: 'ryde',
+        themes: true,
+        render: o => <RydeWidget size={o.size} width={o.width} height={o.height} theme={o.theme} />,
     },
     {
         kind: 'timers',

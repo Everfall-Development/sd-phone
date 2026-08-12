@@ -20,14 +20,15 @@ const STAGE_PAD = 16;
 const STAGE_H = widgetPx('lg', PREVIEW_SCALE).height + STAGE_PAD * 2;
 
 export function WidgetGallery({
-    onAdd, onClose, wallpaper, lockSize,
+    availableAppIds, onAdd, onClose, wallpaper, lockSize,
 }: {
+    availableAppIds: ReadonlySet<string>;
     onAdd: (kind: string, size: WidgetSize, align: WidgetAlign, theme: WidgetTheme) => boolean;
     onClose: () => void;
     wallpaper: string;
     lockSize?: WidgetSize;
 }) {
-    const all = useWidgetCatalog();
+    const all = useWidgetCatalog().filter(def => availableAppIds.has(def.appId));
     const catalog = lockSize ? all.filter(d => d.sizes.includes(lockSize)) : all;
     const [pick, setPick] = useState<Record<string, WidgetSize>>({});
     const [alignPick, setAlignPick] = useState<Record<string, WidgetAlign>>({});

@@ -9,6 +9,13 @@ proxy('sd-phone:banking:send',     'sd-phone:server:banking:send')
 proxy('sd-phone:banking:invoices:create', 'sd-phone:server:banking:invoices:create')
 proxy('sd-phone:banking:invoices:sent',   'sd-phone:server:banking:invoices:sent')
 proxy('sd-phone:banking:invoices:cancel', 'sd-phone:server:banking:invoices:cancel')
+proxy('sd-phone:banking:invoices:received', 'sd-phone:server:banking:invoices:received')
+proxy('sd-phone:banking:invoices:pay', 'sd-phone:server:banking:invoices:pay')
+
+---Server nudge: re-pull Wallet invoices after create, cancel, payment, or settlement.
+RegisterNetEvent('sd-phone:client:services:invoices', function()
+    SendNUIMessage({ action = 'sd-phone:services:invoices' })
+end)
 
 ---Server push: another player transferred money to us; relays it to the Wallet.
 ---@param data table { amount, from } from server/banking/actions.lua

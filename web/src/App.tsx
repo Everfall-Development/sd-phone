@@ -23,6 +23,7 @@ import { asAppId, isPreviewApp, preloadAllApps, preloadApp, setPreloadPaused, ty
 import { AppSwitcher } from '@/shell/AppSwitcher';
 import { HOME_HOLD_MS, HOME_HOLD_SLOP, holdAction, swipeAction, tapAction, type HomeAction } from '@/shell/homeGesture';
 import { AppDeck, FullscreenStage, type DeckAppCtx } from '@/shell/AppDeck';
+import { publishCustomAppDeepLink } from '@/shell/customAppDeepLinks';
 import { Homescreen }  from '@/shell/Homescreen';
 import { useBadgeStore } from '@/stores/badgeStore';
 import { DEFAULT_PREF, prefFor, useNotifPrefsStore } from '@/stores/notifPrefsStore';
@@ -47,6 +48,7 @@ import { isGameClock, useGameClockStore } from '@/stores/gameClockStore';
 import { seedSessionState } from '@/hooks/useSessionState';
 import { onOpenMail, onOpenMaps, onOpenMessages, requestOpenMail } from '@/shell/deeplink';
 import { fetchNui, isFiveM } from '@/core/nui';
+import { apiData } from '@/core/api';
 import { usePhoneReset } from '@/core/phoneReset';
 import { resetAuth } from '@/stores/authStore';
 import { setMailDomain } from '@/core/accountsApi';
@@ -75,6 +77,8 @@ import { alarmsSnapshot, disableAlarm, hydrateAlarms, onTestAlarm } from '@/stor
 import { tmFinish, useTimer } from '@/stores/timerStore';
 import { isRepeating } from '@/apps/clock/data';
 import type { AlarmDef } from '@/apps/clock/data';
+import { fetchDirectory, fetchInbox } from '@/apps/services/servicesApi';
+import { ryde } from '@/apps/ryde/rydeApi';
 
 
 const SETUP_KEY_BASE = 'sd-phone:setup:v1';
@@ -450,6 +454,8 @@ function AppContent() {
         };
         setView(nextView);
         lastViewRef.current = nextView;
+        const configuredIds = new Set(nextView.apps.map(app => app.id));
+        const isAvailable = (id: string): boolean => configuredIds.has(id) || isCustomApp(id);
         // Reopen: the deck now lives ABOVE the shell and is never unmounted, so last
         // session's retained apps are still alive - we deliberately do NOT clear them,
         // which is what brings the switcher previews back exactly where you left them.
@@ -457,7 +463,21 @@ function AppContent() {
         // Reopen straight into the app the phone was holstered on when the player's Settings
         // toggle (Settings > General > Reopen Last App, default off) says so. The deck kept
         // the app alive, so this is a resume, not a launch; a SIM switch clears the memo.
-        setCurrentApp(useThemeStore.getState().reopenLastApp ? lastOpenAppRef.current : null);
+        const reopenId = lastOpenAppRef.current;
+        setCurrentApp(
+            useThemeStore.getState().reopenLastApp && reopenId && isAvailable(reopenId)
+                ? reopenId
+                : null,
+        );
+        setRecentApps(prev => prev.filter(isAvailable));
+        setRetained(prev => prev.filter(isAvailable));
+        setForegroundKeys(prev => {
+            const next = { ...prev };
+            for (const id of Object.keys(next)) {
+                if (!isAvailable(id)) delete next[id];
+            }
+            return next;
+        });
         setIsClosing(false);
         setLaunchOrigin(null);
         setSwitcherOpen(false);
@@ -628,9 +648,12 @@ function AppContent() {
     // Seeding session state only reaches an app on its FIRST mount, and the AppDeck keeps apps
     // alive, so a link handed to an already-open app was silently dropped. Anything with a live
     // deeplink channel goes through that instead, which apps consume whenever it fires.
-    const applyNotifLink = useCallback((link?: Record<string, unknown>) => {
+    const applyNotifLink = useCallback((link?: Record<string, unknown>, targetAppId?: string | null) => {
         if (!link) return;
         for (const [k, v] of Object.entries(link)) seedSessionState(k, v);
+
+        const customAppId = targetAppId?.startsWith('custom:') ? targetAppId.slice(7) : targetAppId;
+        if (customAppId && isCustomApp(customAppId)) publishCustomAppDeepLink(customAppId, link);
 
         const mail = link.mail as { folder?: string; msgId?: string; accountId?: string } | undefined;
         if (mail?.msgId) {
@@ -656,7 +679,8 @@ function AppContent() {
         const app = asAppId(id);
         if (!app) return;
         const def = view?.apps.find(a => a.id === app) ?? customDefs.find(c => c.id === app);
-        if (def && !def.base && !installedApps.has(app)) {
+        if (!def) return;
+        if (!def.base && !installedApps.has(app)) {
             const store = asAppId('appstore');
             if (store) handleOpenFromSwitcher(store, origin);
             return;
@@ -838,6 +862,45 @@ function AppContent() {
         useWidgetData.getState().setHealth(data ?? null);
     }, []));
 
+    const refreshBusinessesWidget = useCallback(() => {
+        if (!view?.apps.some(app => app.id === 'services')) {
+            useWidgetData.getState().setBusinesses([], null, null);
+            return;
+        }
+
+        const here = isFiveM
+            ? apiData<{ x: number; y: number }>('sd-phone:maps:here')
+            : Promise.resolve({ x: 195, y: -930 });
+
+        void Promise.all([fetchDirectory(), fetchInbox(), here])
+            .then(([directory, inbox, location]) => {
+                useWidgetData.getState().setBusinesses(directory.companies, inbox, location, directory.unavailable);
+            })
+            .catch(() => {
+                useWidgetData.getState().setBusinesses([], null, null, 'Unavailable');
+            });
+    }, [view]);
+
+    const refreshRydeWidget = useCallback(() => {
+        if (!view?.apps.some(app => app.id === 'ryde')) {
+            useWidgetData.getState().setRyde(null);
+            return;
+        }
+
+        void ryde.sync()
+            .then(sync => useWidgetData.getState().setRyde(sync))
+            .catch(() => useWidgetData.getState().setRyde(null));
+    }, [view]);
+
+    useNuiEvent('sd-phone:services:inbox', refreshBusinessesWidget);
+    useNuiEvent('sd-phone:services:jobsChanged', refreshBusinessesWidget);
+    useNuiEvent('sd-phone:ryde:offer', refreshRydeWidget);
+    useNuiEvent('sd-phone:ryde:offerRemoved', refreshRydeWidget);
+    useNuiEvent('sd-phone:ryde:tripUpdate', refreshRydeWidget);
+    useNuiEvent('sd-phone:ryde:requestAdded', refreshRydeWidget);
+    useNuiEvent('sd-phone:ryde:requestRemoved', refreshRydeWidget);
+    useNuiEvent('sd-phone:ryde:driverAccess', refreshRydeWidget);
+
     /**
      * Server reads for the widgets that have no push of their own.
      *
@@ -864,7 +927,9 @@ function AppContent() {
             .then(m => m.weazelFeed())
             .then(f => useWidgetData.getState().setNews(f.articles, f.ticker))
             .catch(() => {});
-    }, [homeVisible, refreshWallet]);
+        refreshBusinessesWidget();
+        refreshRydeWidget();
+    }, [homeVisible, refreshBusinessesWidget, refreshRydeWidget, refreshWallet]);
 
     // Free liveness: these ticks are already arriving whenever the Stocks app is watching, so
     // mirroring them means leaving the app does not drop you onto a frozen tile.
@@ -934,6 +999,9 @@ function AppContent() {
     currentAppRef.current = currentApp;
     useNuiEvent('sd-phone:notification', useCallback((data) => {
         const target = data.appId ?? data.app;
+        const appId = typeof target === 'string' ? asAppId(target) : null;
+        const configured = lastViewRef.current;
+        if (appId && configured && !configured.apps.some(app => app.id === appId) && !isCustomApp(appId)) return;
         if (data.quietInApp && target && target === currentAppRef.current) return;
         const pref = target ? prefFor(target) : DEFAULT_PREF;
         if (!pref.enabled) return;
@@ -992,14 +1060,14 @@ function AppContent() {
         const link = pendingLaunchLink.current;
         pendingCcApp.current = null;
         pendingLaunchLink.current = undefined;
-        applyNotifLink(link);
+        applyNotifLink(link, id);
         openAppById(id, { x: 0.5, y: 0.5 });
     }, [openAppById, applyNotifLink]);
     const openLockNotif = useCallback((item: NotificationItem) => {
         setLockNotifs(prev => prev.filter(n => n.id !== item.id));
         setLocked(false);
         const target = item.appId ?? item.app;
-        if (target) { applyNotifLink(item.link); openAppById(target, { x: 0.5, y: 0.4 }); }
+        if (target) { applyNotifLink(item.link, target); openAppById(target, { x: 0.5, y: 0.4 }); }
     }, [openAppById, applyNotifLink]);
     const dismissLockNotif = useCallback((id: string) => {
         setLockNotifs(prev => prev.filter(n => n.id !== id));
@@ -1012,7 +1080,7 @@ function AppContent() {
             pendingLaunchLink.current = data.link;
             setLaunchTrigger(n => n + 1);
         } else {
-            applyNotifLink(data.link);
+            applyNotifLink(data.link, id);
             openAppById(id, { x: 0.5, y: 0.5 });
         }
     }, [setupCompleted, applyNotifLink, openAppById]));
@@ -1627,7 +1695,7 @@ function AppContent() {
                         onOpen={(it) => {
                             removeNotif(it.id);
                             const target = it.appId ?? it.app;
-                            if (target && !showSetup) { applyNotifLink(it.link); openAppById(target, { x: 0.5, y: 0.1 }); }
+                            if (target && !showSetup) { applyNotifLink(it.link, target); openAppById(target, { x: 0.5, y: 0.1 }); }
                         }}
                     />
                 )}

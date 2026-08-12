@@ -318,7 +318,7 @@ function actions.saveProfile(src, payload)
     if type(payload.photos) == 'table' then
         for i = 1, math.min(#payload.photos, 6) do
             local url = trim(payload.photos[i])
-            if lib.string.startsWith(url, 'http') then photos[#photos + 1] = url:sub(1, 512) end
+            if url:sub(1, 4) == 'http' then photos[#photos + 1] = url:sub(1, 512) end
         end
     end
 

@@ -12,6 +12,8 @@ local settings  = require 'server.settings.store'
 local bank      = require 'server.banking.actions'
 ---@type table Ryde config (configs/ryde.lua): destinations, fare rails, driver cut, leaderboard.
 local config    = require 'configs.ryde'
+---@type table Job bridge (bridge.server.job): active job and on-duty state.
+local job       = require 'bridge.server.job'
 
 ---@type table Actions module; the table returned at end of file.
 local actions = {}
@@ -46,6 +48,58 @@ local MAX_OFFERS = 8
 
 local util = require 'server.util'
 local ok, fail = util.ok, util.fail
+
+local DRIVER_DENIED = 'Only on-duty taxi drivers can drive for Ryde.'
+
+---Resolves the caller's live driver eligibility from the active framework job and duty state.
+---@param src integer player server id
+---@return table access { driverAllowed, job, duty, policy }
+local function driverAccess(src)
+    local activeJob = job.getName(src)
+    local minGrade = activeJob and config.DriverJobs and config.DriverJobs[activeJob] or nil
+    local grade = job.getGrade(src)
+    local duty = job.getDuty(src) == true
+
+    return {
+        driverAllowed = minGrade ~= nil and grade >= minGrade and duty,
+        job = activeJob,
+        duty = duty,
+        policy = config.DriverPolicy or DRIVER_DENIED,
+    }
+end
+
+---Allows a driver-only trip transition for an eligible driver, or for the owner of a trip that
+---was already engaged before a job/duty loss. The latter is the deliberate finish-the-trip path.
+---@param src integer player server id
+---@param username string driver account username
+---@param tripId string|nil
+---@return boolean
+local function driverTransitionAllowed(src, username, tripId)
+    local access = driverAccess(src)
+    return access.driverAllowed or driverActive[username] == tripId
+end
+
+---Adds the current driver policy state to a callback payload without trusting client input.
+---@param data table
+---@param access table
+---@return table
+local function withDriverAccess(data, access)
+    data.driverAllowed = access.driverAllowed
+    data.job = access.job
+    data.duty = access.duty
+    data.policy = access.policy
+    return data
+end
+
+---Builds a compact key used to detect job/duty changes for an online driver.
+---@param access table
+---@return string
+local function accessKey(access)
+    return ('%s:%s:%s'):format(access.job or '', access.duty and '1' or '0', access.driverAllowed and '1' or '0')
+end
+
+---@type table<string, string> Last authorization key sent to each online driver.
+local driverAccessKeys = {}
 
 
 ---Coerces a client-supplied value to a finite number, rejecting non-numbers, NaN and the
@@ -156,6 +210,41 @@ local function account(src)
     acc.name  = (acc.displayName and acc.displayName ~= '') and acc.displayName or acc.username
     srcCid[src] = cid
     return acc
+end
+
+---Pushes a fresh server-owned driver authorization snapshot to the phone.
+---@param src integer player server id
+---@param access table
+---@param onlineState boolean
+---@param username string|nil
+local function pushDriverAccess(src, access, onlineState, username)
+    TriggerClientEvent(EV .. 'driverAccess', src, withDriverAccess({
+        online = onlineState,
+        active = username ~= nil and driverActive[username] ~= nil,
+    }, access))
+end
+
+---Rechecks every online driver so a job or duty change cannot leave them on the request board.
+---An already-engaged trip remains owned by its driver and can finish, but the driver is not put
+---back online automatically after the access loss.
+local function refreshOnlineDriverAccess()
+    for username, d in pairs(online) do
+        local src = srcOf(d.cid)
+        if src then
+            local access = driverAccess(src)
+            local key = accessKey(access)
+            if key ~= driverAccessKeys[username] then
+                driverAccessKeys[username] = key
+                if access.driverAllowed then
+                    pushDriverAccess(src, access, true, username)
+                else
+                    online[username] = nil
+                    pushDriverAccess(src, access, false, username)
+                    broadcastWaiting()
+                end
+            end
+        end
+    end
 end
 
 ---Resolves the caller as a rider (no Ryde account required): citizenid from src, character
@@ -372,27 +461,33 @@ function actions.setOnline(src, payload)
     local acc = account(src)
     if not acc then return fail('Sign in to Ryde first.') end
     local p = type(payload) == 'table' and payload or {}
+    local access = driverAccess(src)
 
     if p.online then
+        if not access.driverAllowed then return fail(DRIVER_DENIED) end
         local veh   = tostring(p.vehicle or 'Vehicle'):sub(1, 64)
         local plate = tostring(p.plate or ''):sub(1, 16)
         local color = tostring(p.color or '#111111'):sub(1, 16)
         store.upsertDriver(acc.username, acc.name, veh, plate, color)
         local d = store.getDriver(acc.username)
+        access = driverAccess(src)
+        if not access.driverAllowed then return fail(DRIVER_DENIED) end
         local rating = (d and d.rating_count > 0) and (d.rating_sum / d.rating_count) or 5.0
         online[acc.username] = {
             cid = acc._cid, name = acc.name,
             vehicle = veh, plate = plate, color = color, rating = rating, since = os.time() * 1000,
         }
+        driverAccessKeys[acc.username] = accessKey(access)
         local pending = {}
         for _, r in pairs(requests) do pending[#pending + 1] = publicRequest(r) end
         print(('^3[sd-phone:ryde]^0 %s went on duty (%d pending request(s) on the board)'):format(acc.name, #pending))
-        return ok({ online = true, requests = pending, waiting = #pending })
+        return ok(withDriverAccess({ online = true, requests = pending, waiting = #pending }, access))
     end
 
     if driverActive[acc.username] then return fail('Finish your current trip before going offline.') end
     online[acc.username] = nil
-    return ok({ online = false, waiting = waitingCount() })
+    driverAccessKeys[acc.username] = nil
+    return ok(withDriverAccess({ online = false, waiting = waitingCount() }, access))
 end
 
 ---Returns how many riders are waiting right now, for any signed-in account. Read-only.
@@ -411,10 +506,13 @@ end
 function actions.requestsBoard(src)
     local acc = account(src)
     if not acc then return fail('Sign in to Ryde first.') end
-    if not online[acc.username] then return ok({ requests = {} }) end
+    local access = driverAccess(src)
+    if not access.driverAllowed or not online[acc.username] then
+        return ok(withDriverAccess({ requests = {} }, access))
+    end
     local pending = {}
     for _, r in pairs(requests) do pending[#pending + 1] = publicRequest(r) end
-    return ok({ requests = pending })
+    return ok(withDriverAccess({ requests = pending }, access))
 end
 
 ---Driver bids on a pending request by quoting a fare, creating an 'offered' trip; the fare is
@@ -425,6 +523,8 @@ end
 function actions.accept(src, payload)
     local acc = account(src)
     if not acc then return fail('Sign in to Ryde first.') end
+    local access = driverAccess(src)
+    if not access.driverAllowed then return fail(DRIVER_DENIED) end
     if not online[acc.username] then return fail('Go online to accept rides.') end
     if driverActive[acc.username] then return fail('You already have an active trip.') end
 
@@ -441,6 +541,8 @@ function actions.accept(src, payload)
     local drv = online[acc.username]
     local driverNumber = settings.ensurePhoneNumber(acc._cid)
     local riderNumber  = settings.ensurePhoneNumber(req.riderCid)
+    access = driverAccess(src)
+    if not access.driverAllowed then return fail(DRIVER_DENIED) end
     if not online[acc.username] then return fail('Go online to accept rides.') end
     if driverActive[acc.username] then return fail('You already have an active trip.') end
     if not requests[req.id] then return fail('That ride is no longer available.') end
@@ -480,6 +582,7 @@ function actions.tripStatus(src, payload)
     local p = type(payload) == 'table' and payload or {}
     local trip = p.tripId and trips[p.tripId] or nil
     if not (trip and trip.driverUsername == acc.username) then return fail('No active trip.') end
+    if not driverTransitionAllowed(src, acc.username, trip.id) then return fail(DRIVER_DENIED) end
     if trip.status == 'offered' then return fail('No active trip.') end
 
     local nextStatus = p.status
@@ -511,6 +614,7 @@ function actions.sameVehicle(src, payload)
     local p = type(payload) == 'table' and payload or {}
     local trip = p.tripId and trips[p.tripId] or nil
     if not (trip and trip.driverUsername == acc.username) then return fail('No active trip.') end
+    if not driverTransitionAllowed(src, acc.username, trip.id) then return fail(DRIVER_DENIED) end
     return ok({ same = inSameVehicle(trip) })
 end
 
@@ -525,6 +629,7 @@ function actions.complete(src, payload)
     local p = type(payload) == 'table' and payload or {}
     local trip = p.tripId and trips[p.tripId] or nil
     if not (trip and trip.driverUsername == acc.username) then return fail('No active trip.') end
+    if not driverTransitionAllowed(src, acc.username, trip.id) then return fail(DRIVER_DENIED) end
     if trip.status ~= 'in_progress' then return fail('Pick up your rider before completing the trip.') end
     if not withinOf(srcOf(trip.driverCid), trip.dropoff.x, trip.dropoff.y, 250.0) then
         return fail('Drive to the drop-off to complete the trip.')
@@ -597,6 +702,7 @@ function actions.cancel(src)
     local drvId = acc and driverActive[acc.username] or nil
     local trip  = drvId and trips[drvId] or nil
     if trip then
+        if not driverTransitionAllowed(src, acc.username, trip.id) then return fail(DRIVER_DENIED) end
         if trip.status == 'offered' then
             dropOffer(trip)
             pushTo(trip.riderCid, 'offerRemoved', { id = trip.id, requestId = trip.requestId })
@@ -739,12 +845,13 @@ function actions.sync(src)
         local row = store.latestRiderRide(cid)
         if row then lastEnded = { id = row.id, status = row.status, fare = tonumber(row.fare) or 0 } end
     end
+    local access = driverAccess(src)
     local board
-    if acc and online[acc.username] then
+    if acc and access.driverAllowed and online[acc.username] then
         board = {}
         for _, r in pairs(requests) do board[#board + 1] = publicRequest(r) end
     end
-    return ok({ rider = rider, driver = driver, lastEnded = lastEnded, requests = board })
+    return ok(withDriverAccess({ rider = rider, driver = driver, lastEnded = lastEnded, requests = board }, access))
 end
 
 ---Starts/stops the live peer-location stream while the caller looks at a trip map; only the
@@ -761,6 +868,7 @@ function actions.watchTrip(src, payload)
     local acc = account(src)
     local isRider  = trip.riderCid == cid
     local isDriver = acc and trip.driverUsername == acc.username
+    if isDriver and not driverTransitionAllowed(src, acc.username, trip.id) then return fail(DRIVER_DENIED) end
     if not (isRider or isDriver) then return fail('Not your trip.') end
     tripViewers[src] = { tripId = p.tripId, role = isDriver and 'driver' or 'rider' }
     return ok({})
@@ -773,6 +881,7 @@ CreateThread(function()
 
     while true do
         Wait(500)
+        refreshOnlineDriverAccess()
         for vsrc, w in pairs(tripViewers) do
             if not GetPlayerName(vsrc) then
                 tripViewers[vsrc] = nil
@@ -851,8 +960,9 @@ function actions.me(src)
     local acc = account(src)
     if not acc then return fail('Sign in to Ryde first.') end
     local d = store.getDriver(acc.username)
+    local access = driverAccess(src)
     local rating = (d and d.rating_count > 0) and (d.rating_sum / d.rating_count) or 5.0
-    return ok({
+    return ok(withDriverAccess({
         username = acc.username,
         name     = acc.name,
         driver   = d and {
@@ -862,7 +972,7 @@ function actions.me(src)
         } or nil,
         online = online[acc.username] ~= nil,
         active = riderActive[acc._cid] or driverActive[acc.username] or nil,
-    })
+    }, access))
 end
 
 ---Permanently deletes the caller's own Ryde account: pulls them off duty, withdraws an
@@ -893,13 +1003,14 @@ end
 ---Client-facing slice of configs/ryde.lua: quick-pick destinations, the driver's cut, and the
 ---leaderboard weighting. Read-only.
 ---@return table result
-function actions.config()
-    return ok({
+function actions.config(src)
+    local access = driverAccess(src)
+    return ok(withDriverAccess({
         locations    = config.Locations or {},
         driverCut    = config.DriverCut or 1.0,
         leaderPrior  = config.LeaderboardPriorRating or 4.5,
         leaderWeight = config.LeaderboardWeight or 10,
-    })
+    }, access))
 end
 
 -- DEV/TEST synthetic driver cards for /rydeoffer.
@@ -953,7 +1064,11 @@ function actions.onPlayerDropped(src)
     tripViewers[src] = nil
     if not cid then return end
     for username, d in pairs(online) do
-        if d.cid == cid then online[username] = nil; break end
+        if d.cid == cid then
+            online[username] = nil
+            driverAccessKeys[username] = nil
+            break
+        end
     end
     for id, r in pairs(requests) do
         if r.riderCid == cid then

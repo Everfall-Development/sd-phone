@@ -6,8 +6,6 @@ local messageStore   = require 'server.messages.store'
 local contactStore   = require 'server.contacts.store'
 ---@type table Mail persistence layer (server.mail.store): inbox unread counts.
 local mailStore      = require 'server.mail.store'
----@type table Groups persistence layer (server.groups.store): pending-invite counts.
-local groupStore     = require 'server.groups.store'
 ---@type table App-accounts persistence layer (server.accounts.store): per-app session lookups.
 local acctStore      = require 'server.accounts.store'
 ---@type table Photogram persistence layer (server.photogram.store): notification/DM counts.
@@ -18,6 +16,8 @@ local vibezStore     = require 'server.vibez.store'
 local birdyStore     = require 'server.birdy.store'
 ---@type table Shared server helpers (server.util): the disconnect sweep hook.
 local util           = require 'server.util'
+---@type table|nil Groups persistence layer (server.groups.store): pending-invite counts.
+local groupStore     = util.appEnabled('groups') and require 'server.groups.store' or nil
 
 ---@type table Badges module; the table returned at end of file.
 local badges = {}
@@ -59,7 +59,10 @@ local counters = {
     messages  = function(cid) return messageStore.unreadCount(cid) end,
     phone     = function(cid) return contactStore.unreadMissedCount(cid) end,
     mail      = function(cid) return mailStore.unreadCount(cid) end,
-    groups    = function(cid) return groupStore.pendingInviteCount(cid) end,
+    groups    = function(cid)
+        if not groupStore then return 0 end
+        return groupStore.pendingInviteCount(cid)
+    end,
     photogram = photogramCount,
     vibez     = vibezCount,
     birdy     = birdyCount,

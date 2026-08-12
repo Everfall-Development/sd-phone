@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
 
 import { fetchNui } from '@/core/nui';
@@ -51,14 +51,14 @@ export function ServiceMessagesTab({ inbox, loaded, onInboxChange, onMarkRead }:
     const scopeRef = useReanimateOnChange<HTMLDivElement>('animate-swipe-in-left', scope);
     const openThread = openKey ? threads.find(t => t.key === openKey) ?? null : null;
 
-    const openLen = openThread?.messages.length ?? 0;
-    useEffect(() => {
-        if (openKey) onMarkRead(scope, openKey);
-    }, [openKey, openLen, scope, onMarkRead]);
+    function openThreadByKey(key: string) {
+        onMarkRead(scope, key);
+        setOpenKey(key);
+    }
 
     return (
         <div className="relative flex min-h-0 flex-1 flex-col">
-            <h1 className="px-5 pb-2 pt-1 text-[34px] font-bold tracking-tight text-black dark:text-white">{t('services.messages', 'Messages')}</h1>
+            <h1 className="px-5 pb-2 pt-1 text-[34px] font-bold tracking-tight text-black dark:text-white">{t('services.inbox', 'Inbox')}</h1>
 
             {inbox.hasJob && (
                 <div className="px-4 pb-3">
@@ -77,12 +77,12 @@ export function ServiceMessagesTab({ inbox, loaded, onInboxChange, onMarkRead }:
             <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar px-4 pb-6">
                 <div ref={scopeRef}>
                     {!loaded ? null : threads.length === 0 ? (
-                        <EmptyState icon={MessageSquare} title={t('services.noMessages', 'No Messages')} subtitle={t('services.noMessagesSubtitle', 'Messages with companies will appear here.')} />
+                        <EmptyState icon={MessageSquare} title={t('services.noMessages', 'No Messages')} />
                     ) : (
                         <div className="overflow-hidden rounded-[12px] bg-surface">
                             {threads.map((t, i) => (
                                 <div key={t.key}>
-                                    <ThreadRow thread={t} scope={scope} onOpen={() => setOpenKey(t.key)} />
+                                    <ThreadRow thread={t} scope={scope} onOpen={() => openThreadByKey(t.key)} />
                                     {i < threads.length - 1 && (
                                         <div className="pointer-events-none bg-black/10 dark:bg-white/10" style={{ height: '0.5px' }} />
                                     )}

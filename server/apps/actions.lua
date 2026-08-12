@@ -18,7 +18,7 @@ local ok, fail = util.ok, util.fail
 ---@type table<string, boolean> Set of app ids a player may install/uninstall.
 local DOWNLOADABLE = {}
 for _, app in ipairs(config.Apps.Apps or {}) do
-    if app.id and app.base ~= true and app.enabled ~= false then DOWNLOADABLE[app.id] = true end
+    if app.id and app.base ~= true and util.appEnabled(app.id) then DOWNLOADABLE[app.id] = true end
 end
 
 -- Apps pinned to one Wi-Fi network by `wifi` in configs/apps.lua. The ssid is resolved once here

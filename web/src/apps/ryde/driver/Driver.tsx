@@ -22,8 +22,29 @@ export function Driver() {
     const g = useRyde();
     if (!g.authChecked) return <div className="absolute inset-0 bg-base" />;
     if (!g.authed) return <SignedOut />;
+    if (!g.driverAccess.driverAllowed && !g.activeDriver) return <DriverUnavailable />;
     if (!g.driver.enabled) return <Signup />;
     return <Dashboard />;
+}
+
+function DriverUnavailable() {
+    const g = useRyde();
+    return (
+        <div className="absolute inset-0 flex flex-col bg-base font-sf">
+            <div className="shrink-0 px-5 pb-2" style={{ paddingTop: 'calc(var(--safe-top) + 10px)' }}>
+                <h1 className="text-[34px] font-bold tracking-tight text-black dark:text-white">{t('ryde.drive', 'Drive')}</h1>
+            </div>
+            <div className="flex flex-1 flex-col items-center justify-center px-10 pb-16 text-center">
+                <Car className="h-12 w-12 text-black/35 dark:text-white/35" strokeWidth={1.7} />
+                <p className="mt-5 text-[23px] font-extrabold tracking-tight text-black dark:text-white">
+                    {t('ryde.driverAccessRequired', 'Driver access required')}
+                </p>
+                <p className="mt-2 max-w-[280px] text-[16px] font-medium leading-snug text-black/55 dark:text-white/55">
+                    {g.driverAccess.policy}
+                </p>
+            </div>
+        </div>
+    );
 }
 
 function SignedOut() {

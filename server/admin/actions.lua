@@ -35,7 +35,7 @@ local DOWNLOADABLE = {}
 ---@type table[] UI list of downloadable apps { id, label }.
 local DOWNLOADABLE_LIST = {}
 for _, app in ipairs(config.Apps.Apps or {}) do
-    if app.id and app.base ~= true and app.enabled ~= false then
+    if app.id and app.base ~= true and util.appEnabled(app.id) then
         DOWNLOADABLE[app.id] = true
         DOWNLOADABLE_LIST[#DOWNLOADABLE_LIST + 1] = { id = app.id, label = app.label or app.id }
     end

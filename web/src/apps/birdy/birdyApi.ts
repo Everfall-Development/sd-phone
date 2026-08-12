@@ -103,6 +103,12 @@ export async function apiNotifications(): Promise<BirdyNotification[]> {
     return (await call<{ notifications: BirdyNotification[] }>('sd-phone:birdy:notifications'))?.notifications ?? [];
 }
 
+/** Reads the same activity list without marking notifications seen; homescreen widgets use this. */
+export async function apiNotificationPreview(): Promise<BirdyNotification[]> {
+    if (!isFiveM) return SEED_NOTIFICATIONS;
+    return (await call<{ notifications: BirdyNotification[] }>('sd-phone:birdy:notifications', { markSeen: false }))?.notifications ?? [];
+}
+
 export async function apiDmList(): Promise<BirdyConversation[]> {
     if (!isFiveM) return DEV_DMS;
     return (await call<{ conversations: BirdyConversation[] }>('sd-phone:birdy:dmList'))?.conversations ?? [];

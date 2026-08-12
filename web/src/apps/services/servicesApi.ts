@@ -1,5 +1,5 @@
 import { fetchNui, isFiveM } from '@/core/nui';
-import { COMPANIES, EMPLOYEES, COMPANY_BALANCE, type Company, type Employee } from './data';
+import { COMPANIES, type Company, type Employee } from './data';
 import { t } from '@/i18n';
 import { apiData, type Envelope } from '@/core/api';
 
@@ -23,6 +23,7 @@ export interface MyCompany {
 
 export interface Directory {
     companies:  Company[];
+    unavailable?: string;
     myCompany?: MyCompany | null;
     multijob?:  boolean;
     invoicesEnabled?: boolean;
@@ -33,35 +34,19 @@ interface MutResult { myCompany?: MyCompany | null }
 
 export type ServiceResult = Envelope<MutResult>;
 
-const DEV_MY_COMPANY: MyCompany = {
-    job:       'police',
-    label:     'Police',
-    isCompany: true,
-    isBoss:    true,
-    available: true,
-    duty:      true,
-    jobCalls:  true,
-    jobMessages: true,
-    myGrade:   3,
-    balance:   COMPANY_BALANCE,
-    grades: [
-        { level: 0, label: 'Recruit' }, { level: 1, label: 'Officer' },
-        { level: 2, label: 'Sergeant' }, { level: 3, label: 'Lieutenant' },
-    ],
-    employees: EMPLOYEES,
-};
-
-const DEV_DIRECTORY: Directory = { companies: COMPANIES, myCompany: DEV_MY_COMPANY, multijob: true, invoicesEnabled: true, pendingOffers: 1 };
+const DEV_DIRECTORY: Directory = { companies: COMPANIES };
 
 export async function fetchDirectory(): Promise<Directory> {
     if (!isFiveM) return DEV_DIRECTORY;
-    return (await apiData<Directory>('sd-phone:services:directory')) ?? { companies: [] };
+    const response = await fetchNui<Envelope<Directory>>('sd-phone:services:directory');
+    if (response?.success && response.data) return response.data;
+    return { companies: [], unavailable: response?.message ?? t('services.unavailable', 'Businesses are unavailable right now.') };
 }
 
 async function mutate(event: string, payload?: unknown): Promise<ServiceResult> {
-    if (!isFiveM) return { success: true, data: { myCompany: DEV_MY_COMPANY } };
-    return (await fetchNui<ServiceResult>(event, payload))
-        ?? { success: false, message: t('services.noResponse', 'No response from server') };
+    void event;
+    void payload;
+    return { success: false, message: t('services.unavailable', 'This feature is unavailable.') };
 }
 
 export const setDuty        = (on: boolean)             => mutate('sd-phone:services:setDuty', { on });
@@ -172,29 +157,15 @@ export interface JobInvite {
 }
 export interface JobsView { multijob: boolean; jobs: SavedJob[]; invites: JobInvite[]; max: number }
 
-const DEV_JOBS: JobsView = {
-    multijob: true,
-    max: 5,
-    jobs: [
-        { job: 'police',    label: 'Police',    grade: 3, gradeLabel: 'Lieutenant', active: true },
-        { job: 'mechanic',  label: 'Mechanic',  grade: 1, gradeLabel: 'Apprentice' },
-        { job: 'ambulance', label: 'Ambulance', grade: 0, gradeLabel: 'Trainee' },
-    ],
-    invites: [
-        { id: 'd1', job: 'taxi', label: 'Taxi', grade: 0, gradeLabel: 'Driver', from: 'Tom Benson' },
-    ],
-};
-
 export async function fetchJobs(): Promise<JobsView> {
-    if (!isFiveM) return DEV_JOBS;
-    return (await apiData<JobsView>('sd-phone:services:listJobs')) ?? { multijob: false, jobs: [], invites: [], max: 0 };
+    return { multijob: false, jobs: [], invites: [], max: 0 };
 }
 
 export type JobsResult = Envelope<JobsView>;
 async function jobsMutate(event: string, payload?: unknown): Promise<JobsResult> {
-    if (!isFiveM) return { success: true, data: DEV_JOBS };
-    return (await fetchNui<JobsResult>(event, payload))
-        ?? { success: false, message: t('services.noResponse', 'No response from server') };
+    void event;
+    void payload;
+    return { success: false, message: t('services.unavailable', 'This feature is unavailable.') };
 }
 
 export const switchJob     = (job: string) => jobsMutate('sd-phone:services:switchJob', { job });
@@ -233,12 +204,6 @@ export interface ReceivedInvoice {
     ts:        number;
 }
 
-const DEV_SENT_INVOICES: SentInvoice[] = [
-    { id: 's1', amount: 1200, note: 'Repair · engine rebuild', status: 'pending', toName: 'Maya Lopez',   toNumber: '3105550199', from: 'Sam Nicol', ts: Date.now() - 300_000 },
-    { id: 's2', amount: 450,  note: 'Tow fee',                 status: 'paid',    toName: 'Ryan Carter',  toNumber: '3105550148', from: 'Sam Nicol', ts: Date.now() - 3_600_000, paidAt: Date.now() - 3_000_000 },
-    { id: 's3', amount: 800,  note: '',                        status: 'cancelled', toName: 'John Doe',   toNumber: '5551234',    from: 'Sam Nicol', ts: Date.now() - 7_200_000 },
-];
-
 const DEV_RECEIVED_INVOICES: ReceivedInvoice[] = [
     { id: 'r1', job: 'mechanic', label: 'Mechanic', color: '#3A3A3C', emoji: '⚙️', amount: 1200, note: 'Repair · engine rebuild', status: 'pending', from: 'Tommy V', ts: Date.now() - 240_000 },
     { id: 'r2', personal: true, label: '(310) 555-0199', fromNumber: '3105550199', color: '#0A84FF', emoji: '🧾', amount: 250, note: 'Dinner split', status: 'pending', from: '', ts: Date.now() - 900_000 },
@@ -247,33 +212,26 @@ const DEV_RECEIVED_INVOICES: ReceivedInvoice[] = [
 ];
 
 export async function fetchSentInvoices(): Promise<SentInvoice[]> {
-    if (!isFiveM) return DEV_SENT_INVOICES;
-    return (await apiData<{ invoices: SentInvoice[] }>('sd-phone:services:invoices:list'))?.invoices ?? [];
+    return [];
 }
 
 export async function fetchReceivedInvoices(): Promise<ReceivedInvoice[]> {
     if (!isFiveM) return DEV_RECEIVED_INVOICES;
-    return (await apiData<{ invoices: ReceivedInvoice[] }>('sd-phone:services:invoices:received'))?.invoices ?? [];
+    return (await apiData<{ invoices: ReceivedInvoice[] }>('sd-phone:banking:invoices:received'))?.invoices ?? [];
 }
 
 export type SentInvoicesResult = Envelope<{ invoices: SentInvoice[] }>;
 
 export async function createInvoice(target: { number?: string; serverId?: number }, amount: number, note: string): Promise<SentInvoicesResult> {
-    if (!isFiveM) {
-        DEV_SENT_INVOICES.unshift({
-            id: 's-' + Date.now(), amount, note, status: 'pending',
-            toName: target.number ?? `ID ${target.serverId ?? 0}`, toNumber: target.number ?? '', from: 'Sam Nicol', ts: Date.now(),
-        });
-        return { success: true, data: { invoices: [...DEV_SENT_INVOICES] } };
-    }
-    return (await fetchNui<SentInvoicesResult>('sd-phone:services:invoices:create', { number: target.number, serverId: target.serverId, amount, note }))
-        ?? { success: false, message: t('services.noResponse', 'No response from server') };
+    void target;
+    void amount;
+    void note;
+    return { success: false, message: t('services.unavailable', 'This feature is unavailable.') };
 }
 
 export async function cancelInvoice(id: string): Promise<SentInvoicesResult> {
-    if (!isFiveM) return { success: true, data: { invoices: DEV_SENT_INVOICES.filter(i => i.id !== id) } };
-    return (await fetchNui<SentInvoicesResult>('sd-phone:services:invoices:cancel', { id }))
-        ?? { success: false, message: t('services.noResponse', 'No response from server') };
+    void id;
+    return { success: false, message: t('services.unavailable', 'This feature is unavailable.') };
 }
 
 export type PayInvoiceResult = Envelope<{ balance: number; invoices: ReceivedInvoice[] }>;
@@ -284,6 +242,6 @@ export async function payInvoice(id: string): Promise<PayInvoiceResult> {
         if (inv) inv.status = 'paid';
         return { success: true, data: { balance: 0, invoices: [...DEV_RECEIVED_INVOICES] } };
     }
-    return (await fetchNui<PayInvoiceResult>('sd-phone:services:invoices:pay', { id }))
+    return (await fetchNui<PayInvoiceResult>('sd-phone:banking:invoices:pay', { id }))
         ?? { success: false, message: t('services.noResponse', 'No response from server') };
 }

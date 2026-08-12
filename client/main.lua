@@ -6,6 +6,8 @@ local companion = require 'client.companion'
 local config = require 'configs.config'
 ---@type table Notify bridge (bridge.client.notify): backend-agnostic on-screen toasts.
 local notify = require 'bridge.client.notify'
+---@type table Authoritative client app availability gate and disabled NUI callback refusals.
+local appgate = require 'client.appgate'
 
 -- Apps disabled in configs/apps.lua never reach the NUI, so neither the home screen nor the
 -- App Store can show them. Built once - the catalog is static per boot.
@@ -16,9 +18,9 @@ local ENABLED_DOCK = {}
 do
     local ids = {}
     for _, app in ipairs(config.Apps.Apps or {}) do
-        if app.enabled ~= false then
+        if app.id and appgate.enabled(app.id) then
             ENABLED_APPS[#ENABLED_APPS + 1] = app
-            if app.id then ids[app.id] = true end
+            ids[app.id] = true
         end
     end
     for _, id in ipairs(config.Apps.Dock or {}) do
@@ -119,7 +121,7 @@ local gameclock = require 'client.gameclock'
 
 -- Loaded for side effects: each app module registers its own NUI callbacks, net events and
 -- server proxies.
-require 'client.apps.groups'
+if appgate.enabled('groups') then require 'client.apps.groups' end
 require 'client.apps.health'
 require 'client.apps.mail'
 require 'client.apps.messages'
@@ -131,10 +133,10 @@ require 'client.apps.contacts'
 require 'client.apps.appstore'
 require 'client.apps.calls'
 require 'client.apps.gifs'
-require 'client.apps.garages'
+if appgate.enabled('garages') then require 'client.apps.garages' end
 require 'client.apps.darkchat'
 require 'client.apps.marketplace'
-require 'client.apps.pages'
+if appgate.enabled('pages') then require 'client.apps.pages' end
 require 'client.apps.review'
 require 'client.apps.weazelnews'
 require 'client.apps.banking'
@@ -146,7 +148,7 @@ require 'client.apps.notifications'
 require 'client.apps.notes'
 require 'client.apps.calendar'
 require 'client.apps.documents'
-require 'client.apps.homes'
+if appgate.enabled('homes') then require 'client.apps.homes' end
 require 'client.apps.maps'
 require 'client.apps.compass'
 require 'client.apps.findfriends'
@@ -158,10 +160,10 @@ require 'client.apps.streaks'
 require 'client.apps.mdt'
 require 'client.apps.racing'
 require 'client.apps.ryde'
-require 'client.apps.radio'
+if appgate.enabled('radio') then require 'client.apps.radio' end
 require 'client.apps.clock'
 require 'client.apps.cookie'
-require 'client.apps.stocks'
+if appgate.enabled('stocks') then require 'client.apps.stocks' end
 require 'client.apps.games'
 require 'client.apps.settings'
 require 'client.apps.sim'
@@ -426,12 +428,12 @@ end)
 ---weather snapshot plus the session-start timestamp. Refuses while another interface is focused,
 ---or while the player is dead, swimming, or phone-disabled.
 local function OpenPhone()
-    if phoneState.open then return end
-    if IsNuiFocused() and not companion.companionOpen then return end
+    if phoneState.open then return true end
+    if IsNuiFocused() and not companion.companionOpen then return false end
 
     if phoneDisabled then
         notify.show({ description = 'You can\'t use your phone right now.', type = 'error' })
-        return
+        return false
     end
 
     local visibleAppList, visibleDock = visibleApps()
@@ -440,11 +442,11 @@ local function OpenPhone()
 
     if config.Phone.BlockWhileDead and IsEntityDead(ped) then
         notify.show({ description = 'You can\'t use your phone right now.', type = 'error' })
-        return
+        return false
     end
-    if config.Phone.BlockWhileSwimming and IsPedSwimming(ped) then
+    if config.Phone.BlockWhileSwimming and IsPedSwimming(ped) and not IsPedInAnyBoat(ped) then
         notify.show({ description = 'You can\'t use your phone while swimming.', type = 'error' })
-        return
+        return false
     end
 
     -- One device at a time: a companion holding the screen gives it up here, so focus, the
@@ -517,6 +519,7 @@ local function OpenPhone()
     -- follow-up, so the round-trip never gates the reveal. The NUI paints instantly from its own
     -- fallbacks and reconciles when this lands.
     CreateThread(PushInstalledApps)
+    return true
 end
 
 ---Fetches the acting profile's installed apps + home layout and pushes them into the open NUI.
@@ -755,8 +758,7 @@ end)
 ---live call.
 ---@param cb fun(result: table) NUI response
 RegisterNUICallback('sd-phone:requestOpen', function(_, cb)
-    OpenPhone()
-    cb({ ok = true })
+    cb({ ok = OpenPhone() })
 end)
 
 ---React to Lua: a text field gained or lost focus. Full typing releases keep-input so keys
@@ -776,7 +778,12 @@ end)
 ---@param data table|nil { id: string }
 ---@param cb fun(result: table) NUI response
 RegisterNUICallback('sd-phone:openApp', function(data, cb)
-    debugPrint('openApp:', data and data.id or '?')
+    local appId = type(data) == 'table' and data.id or nil
+    debugPrint('openApp:', appId or '?')
+    if type(appId) == 'string' and not appgate.enabled(appId) then
+        cb(appgate.disabledResult())
+        return
+    end
     cb({ ok = true })
 end)
 
@@ -924,6 +931,7 @@ end
 ---@return boolean accepted true once the launch has been handed to the UI
 local function OpenApp(appId, link)
     if type(appId) ~= 'string' or appId == '' then return false end
+    if not appgate.enabled(appId) then return false end
     if link ~= nil and type(link) ~= 'table' then return false end
     if not phoneState.open then
         OpenPhone()

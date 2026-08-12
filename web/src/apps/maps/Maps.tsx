@@ -27,8 +27,23 @@ import type { Friend } from '@/apps/findfriends/data';
 import { decodeWaypoint, encodeWaypoint } from '@/lib/waypointCode';
 import { takeMapsTarget } from '@/shell/deeplink';
 import { fetchDirectory } from '@/apps/services/servicesApi';
-import type { Company } from '@/apps/services/data';
 import { t } from '@/i18n';
+
+interface MapsCompany {
+    id:         string;
+    name:       string;
+    location:   string;
+    category:   string;
+    color:      string;
+    emoji?:     string;
+    iconUrl?:   string;
+    canCall:    boolean;
+    canMessage: boolean;
+    emergency:  boolean;
+    status:     'open' | 'closed';
+    coords?:    { x: number; y: number; z?: number };
+    onDuty?:    boolean;
+}
 
 const ICONS: Record<string, LucideIcon> = {
     MapPin, Home, Star, Flag, Skull, DollarSign,
@@ -56,10 +71,10 @@ export function Maps({ onClose }: { onClose: () => void }) {
     const [selectedCompany, setSelectedCompany] = useSessionState<string | null>('maps:selectedCompany', null);
     const mapRef = useRef<MapViewHandle>(null);
 
-    const [companies, setCompanies] = useState<Company[]>([]);
+    const [companies, setCompanies] = useState<MapsCompany[]>([]);
     useEffect(() => {
         let alive = true;
-        void fetchDirectory().then(d => { if (alive) setCompanies((d.companies ?? []).filter(c => c.coords)); });
+        void fetchDirectory().then(d => { if (alive) setCompanies(d.companies ?? []); });
         return () => { alive = false; };
     }, []);
 
@@ -230,7 +245,7 @@ export function Maps({ onClose }: { onClose: () => void }) {
         setSelected(m.id);
         mapRef.current?.centerOnWorld(m.x, m.y);
     }
-    function focusCompany(c: Company) {
+    function focusCompany(c: MapsCompany) {
         setSelectedCompany(c.id);
     }
     function setWaypoint(m: MapMarker) {
@@ -271,6 +286,7 @@ export function Maps({ onClose }: { onClose: () => void }) {
                                 y={c.coords.y}
                                 color={c.color}
                                 emoji={c.emoji}
+                                iconUrl={c.iconUrl}
                                 label={c.name}
                                 interactive={mapLayer === 'companies'}
                                 selected={selectedCompany === c.id}
@@ -477,7 +493,9 @@ export function Maps({ onClose }: { onClose: () => void }) {
                                             onClick={() => focusCompany(c)}
                                             className="flex min-w-0 flex-1 items-center gap-3.5 text-left"
                                         >
-                                            <span className="flex h-[56px] w-[56px] shrink-0 items-center justify-center rounded-full text-[28px] leading-none shadow-sm" style={{ background: c.color }}>{c.emoji}</span>
+                                            <span className="flex h-[56px] w-[56px] shrink-0 items-center justify-center overflow-hidden rounded-full text-[28px] leading-none shadow-sm" style={{ background: c.color }}>
+                                                {c.iconUrl ? <img src={c.iconUrl} alt="" className="h-full w-full object-cover" /> : c.emoji}
+                                            </span>
                                             <span className="flex min-w-0 flex-col leading-tight">
                                                 <span className="truncate text-[21px] font-semibold text-black dark:text-white">{c.name}</span>
                                                 <span className="mt-[2px] truncate text-[16px] font-medium text-ios-gray">{c.location}</span>
@@ -689,8 +707,8 @@ function MarkerPin({ m, selected, interactive, onSelect, drop = false }: {
     );
 }
 
-function CompanyPin({ x, y, color, emoji, label, interactive, selected, onFocus }: {
-    x: number; y: number; color: string; emoji: string; label: string;
+function CompanyPin({ x, y, color, emoji, iconUrl, label, interactive, selected, onFocus }: {
+    x: number; y: number; color: string; emoji?: string; iconUrl?: string; label: string;
     interactive: boolean; selected: boolean; onFocus: () => void;
 }) {
     const style = usePinStyle(x, y);
@@ -716,7 +734,9 @@ function CompanyPin({ x, y, color, emoji, label, interactive, selected, onFocus 
                         className="flex items-center justify-center overflow-hidden rounded-full"
                         style={{ width: 30, height: 30, background: color, border: '2px solid #fff', position: 'relative', zIndex: 1 }}
                     >
-                        <span style={{ fontSize: 17, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>{emoji}</span>
+                        {iconUrl ? <img src={iconUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (
+                            <span style={{ fontSize: 17, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>{emoji}</span>
+                        )}
                     </div>
                     <div style={{
                         width: 0, height: 0, marginTop: -4,

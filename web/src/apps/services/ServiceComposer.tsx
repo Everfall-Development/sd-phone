@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { ArrowUp, MapPin, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -15,7 +15,14 @@ import type { ServiceDraft } from './servicesApi';
 
 type Panel = 'emoji' | null;
 
-const ACTION_BTNS: { id: string; label: string; emoji?: string; Icon?: LucideIcon }[] = [
+type ActionButton = {
+    id: 'emoji' | 'photos' | 'location';
+    label: string;
+    emoji?: string;
+    Icon?: LucideIcon;
+};
+
+const ACTION_BTNS: ActionButton[] = [
     { id: 'emoji',    label: 'Emoji',    emoji: '😊' },
     { id: 'photos',   label: 'Photos' },   // rendered with the Photos app icon
     { id: 'location', label: 'Location', Icon: MapPin },
@@ -32,10 +39,8 @@ export function ServiceComposer({ isDark, onSend }: {
     const [confirmLocation, setConfirmLocation] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    useEffect(() => { warmPhotos(); }, []);
-
     function togglePanel(p: Panel) { setPanel(prev => (prev === p ? null : p)); inputRef.current?.blur(); }
-    function openPhotos()        { setPicking(true);    setPanel(null); inputRef.current?.blur(); }
+    function openPhotos()        { warmPhotos(); setPicking(true); setPanel(null); inputRef.current?.blur(); }
     function openShareLocation() { setConfirmLocation(true); setPanel(null); inputRef.current?.blur(); }
 
     function sendText() {
@@ -129,7 +134,7 @@ export function ServiceComposer({ isDark, onSend }: {
                         <button
                             key={btn.id}
                             type="button"
-                            onClick={() => (btn.id === 'photos' ? openPhotos() : btn.id === 'location' ? openShareLocation() : togglePanel(btn.id as Panel))}
+                            onClick={() => (btn.id === 'photos' ? openPhotos() : btn.id === 'location' ? openShareLocation() : togglePanel('emoji'))}
                             className="flex h-[48px] w-[64px] items-center justify-center rounded-[16px] transition-opacity active:opacity-60"
                             style={{ background: btnBg, boxShadow: '0 1px 3px rgba(0,0,0,0.18)' }}
                         >

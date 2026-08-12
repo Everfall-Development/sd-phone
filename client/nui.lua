@@ -1,5 +1,7 @@
 ---@type table sd-phone config root (configs/config.lua).
 local config = require 'configs.config'
+---@type table Canonical built-in app availability flags.
+local appIds = require 'client.appids'
 ---@type table Cell service (client.service): live level + capability gating.
 local service = require 'client.service'
 ---@type table Wi-Fi (client.wifi): joined network + capability gating.
@@ -96,6 +98,12 @@ local function proxy(nuiAction, serverEvent, onAccepted)
     local cacheable = action ~= nil and CACHED[action] == true
 
     RegisterNUICallback(nuiAction, function(payload, cb)
+        local appId = serverEvent:match('^sd%-phone:server:([^:]+):')
+        if appId and not appIds.enabled(appId) then
+            cb({ success = false, code = 'app_disabled', message = 'This app is unavailable.' })
+            return
+        end
+
         local key = cacheable and cacheKey(action, payload) or nil
 
         if not reachable(serverEvent) then

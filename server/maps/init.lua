@@ -34,3 +34,27 @@ lib.callback.register('sd-phone:server:maps:sharePin', function(src, payload)
     payload = type(payload) == 'table' and payload or {}
     return actions.requestShare(src, payload.target, payload)
 end)
+
+-- Development-only map tools. Registration stays server-side so ox_lib owns command
+-- metadata and the calibration command is protected by the command.mapcal ACE.
+lib.addCommand('mapcal', {
+    help = 'Calibrate the phone map',
+    restricted = true,
+}, function(source)
+    if source <= 0 then return end
+    TriggerClientEvent('sd-phone:client:maps:calibrateNext', source)
+end)
+
+lib.addCommand('mapcaldone', {
+    help = 'Stop phone map calibration',
+}, function(source)
+    if source <= 0 then return end
+    TriggerClientEvent('sd-phone:client:maps:calibrateDone', source)
+end)
+
+lib.addCommand('maptiles', {
+    help = 'Check phone map tiles',
+}, function(source)
+    if source <= 0 then return end
+    TriggerClientEvent('sd-phone:client:maps:tilecheck', source)
+end)

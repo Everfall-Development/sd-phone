@@ -126,8 +126,8 @@ RegisterNUICallback('sd-phone:maps:watch', function(data, cb)
     cb({ success = true })
 end)
 
--- Map calibration helper (temporary): /mapcal teleports through the calibration spots and arms
--- the in-app capture banner; /mapcaldone disarms it.
+-- Map calibration helper (temporary): server-owned lib.addCommand handlers trigger these
+-- client events so command registration and ACE checks stay authoritative.
 ---@type vector3[] Calibration teleport spots, spread across the map extremes.
 local CAL_POINTS = {
     vec3(-1336.0, -3044.0, 13.9),
@@ -143,7 +143,7 @@ local calIndex = 0
 
 ---/mapcal - arms the calibration run and teleports to the next point, wrapping after the last.
 ---Ace-restricted (command.mapcal).
-RegisterCommand('mapcal', function()
+RegisterNetEvent('sd-phone:client:maps:calibrateNext', function()
     calArmed = true
     calIndex = calIndex % #CAL_POINTS + 1
     local p = CAL_POINTS[calIndex]
@@ -154,46 +154,45 @@ RegisterCommand('mapcal', function()
         description = ('Calib %d/%d — open Maps, tap your REAL spot, then close & /mapcal.'):format(calIndex, #CAL_POINTS),
         type = 'info',
     })
-    print(('[sd-phone:mapcal] point %d/%d -> %.1f, %.1f | open phone > Maps, tap your real spot. /mapcaldone to finish.'):format(
+    lib.print.debug(('[sd-phone:mapcal] point %d/%d -> %.1f, %.1f | open phone > Maps, tap your real spot. /mapcaldone to finish.'):format(
         calIndex, #CAL_POINTS, p.x, p.y))
-end, true)
+end)
 
 ---/mapcaldone - disarms the calibration run.
-RegisterCommand('mapcaldone', function()
+RegisterNetEvent('sd-phone:client:maps:calibrateDone', function()
     calArmed = false
-    print('[sd-phone:mapcal] calibration disarmed.')
-end, false)
+    lib.print.debug('[sd-phone:mapcal] calibration disarmed.')
+end)
 
----/maptiles - asks the NUI to probe one tile per zoom level for each style and report which
----levels loaded.
-RegisterCommand('maptiles', function()
+---/maptiles - asks the NUI to probe one tile per zoom level for the shared Everfall map.
+RegisterNetEvent('sd-phone:client:maps:tilecheck', function()
     SendNUIMessage({ action = 'sd-phone:maps:tilecheck' })
     notify.show({ description = 'Checking map tiles… results in the F8 console.', type = 'info' })
-    print('[sd-phone:maptiles] probing tile levels — results below in a moment…')
-end, false)
+    lib.print.debug('[sd-phone:maptiles] probing shared Everfall tile levels — results below in a moment…')
+end)
 
----NUI -> Lua: prints the /maptiles tile-probe results and per-style verdicts to the F8 console.
+---NUI -> Lua: prints the /maptiles tile-probe results and shared-map verdict to the F8 console.
 RegisterNUICallback('sd-phone:maps:tilecheckResult', function(data, cb)
-    print('[sd-phone:maptiles] ===== map tile check =====')
+    lib.print.debug('[sd-phone:maptiles] ===== map tile check =====')
     for _, s in ipairs(data and data.styles or {}) do
-        print(('[sd-phone:maptiles] %s  base=%s  enabled maxZoom=%s'):format(
+        lib.print.debug(('[sd-phone:maptiles] %s  base=%s  enabled maxZoom=%s'):format(
             tostring(s.name), tostring(s.base), tostring(s.maxZoom)))
         local parts = {}
         for _, lvl in ipairs(s.levels or {}) do
             parts[#parts + 1] = ('z%s:%s'):format(tostring(lvl.z), lvl.ok and 'OK' or '--')
         end
-        print('[sd-phone:maptiles]   ' .. table.concat(parts, '  ') .. '   (only z3+ are used by the map)')
+        lib.print.debug('[sd-phone:maptiles]   ' .. table.concat(parts, '  ') .. '   (z2+ are used by the map)')
 
         local deepest, maxz = tonumber(s.deepestOk), tonumber(s.maxZoom)
         if deepest and maxz then
             if deepest < 0 then
-                print('[sd-phone:maptiles]   FAIL: no tiles loaded — check the base URL / pack folder path.')
+                lib.print.debug('[sd-phone:maptiles]   FAIL: no tiles loaded — check the shared map URL.')
             elseif deepest > maxz then
-                print(('[sd-phone:maptiles]   NOTE: pack goes deeper than enabled — set maxZoom: %d in data.ts to use it all.'):format(deepest))
+                lib.print.debug(('[sd-phone:maptiles]   NOTE: the map has deeper tiles than enabled — set maxZoom: %d in data.ts to use them.'):format(deepest))
             elseif deepest < maxz then
-                print(('[sd-phone:maptiles]   WARN: pack shallower than enabled — only z%d loaded; set maxZoom: %d or complete the pack.'):format(deepest, deepest))
+                lib.print.debug(('[sd-phone:maptiles]   WARN: shared map is shallower than enabled — only z%d loaded; set maxZoom: %d or verify the tile service.'):format(deepest, deepest))
             else
-                print('[sd-phone:maptiles]   OK: pack matches the enabled depth — all good.')
+                lib.print.debug('[sd-phone:maptiles]   OK: shared map matches the enabled depth — all good.')
             end
         end
     end

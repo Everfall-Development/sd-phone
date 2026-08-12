@@ -20,6 +20,7 @@ import { Camera } from '@/apps/camera/Camera';
 import { AppIconSVG } from './AppIconSVG';
 import { useDeckActive } from './deckActive';
 import { resolveCustomUi } from './widgets/customUrl';
+import { subscribeCustomAppDeepLink } from './customAppDeepLinks';
 import type { Contact } from '@/apps/phone/data';
 
 // The SDK ships with whichever resource serves this page - a companion device may not reach
@@ -524,6 +525,10 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
         if (!data || (data.id !== appId && data.id !== 'any')) return;
         postToApp(data.message);
     }, [appId, postToApp]));
+
+    useEffect(() => subscribeCustomAppDeepLink(appId, (link) => {
+        postToApp({ action: 'deepLink', data: link });
+    }), [appId, postToApp]);
 
     const activeRef = useRef(false);
     useEffect(() => {

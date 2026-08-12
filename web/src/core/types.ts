@@ -263,7 +263,7 @@ export type NuiMessage =
     | { action: 'sd-phone:frameColor'; data: { color: string } }
     | { action: 'sd-phone:music:receive'; data: MusicSharePush }
     | { action: 'sd-phone:pages:feed';       data: ClassifiedFeedPush }
-    | { action: 'sd-phone:weazelnews:feed';  data: { type: 'changed' | 'job' } }
+    | { action: 'sd-phone:weazelnews:feed';  data: { type: 'changed' } }
     | { action: 'sd-phone:marketplace:feed'; data: ClassifiedFeedPush }
     | { action: 'sd-phone:ryde:requestAdded';   data: RydeRequestPush }
     | { action: 'sd-phone:ryde:requestRemoved'; data: { id: string } }
@@ -273,6 +273,7 @@ export type NuiMessage =
     | { action: 'sd-phone:ryde:tripUpdate';     data: RydeTripPush }
     | { action: 'sd-phone:ryde:ratingReceived'; data: { id: string; stars: number; tip?: number } }
     | { action: 'sd-phone:ryde:peerLocation';   data: { tripId: string; role: 'rider' | 'driver'; x: number; y: number; h: number } }
+    | { action: 'sd-phone:ryde:driverAccess';   data: { driverAllowed: boolean; job?: string; duty: boolean; policy: string; online: boolean; active: boolean } }
     | { action: 'sd-phone:close' }
     | { action: 'sd-phone:profileReset' }
     | { action: 'sd-phone:client:characterLoaded' }
@@ -451,9 +452,8 @@ export type NuiMessage =
     | { action: 'sd-phone:maps:location';       data: { x: number; y: number; h: number } }
     | { action: 'sd-phone:maps:calibrate';      data: { on: boolean } }
     | { action: 'sd-phone:maps:tilecheck' }
-    | { action: 'sd-phone:services:inbox' }
+    | { action: 'sd-phone:services:inbox'; data?: { job?: string; thread?: string } }
     | { action: 'sd-phone:services:jobsChanged' }
-    | { action: 'sd-phone:services:rosterChanged' }
     | { action: 'sd-phone:services:invoices' }
     | { action: 'sd-phone:homes:refresh' }
     | { action: 'customApps:set';     data: CustomAppDef[] }

@@ -103,7 +103,7 @@ end
 local function decodeProps(row)
     for _, col in ipairs({ 'mods', 'vehicle', 'modifications' }) do
         local raw = row[col]
-        if type(raw) == 'string' and (lib.string.startsWith(raw, '{') or lib.string.startsWith(raw, '[')) then
+        if type(raw) == 'string' and (raw:sub(1, 1) == '{' or raw:sub(1, 1) == '[') then
             local ok, decoded = pcall(json.decode, raw)
             if ok and type(decoded) == 'table' then return decoded end
         elseif type(raw) == 'table' then
@@ -120,7 +120,7 @@ end
 ---@return string|number|nil model spawn name or hash
 local function modelOf(row, props)
     local raw = row.vehicle
-    if type(raw) == 'string' and not lib.string.startsWith(raw, '{') then return raw end
+    if type(raw) == 'string' and raw:sub(1, 1) ~= '{' then return raw end
     return (props and (props.model or props.modelName)) or row.hash or nil
 end
 

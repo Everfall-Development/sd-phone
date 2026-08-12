@@ -359,7 +359,7 @@ local function sanitizeImages(list)
     if type(list) ~= 'table' then return out end
     for i = 1, #list do
         local url = trim(list[i])
-        if lib.string.startsWith(url, 'http') then
+        if url:sub(1, 4) == 'http' then
             out[#out + 1] = url:sub(1, 512)
             if #out >= 10 then break end
         end
@@ -375,11 +375,11 @@ local function sanitizeDmMeta(kind, payload)
     local meta = {}
     if kind == 'image' or kind == 'gif' then
         local url = trim(payload.gifUrl)
-        if lib.string.startsWith(url, 'http') then meta.gifUrl = url:sub(1, 512) end
+        if url:sub(1, 4) == 'http' then meta.gifUrl = url:sub(1, 512) end
     elseif kind == 'voice' then
         meta.duration = lib.math.clamp(math.floor(tonumber(payload.duration) or 0), 0, 36000)
         local audio = trim(payload.audioUrl)
-        if lib.string.startsWith(audio, 'http') then meta.audio = audio:sub(1, 512) end
+        if audio:sub(1, 4) == 'http' then meta.audio = audio:sub(1, 512) end
         if type(payload.waveform) == 'table' then
             local bars = {}
             for i = 1, math.min(#payload.waveform, 64) do
@@ -395,8 +395,8 @@ local function sanitizeDmMeta(kind, payload)
             local avatar = trim(p.avatar)
             meta.post = {
                 id      = pid:sub(1, 16),
-                image   = (lib.string.startsWith(image, 'http')) and image:sub(1, 512) or '',
-                avatar  = (lib.string.startsWith(avatar, 'http')) and avatar:sub(1, 512) or '',
+                image   = (image:sub(1, 4) == 'http') and image:sub(1, 512) or '',
+                avatar  = (avatar:sub(1, 4) == 'http') and avatar:sub(1, 512) or '',
                 author  = trim(p.author):sub(1, 64),
                 caption = trim(p.caption):sub(1, 200),
             }
@@ -681,7 +681,7 @@ function actions.addComment(src, payload)
 
     local text   = trim(payload.text):sub(1, 1000)
     local gifUrl = trim(payload.gifUrl)
-    gifUrl = (lib.string.startsWith(gifUrl, 'http')) and gifUrl:sub(1, 512) or nil
+    gifUrl = (gifUrl:sub(1, 4) == 'http') and gifUrl:sub(1, 512) or nil
     if text == '' and not gifUrl then return fail('Empty comment') end
 
     local id = store.newId()
@@ -798,7 +798,7 @@ function actions.updateProfile(src, payload)
     local name = trim(payload.name):sub(1, 64)
     if name == '' then name = existing.display_name end
     local avatar = trim(payload.avatar)
-    avatar = (lib.string.startsWith(avatar, 'http')) and avatar:sub(1, 512) or nil
+    avatar = (avatar:sub(1, 4) == 'http') and avatar:sub(1, 512) or nil
 
     store.upsertProfile(acc.username, {
         displayName = name,
@@ -990,7 +990,7 @@ function actions.addStory(src, payload)
     local slow = throttle(src, 'story'); if slow then return slow end
     ensureProfile(acc)
     local image = trim(payload.image)
-    if not lib.string.startsWith(image, 'http') then return fail('Add a photo') end
+    if image:sub(1, 4) ~= 'http' then return fail('Add a photo') end
     -- Frames expire on their own after STORY_TTL, so this caps the live window rather than the
     -- account: a full tray drains back to zero a day later.
     if store.countActiveStories(acc.username, os.time() - STORY_TTL) >= STORY_CAP then

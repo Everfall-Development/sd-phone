@@ -317,39 +317,4 @@ function actions.setBreaking(src, payload)
     return { success = true, data = { ticker = lines } }
 end
 
----Trusted-caller publish for the postArticle export: skips the staff gate but walks every
----sanitize clamp. Byline defaults to 'Weazel News', author_cid is the 'export' sentinel. Insert-only.
----@param article any export-supplied article draft (sanitize documents the shape)
----@return integer|nil articleId new article id, nil on validation failure
----@return string? reason failure reason when articleId is nil
-function actions.publish(article)
-    local row, err = sanitize(article)
-    if not row then return nil, err end
-
-    local author = trim(article.author)
-    if author == '' then author = 'Weazel News' end
-
-    local ts = os.time()
-    row.author     = author:sub(1, 80)
-    row.author_cid = 'export'
-    row.created_at = ts
-    row.updated_at = ts
-
-    local id = store.insertArticle(row)
-    if row.featured == 1 then store.clearFeatured(id) end
-    nudge(nil)
-    return id
-end
-
----Trusted-caller ticker replace for the setBreakingTicker export: no staff gate, same
----clampTickerLines clamps. An empty array clears the ticker; a non-table returns false.
----@param lines any string[] ticker lines in display order
----@return boolean replaced
-function actions.replaceTicker(lines)
-    if type(lines) ~= 'table' then return false end
-    store.replaceBreaking(clampTickerLines(lines), os.time())
-    nudge(nil)
-    return true
-end
-
 return actions

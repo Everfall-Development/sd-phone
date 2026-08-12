@@ -2,6 +2,8 @@
 local player = require 'bridge.server.player'
 ---@type table Settings persistence layer (server.settings.store): phone-number -> citizenid lookups.
 local settingsStore = require 'server.settings.store'
+---@type table Shared server helpers (server.util): authoritative app capability checks.
+local util = require 'server.util'
 
 ---@type table Notifications module; returned so sibling modules can route identity-addressed banners.
 local notifications = {}
@@ -11,15 +13,25 @@ local notifications = {}
 ---@param source number player server id
 ---@param data table notification payload
 ---@return boolean sent
+local function appAllowed(data)
+    local appId = type(data) == 'table' and data.appId or nil
+    if type(appId) ~= 'string' or appId == '' then
+        appId = type(data) == 'table' and data.app or nil
+    end
+    if type(appId) ~= 'string' or appId == '' then return true end
+    return util.appEnabled(appId)
+end
+
 local function relay(source, data)
     if type(source) ~= 'number' then return false end
     if type(data) ~= 'table' or type(data.title) ~= 'string' then return false end
+    if not appAllowed(data) then return false end
     TriggerClientEvent('sd-phone:client:notify', source, data)
     return true
 end
 
 ---Sends an iOS-style phone notification to a player from any resource. `data.title` is
----required; optional fields are `app`, `image`, `body`, `time`, and `appId`.
+---required; optional fields are `app`, `image`, `body`, `time`, `appId`, and `link`.
 ---@param source number player server id
 ---@param data table notification payload
 ---@return boolean sent
@@ -91,7 +103,7 @@ RegisterCommand('phonenotif-to', function(src, args)
         print('^3usage:^0 phonenotif-to <playerId>')
         return
     end
-    TriggerClientEvent('sd-phone:client:notify', target, {
+    relay(target, {
         app   = 'messages',
         title = 'Notification',
         body  = 'Test notification from the server.',

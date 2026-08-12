@@ -14,11 +14,21 @@ export interface RydeActiveRide {
     driver?: DriverInfo;
     offers?: { tripId: string; fare: number; driver: DriverInfo }[];
 }
+export interface RydeDriverAccess {
+    driverAllowed: boolean;
+    job?: string;
+    duty: boolean;
+    policy: string;
+}
 export interface RydeSync {
     rider?: RydeActiveRide | null;
     driver?: RydeActiveRide | null;
     lastEnded?: { id: string; status: string; fare: number } | null;
     requests?: RydeRequestPush[] | null;
+    driverAllowed?: boolean;
+    job?: string;
+    duty?: boolean;
+    policy?: string;
 }
 
 
@@ -35,7 +45,7 @@ export const ryde = {
     respond:    (tripId: string, accept: boolean) => rydeCall('sd-phone:ryde:respond', { tripId, accept }),
     cancel:     () => rydeCall('sd-phone:ryde:cancel'),
     setOnline:  (online: boolean, vehicle?: { vehicle: string; plate: string; color: string }) =>
-        rydeCall<{ online: boolean; requests?: RydeRequestPush[]; waiting?: number }>('sd-phone:ryde:setOnline', { online, ...(vehicle ?? {}) }),
+        rydeCall<{ online: boolean; requests?: RydeRequestPush[]; waiting?: number; driverAllowed?: boolean; job?: string; duty?: boolean; policy?: string }>('sd-phone:ryde:setOnline', { online, ...(vehicle ?? {}) }),
     waitingCount: () => rydeCall<{ count: number }>('sd-phone:ryde:waitingCount'),
     accept:     (requestId: string, fare: number) => rydeCall<{ tripId: string }>('sd-phone:ryde:accept', { requestId, fare }),
     tripStatus: (tripId: string, status: string) => rydeCall('sd-phone:ryde:tripStatus', { tripId, status }),

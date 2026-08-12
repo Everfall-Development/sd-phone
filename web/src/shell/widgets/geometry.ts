@@ -210,6 +210,20 @@ export function refitLayout(layout: SavedLayout, from: DeviceGrid, to: DeviceGri
     };
 }
 
+/**
+ * Builds a fresh home layout in catalog order. The first screen uses every cell the active
+ * density provides before another screen is created, and one trailing blank screen remains for
+ * editing and widget moves.
+ */
+export function seedHomeSlots(ids: string[], itemsPerPage: number): (string | null)[] {
+    if (itemsPerPage <= 0) return [];
+
+    const filledPages = Math.ceil(ids.length / itemsPerPage);
+    const out: (string | null)[] = Array((filledPages + 1) * itemsPerPage).fill(null);
+    ids.forEach((id, index) => { out[index] = id; });
+    return out;
+}
+
 export function pageMoves(
     before: (string | null)[],
     after: (string | null)[],
@@ -264,21 +278,69 @@ export function placeNewApps(
     ids: string[],
     widgets: WidgetPlacement[],
     itemsPerPage: number,
+    visibleSlotIds?: ReadonlySet<string>,
 ): (string | null)[] {
     if (!ids.length) return slots;
 
     const covered = coveredByPage(widgets);
     const out = [...slots];
-    let cell = 0;
+    const reservedFirstPageCells = new Set<number>();
 
-    const taken = (c: number) => out[c] !== null && out[c] !== undefined;
-    const hidden = (c: number) => !!covered.get(Math.floor(c / itemsPerPage))?.has(c % itemsPerPage);
+    function taken(cell: number): boolean {
+        return out[cell] !== null && out[cell] !== undefined;
+    }
+
+    function hidden(cell: number): boolean {
+        return !!covered.get(Math.floor(cell / itemsPerPage))?.has(cell % itemsPerPage);
+    }
+    function firstOpenCell(start: number): number {
+        let cell = start;
+        while (taken(cell) || hidden(cell)) cell++;
+        return cell;
+    }
+
+    function preferredFirstPageCell(): number | null {
+        for (let cell = 0; cell < itemsPerPage; cell++) {
+            if (!reservedFirstPageCells.has(cell) && !hidden(cell) && !taken(cell)) return cell;
+        }
+
+        if (visibleSlotIds) {
+            for (let cell = 0; cell < itemsPerPage; cell++) {
+                const occupant = out[cell];
+                if (
+                    !reservedFirstPageCells.has(cell)
+                    && !hidden(cell)
+                    && occupant
+                    && !visibleSlotIds.has(occupant)
+                ) return cell;
+            }
+        }
+
+        for (let cell = itemsPerPage - 1; cell >= 0; cell--) {
+            if (!reservedFirstPageCells.has(cell) && !hidden(cell)) return cell;
+        }
+
+        return null;
+    }
 
     for (const id of ids) {
-        while (taken(cell) || hidden(cell)) cell++;
-        while (out.length <= cell) out.push(null);
-        out[cell] = id;
-        cell++;
+        const firstPageCell = preferredFirstPageCell();
+        if (firstPageCell === null) {
+            const overflowCell = firstOpenCell(itemsPerPage);
+            while (out.length <= overflowCell) out.push(null);
+            out[overflowCell] = id;
+            continue;
+        }
+
+        const displaced = out[firstPageCell];
+        if (displaced) {
+            const overflowCell = firstOpenCell(itemsPerPage);
+            while (out.length <= overflowCell) out.push(null);
+            out[overflowCell] = displaced;
+        }
+
+        out[firstPageCell] = id;
+        reservedFirstPageCells.add(firstPageCell);
     }
 
     while (out.length % itemsPerPage !== 0) out.push(null);

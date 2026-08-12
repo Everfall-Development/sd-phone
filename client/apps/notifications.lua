@@ -1,8 +1,15 @@
+---@type table Shared client capability gate; disabled app notifications never reach NUI.
+local appgate = require 'client.appgate'
+
 ---Shows one iOS-style banner in the React app; drops anything without a table payload and a
----string title. Fields: app, image, title (required), body, time, appId.
+---string title, or tagged with a disabled app. Fields: app, image, title (required), body, time,
+---appId, link.
 ---@param data table notification payload
 local function push(data)
     if type(data) ~= 'table' or type(data.title) ~= 'string' then return end
+    local appId = type(data.appId) == 'string' and data.appId or nil
+    if not appId or appId == '' then appId = data.app end
+    if type(appId) == 'string' and appId ~= '' and not appgate.enabled(appId) then return end
     SendNUIMessage({ action = 'sd-phone:notification', data = data })
 end
 

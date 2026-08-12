@@ -50,6 +50,19 @@ local boothRings = {}
 local util = require 'server.util'
 local ok, fail, digits = util.ok, util.fail, util.digits
 
+---Preserves the server-owned business party identity used by Businesses group calls. Ordinary
+---caller numbers stay digit-normalised; no client-supplied value can invent a business identity
+---because only the exact `business:<job>` shape is retained.
+---@param value any display number or business party identity
+---@return string value normalised display identity
+local function displayIdentity(value)
+    if type(value) == 'string' then
+        local job = value:match('^business:([%w_%-]+)$')
+        if job and #job <= 64 then return 'business:' .. job end
+    end
+    return digits(value)
+end
+
 
 
 ---Every live party of a session in one list: the two primary legs first, then anyone merged in.
@@ -283,9 +296,9 @@ function actions.setSpeaker(source, on)
     end
 
     if not on then dropSpeaker(source) return end
-    local s = sessionForSource(source)
+    local channel, s = sessionForSource(source)
     if not s or s.state ~= 'active' then return end
-    speakerOn[source] = s.channel
+    speakerOn[source] = channel
     if speakerThreadRunning then return end
     speakerThreadRunning = true
     CreateThread(function()
@@ -861,15 +874,16 @@ function actions.callGroup(source, targets, displayName, displayNumber)
 
     local channel = nextChannel
     nextChannel = nextChannel + 1
+    local identity = displayIdentity(displayNumber)
     groupRings[channel] = {
         channel = channel,
         caller  = { src = source, cid = cid, name = player.getName(source), number = myNumber },
         targets = ringTargets,
-        display = { name = displayName, number = digits(displayNumber) },
+        display = { name = displayName, number = identity },
     }
 
     TriggerClientEvent('sd-phone:client:call:outgoing', source, {
-        channel = channel, name = displayName, number = digits(displayNumber),
+        channel = channel, name = displayName, number = identity,
     })
     for tsrc, t in pairs(ringTargets) do
         TriggerClientEvent('sd-phone:client:call:incoming', tsrc, {

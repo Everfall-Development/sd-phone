@@ -70,23 +70,6 @@ lib.callback.register('sd-phone:server:weazelnews:setBreaking', function(src, pa
     return actions.setBreaking(src, payload)
 end)
 
----Publishes an article from another server resource (exports['sd-phone']:postArticle). `article`
----mirrors the staff draft; every staff-path clamp applies. Returns the new id, or nil + reason.
----@param article table
----@return integer|nil articleId
----@return string? reason failure reason when articleId is nil
-exports('postArticle', function(article)
-    return actions.publish(article)
-end)
-
----Replaces the breaking ticker from another server resource (exports['sd-phone']:setBreakingTicker).
----Same clamps as the staff editor; an empty array clears the ticker, a non-table returns false.
----@param lines string[] ticker lines in display order
----@return boolean replaced
-exports('setBreakingTicker', function(lines)
-    return actions.replaceTicker(lines)
-end)
-
 ---Read-only shared-device feed for native city portals.
 ---@param source number player server id
 ---@return table result envelope
