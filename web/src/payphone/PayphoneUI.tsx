@@ -225,6 +225,7 @@ function HandsetAssembly({ lifted, onHangup }: { lifted: boolean; onHangup: () =
             {/* hang-up hit area over the handset silhouette (calls only) */}
             <button
                 type="button"
+                tabIndex={-1}
                 onClick={onHangup}
                 title={t('payphone.hangUp', 'Hang up')}
                 aria-label={t('payphone.hangUp', 'Hang up')}
@@ -514,6 +515,8 @@ export function PayphoneUI() {
     return (
         <div
             className={`fixed inset-0 flex items-center justify-center font-sf ${phoneUp ? '-z-10 pointer-events-none' : 'z-[400]'}`}
+            inert={phoneUp}
+            aria-hidden={phoneUp}
             onMouseDown={() => { if (!inCall) close(); }}
         >
             {/* coin-toll animations: the drop, the slot's clink flash + idle

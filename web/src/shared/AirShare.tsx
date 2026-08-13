@@ -87,6 +87,8 @@ export function AirShareCard({ request, onRespond }: {
             >
                 <div
                     ref={contentRef}
+                    inert={!expanded}
+                    aria-hidden={!expanded}
                     style={{
                         width:      w ?? undefined,
                         opacity:    expanded ? 1 : 0,

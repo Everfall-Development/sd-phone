@@ -104,6 +104,7 @@ function AlarmCard({ alarm, editing, onToggle, onRemove, onEdit, hour24 }: {
             <div className={`flex items-center overflow-hidden transition-all duration-300 ${editing ? 'mr-3.5 w-[28px] opacity-100' : 'w-0 opacity-0'}`}>
                 <button
                     type="button"
+                    tabIndex={editing ? 0 : -1}
                     aria-label={t('clock.deleteAlarmAria', 'Delete {time} alarm', { time: `${time.hhmm}${time.ampm ? ' ' + time.ampm : ''}` })}
                     onClick={onRemove}
                     className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-full bg-[#ff3b30] active:opacity-70"

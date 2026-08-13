@@ -73,6 +73,8 @@ export function AssetDetail({ asset, onBack, onBuy, onSell, onRefresh, animateIn
     return (
         <div
             className="absolute inset-0 z-30 flex flex-col"
+            inert={!shown}
+            aria-hidden={!shown}
             style={{
                 background: pageBg,
                 color:      isDark ? '#fff' : '#000',

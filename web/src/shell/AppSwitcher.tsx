@@ -163,6 +163,8 @@ export function AppSwitcher({
         <div
             data-switcher-ignore="1"
             className="absolute inset-0 z-30"
+            inert={closing}
+            aria-hidden={closing}
             style={{
                 animation:              animStyle,
                 backdropFilter:         'blur(16px) saturate(0.85) brightness(0.72)',
@@ -239,6 +241,8 @@ export function AppSwitcher({
                         >
                             <div
                                 className="mb-2 flex items-center gap-2.5 pl-3 pr-1"
+                                inert={!headerFocused || isEjecting}
+                                aria-hidden={!headerFocused || isEjecting}
                                 style={{
                                     opacity:       headerOpacity,
                                     pointerEvents: headerFocused ? 'auto' : 'none',
@@ -276,6 +280,7 @@ export function AppSwitcher({
                                 <button
                                     type="button"
                                     aria-label={`Close ${appDef?.label ?? appId}`}
+                                    tabIndex={headerFocused && !isEjecting ? 0 : -1}
                                     onClick={e => { e.stopPropagation(); onRemove(appId); }}
                                     className="shrink-0 flex h-[30px] w-[30px] items-center justify-center rounded-full text-white transition-colors duration-200 active:bg-white/30"
                                     style={{

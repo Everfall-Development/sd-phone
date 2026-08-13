@@ -64,8 +64,8 @@ export function SettingsRow({ row, divider, onPress }: { row: SettingsRowDef; di
 
             {row.toggle !== undefined ? (
                 row.id === 'airplane'
-                    ? <Toggle on={airplaneMode} onChange={setAirplaneMode} />
-                    : <Toggle defaultOn={row.toggle} />
+                    ? <Toggle on={airplaneMode} onChange={setAirplaneMode} tabIndex={-1} />
+                    : <Toggle defaultOn={row.toggle} tabIndex={-1} />
             ) : (
                 <>
                     {row.status && (

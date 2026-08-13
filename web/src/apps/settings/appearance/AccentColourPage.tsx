@@ -113,7 +113,7 @@ export function AccentColourPage({ onBack }: { onBack: () => void }) {
                             <ListRow label={t('settings.accentColour', 'Accent Colour')} value={activeLabel} divider />
                             <ListRow
                                 label={t('settings.accentSampleToggle', 'Something switched on')}
-                                right={<div className="pointer-events-none"><Toggle on /></div>}
+                                right={<div className="pointer-events-none"><Toggle on tabIndex={-1} /></div>}
                                 divider
                             />
                             <ListRow label={t('settings.accentSampleLink', 'A tappable link')} chevron />

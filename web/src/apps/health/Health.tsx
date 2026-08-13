@@ -99,6 +99,7 @@ export function Health({ onClose }: HealthProps) {
             <button
                 type="button"
                 onClick={onClose}
+                tabIndex={-1}
                 aria-label={t('health.closeHealth', 'Close Health')}
                 className="absolute inset-x-0 bottom-0 z-50 h-7 cursor-default"
             />

@@ -271,7 +271,12 @@ function MemoRow({ memo, expanded, onToggle, onRename, onShare, onDelete }: {
                 {!expanded && <span className="shrink-0 text-[14px] tabular-nums text-ios-gray">{fmtDuration(memo.duration)}</span>}
             </button>
 
-            <div className="overflow-hidden" style={{ height, transition: 'height 0.34s cubic-bezier(0.32, 0.72, 0, 1)' }}>
+            <div
+                className="overflow-hidden"
+                style={{ height, transition: 'height 0.34s cubic-bezier(0.32, 0.72, 0, 1)' }}
+                inert={!expanded}
+                aria-hidden={!expanded}
+            >
                 <div ref={innerRef} style={{ opacity: expanded ? 1 : 0, transition: 'opacity 0.26s ease' }}>
                     <Player memo={memo} active={expanded} onShare={onShare} onDelete={onDelete} />
                 </div>

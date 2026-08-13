@@ -82,6 +82,7 @@ function FavoriteRow({ contact, editing, onRemove, onInfo, onCall }: {
             <div className={`flex items-center overflow-hidden transition-all duration-300 ${editing ? 'mr-3 w-[28px] opacity-100' : 'w-0 opacity-0'}`}>
                 <button
                     type="button"
+                    tabIndex={editing ? 0 : -1}
                     aria-label={t('phone.removeFromFavoritesAria','Remove {name} from favorites',{ name: contact.name })}
                     onClick={() => onRemove(contact.id)}
                     className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-[#ff3b30] active:opacity-70"

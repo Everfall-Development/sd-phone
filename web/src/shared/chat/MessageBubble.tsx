@@ -390,7 +390,8 @@ function VoiceBubble({ msg, sent, bubbleShape, sentBg, receivedBg, fg }: {
     return (
         <button
             type="button"
-            onClick={msg.audioUrl ? toggle : undefined}
+            disabled={!msg.audioUrl}
+            onClick={toggle}
             className={`flex items-center gap-2.5 px-[14px] py-[8px] ${bubbleShape} ${msg.audioUrl ? 'active:opacity-90' : ''}`}
             style={{ background: sent ? sentBg : receivedBg, width: 215 }}
         >

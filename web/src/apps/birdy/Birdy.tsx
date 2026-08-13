@@ -514,6 +514,7 @@ export function Birdy({ onClose }: { onClose: () => void }) {
             <button
                 type="button"
                 onClick={onClose}
+                tabIndex={-1}
                 aria-label={t('squawk.closeBirdy', 'Close Quip')}
                 className="absolute inset-x-0 bottom-0 z-[5] h-5 cursor-default"
             />
@@ -586,6 +587,8 @@ function SlideOver({ onClose, children, animateIn = true }: { onClose: () => voi
     return (
         <div
             className="absolute inset-0 z-30"
+            inert={!shown}
+            aria-hidden={!shown}
             style={{
                 transform:  shown ? 'translateX(0)' : 'translateX(100%)',
                 transition: 'transform 0.32s cubic-bezier(0.32,0.72,0,1)',

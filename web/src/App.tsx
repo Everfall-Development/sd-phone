@@ -1612,18 +1612,24 @@ function AppContent() {
                     />
                 ) : (
                     !cameraMode && appsReady && (
-                        <Homescreen
-                            key={`${homeDensity}:${dockStyle}`}
-                            apps={effectiveApps}
-                            dock={view.dock}
-                            wallpaper={homeWallpaper}
-                            onLaunchApp={launchApp}
-                            onUninstall={handleUninstallApp}
-                            savedLayout={homeLayout}
-                            onLayoutChange={handleSaveLayout}
-                            onEditingChange={setHomeEditing}
-                            bloomOnMount={currentApp === null}
-                        />
+                        <div
+                            className="contents"
+                            inert={!onHomescreen || switcherOpen}
+                            aria-hidden={!onHomescreen || switcherOpen}
+                        >
+                            <Homescreen
+                                key={`${homeDensity}:${dockStyle}`}
+                                apps={effectiveApps}
+                                dock={view.dock}
+                                wallpaper={homeWallpaper}
+                                onLaunchApp={launchApp}
+                                onUninstall={handleUninstallApp}
+                                savedLayout={homeLayout}
+                                onLayoutChange={handleSaveLayout}
+                                onEditingChange={setHomeEditing}
+                                bloomOnMount={currentApp === null}
+                            />
+                        </div>
                     )
                 )}
 

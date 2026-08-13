@@ -109,7 +109,7 @@ function Preview() {
 
                 <div className="overflow-hidden rounded-[11px] bg-surface">
                     <PreviewRow left={<Dot className="bg-ios-blue" />} label={t('settings.wifi', 'Wi-Fi')} value="Home" divider />
-                    <PreviewRow left={<Dot className="bg-ios-green" />} label={t('settings.bluetooth', 'Bluetooth')} right={<Toggle on />} divider />
+                    <PreviewRow left={<Dot className="bg-ios-green" />} label={t('settings.bluetooth', 'Bluetooth')} right={<Toggle on tabIndex={-1} />} divider />
                     <PreviewRow left={<Dot className="bg-ios-gray" />} label={t('settings.general', 'General')} />
                 </div>
 

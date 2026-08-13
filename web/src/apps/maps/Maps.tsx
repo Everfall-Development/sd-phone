@@ -402,6 +402,8 @@ export function Maps({ onClose }: { onClose: () => void }) {
                 <div
                     className="overflow-hidden transition-[max-height] duration-300"
                     style={{ maxHeight: pinsOpen ? 360 : 0, transitionTimingFunction: 'cubic-bezier(0.22,0.61,0.36,1)' }}
+                    inert={!pinsOpen}
+                    aria-hidden={!pinsOpen}
                 >
                 <div key={pending ? 'newpin' : importing ? 'import' : pickerOpen ? 'contacts' : sheetTab} className="animate-swipe-in-left">
                 {pending ? (
@@ -593,6 +595,7 @@ export function Maps({ onClose }: { onClose: () => void }) {
             <button
                 type="button"
                 onClick={onClose}
+                tabIndex={-1}
                 aria-label={t('maps.closeMaps', 'Close Maps')}
                 className="absolute inset-x-0 bottom-0 z-50 h-7 cursor-default"
             />
@@ -652,6 +655,8 @@ function MapLayer({ active, children }: { active: boolean; children: React.React
         <div
             className="pointer-events-none absolute inset-0 transition-opacity duration-300"
             style={{ opacity: active ? 1 : 0 }}
+            inert={!active}
+            aria-hidden={!active}
         >
             {children}
         </div>
@@ -674,6 +679,7 @@ function MarkerPin({ m, selected, interactive, onSelect, drop = false }: {
         >
             <button
                 type="button"
+                tabIndex={interactive ? 0 : -1}
                 aria-label={m.label}
                 onPointerDown={e => e.stopPropagation()}
                 onPointerUp={e => e.stopPropagation()}
@@ -719,6 +725,7 @@ function CompanyPin({ x, y, color, emoji, iconUrl, label, interactive, selected,
         >
             <button
                 type="button"
+                tabIndex={interactive ? 0 : -1}
                 aria-label={label}
                 onPointerDown={e => e.stopPropagation()}
                 onPointerUp={e => e.stopPropagation()}

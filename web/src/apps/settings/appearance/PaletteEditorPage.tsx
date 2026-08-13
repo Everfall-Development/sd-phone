@@ -213,7 +213,7 @@ function PreviewRow({ icon, tint, label, dark, divider = false, toggle = false }
             </span>
             <span className={`flex-1 truncate text-[15px] font-normal ${dark ? 'text-white' : 'text-black'}`}>{label}</span>
             {toggle
-                ? <Toggle on scale={0.8} />
+                ? <Toggle on scale={0.8} tabIndex={-1} />
                 : <ChevronRight className="h-[15px] w-[15px] shrink-0 text-ios-gray3" strokeWidth={2.5} />}
             {divider && <div className="pointer-events-none absolute inset-x-3 bottom-0 h-[0.5px] bg-control" />}
         </div>

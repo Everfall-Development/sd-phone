@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { t } from '@/i18n';
 import { formatClockTime, formatLongDate, useDisplayClock } from '@/hooks/useClock';
 import { useTheme } from '@/stores/themeStore';
+import { useInertSiblings } from '@/ui/useInertSiblings';
 import { LockNotifCard } from './Lockscreen';
 import type { NotificationItem } from './Notifications';
 
@@ -17,12 +18,20 @@ export function NotificationCenter({ open, items, onClose, onOpen, onDismiss, on
     onDismiss:   (id: string) => void;
     onClearAll:  () => void;
 }) {
+    const layerRef = useRef<HTMLDivElement>(null);
+    useInertSiblings(layerRef, open);
+
     const { hour24 } = useTheme('hour24');
     const now = useDisplayClock();
     const start = useRef<number | null>(null);
 
     return (
-        <div className={'absolute inset-0 z-[710] ' + (open ? '' : 'pointer-events-none')}>
+        <div
+            ref={layerRef}
+            className={'absolute inset-0 z-[710] ' + (open ? '' : 'pointer-events-none')}
+            inert={!open}
+            aria-hidden={!open}
+        >
             {/* Same two layers as ControlCenter, in the same order, because that combination is
                 known to frost correctly in the client's CEF. What broke this before was purely
                 stacking: ControlCenter is always mounted and keeps its own backdrop-filter layer

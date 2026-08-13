@@ -95,7 +95,7 @@ export function SwitchRow({ label, sub, on, disabled = false, divider = false, o
                 {sub && <span className="block truncate text-[13px] text-ios-gray">{sub}</span>}
             </span>
             <span className="pointer-events-none -my-1 ml-3 shrink-0">
-                <Toggle on={on} disabled={disabled} />
+                <Toggle on={on} disabled={disabled} tabIndex={-1} />
             </span>
             {divider && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[0.5px] bg-ios-gray4 dark:bg-control" />}
         </button>

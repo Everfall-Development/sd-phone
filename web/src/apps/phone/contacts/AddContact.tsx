@@ -56,6 +56,8 @@ export function AddContact({ onCancel, onSave, initialPhone = '', embedded = fal
     return (
         <div
             className="absolute inset-0 flex flex-col bg-base"
+            inert={!embedded && !shown}
+            aria-hidden={!embedded && !shown}
             style={embedded ? undefined : {
                 transform:  shown ? 'translateY(0)' : 'translateY(100%)',
                 transition: 'transform 0.34s cubic-bezier(0.32,0.72,0,1)',

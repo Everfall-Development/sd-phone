@@ -12,6 +12,7 @@ import { useTheme } from '@/stores/themeStore';
 import { useMusic, useMusicProgress } from '@/apps/music/MusicContext';
 import { coverGradient, youtubeId } from '@/apps/music/data';
 import { t } from '@/i18n';
+import { useInertSiblings } from '@/ui/useInertSiblings';
 
 export function ControlCenter({ open, onClose, onOpenApp, onWifi }: {
     open: boolean;
@@ -19,6 +20,9 @@ export function ControlCenter({ open, onClose, onOpenApp, onWifi }: {
     onOpenApp: (id: string) => void;
     onWifi?: (on: boolean) => void;
 }) {
+    const layerRef = useRef<HTMLDivElement>(null);
+    useInertSiblings(layerRef, open);
+
     const { theme, setTheme, brightness, setBrightness, ringtoneVol, setRingtoneVol, airplaneMode, setAirplaneMode } = useTheme('theme', 'setTheme', 'brightness', 'setBrightness', 'ringtoneVol', 'setRingtoneVol', 'airplaneMode', 'setAirplaneMode');
     const music = useMusic();
 
@@ -54,7 +58,12 @@ export function ControlCenter({ open, onClose, onOpenApp, onWifi }: {
 
     const EASE = 'cubic-bezier(0.32,0.72,0,1)';
     return (
-        <div className={'absolute inset-0 z-[700] ' + (open ? '' : 'pointer-events-none')}>
+        <div
+            ref={layerRef}
+            className={'absolute inset-0 z-[700] ' + (open ? '' : 'pointer-events-none')}
+            inert={!open}
+            aria-hidden={!open}
+        >
             <div
                 className="absolute inset-0"
                 style={{

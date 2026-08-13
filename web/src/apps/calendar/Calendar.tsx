@@ -200,6 +200,7 @@ export function Calendar({ onClose }: { onClose: () => void }) {
             <button
                 type="button"
                 onClick={onClose}
+                tabIndex={-1}
                 aria-label={t('calendar.closeCalendar', 'Close Calendar')}
                 className="absolute inset-x-0 bottom-0 h-7 cursor-default"
             />

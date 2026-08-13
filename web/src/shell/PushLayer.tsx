@@ -39,7 +39,12 @@ export function PushLayer({
 
     return (
         <div className={`absolute inset-0 overflow-hidden ${bg} ${className}`} style={pageStyle}>
-            <div className={`absolute inset-0 flex flex-col ${bg} ${innerClassName}`} style={layerStyle}>
+            <div
+                className={`absolute inset-0 flex flex-col ${bg} ${innerClassName}`}
+                style={layerStyle}
+                inert={behind}
+                aria-hidden={behind}
+            >
                 {children}
                 <div className="pointer-events-none absolute inset-0 bg-black" style={dimStyle} />
             </div>

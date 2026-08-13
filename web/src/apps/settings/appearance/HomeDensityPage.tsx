@@ -226,7 +226,7 @@ export function HomeDensityPage({ onBack }: { onBack: () => void }) {
                                 {t('settings.wallpaperParallax', 'Wallpaper Parallax')}
                             </span>
                             <div className="pointer-events-none">
-                                <Toggle on={wallpaperParallax} />
+                                <Toggle on={wallpaperParallax} tabIndex={-1} />
                             </div>
                         </button>
                     </div>

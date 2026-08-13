@@ -31,7 +31,12 @@ export function ActionSheet({ actions, cancelLabel, forceDark = false, onClose }
     // Portaled to the phone screen (like Sheet) so the sheet always rises from the very
     // bottom and covers tab bars, no matter how deeply the opener is nested.
     return portalToPhoneScreen(
-        <div className={`absolute inset-0 z-50 ${forceDark ? 'dark' : ''}`} onClick={() => close()}>
+        <div
+            className={`absolute inset-0 z-50 ${forceDark ? 'dark' : ''}`}
+            inert={exiting}
+            aria-hidden={exiting}
+            onClick={() => close()}
+        >
             <div
                 className="absolute inset-0 bg-black/40"
                 style={{ animation: exiting ? 'ios-sheet-backdrop-out 0.26s ease forwards' : 'ios-sheet-backdrop-in 0.3s ease' }}

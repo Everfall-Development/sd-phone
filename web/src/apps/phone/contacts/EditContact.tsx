@@ -55,6 +55,8 @@ export function EditContact({ contact, onCancel, onSave, onDelete, lockPhone = f
     return (
         <div
             className="absolute inset-0 flex flex-col bg-base"
+            inert={!shown}
+            aria-hidden={!shown}
             style={{
                 transform:  shown ? 'translateY(0)' : 'translateY(100%)',
                 transition: 'transform 0.34s cubic-bezier(0.32,0.72,0,1)',

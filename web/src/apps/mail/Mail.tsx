@@ -482,6 +482,7 @@ export function Mail({ onClose }: { onClose: () => void }) {
             <button
                 type="button"
                 onClick={onClose}
+                tabIndex={-1}
                 aria-label={t('mail.closeMail', 'Close Mail')}
                 className="absolute inset-x-0 bottom-0 z-50 h-7 cursor-default"
             />

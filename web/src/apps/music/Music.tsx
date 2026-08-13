@@ -499,7 +499,11 @@ export function Music({ onClose: _onClose }: { onClose: () => void }) {
             </div>
 
             {m.current && (
-                <div className={`shrink-0 overflow-hidden transition-all duration-300 ${stoppingMini ? 'max-h-0 opacity-0' : 'max-h-[88px] opacity-100'}`}>
+                <div
+                    className={`shrink-0 overflow-hidden transition-all duration-300 ${stoppingMini ? 'max-h-0 opacity-0' : 'max-h-[88px] opacity-100'}`}
+                    inert={stoppingMini}
+                    aria-hidden={stoppingMini}
+                >
                     <button onClick={() => setExpanded(true)}
                         style={animateNav && !stoppingMini ? { animation: 'mini-rise 0.34s cubic-bezier(0.32,0.72,0,1)' } : undefined}
                         className={`flex w-full items-center gap-3.5 bg-gradient-to-b from-base to-elevated px-4 py-3 text-left transition-transform duration-300 dark:to-surface ${stoppingMini ? 'translate-y-2' : ''}`}>
@@ -652,7 +656,7 @@ function ArtGrid({ children }: { children: React.ReactNode }) {
 
 function ArtCard({ track, title, subtitle, onPress, playing = false, unplayable = false }: { track: Track; title: string; subtitle: string; onPress: () => void; playing?: boolean; unplayable?: boolean }) {
     return (
-        <button onClick={() => { if (!unplayable) onPress(); }} className={`flex w-full min-w-0 flex-col text-left active:opacity-80 ${unplayable ? 'opacity-60' : ''}`}>
+        <button disabled={unplayable} onClick={onPress} className={`flex w-full min-w-0 flex-col text-left active:opacity-80 ${unplayable ? 'opacity-60' : ''}`}>
             <Cover track={track} size="100%" rounded={8} playing={playing && !unplayable} />
             <span className="mt-1.5 block w-full truncate text-[17px] font-semibold leading-tight">{title}</span>
             {unplayable
@@ -680,12 +684,13 @@ function TrackList({ tracks, current, playing, onPlay, onRemove, removeIcon = 't
                         {onEditRemove && (
                             <div className={`flex items-center overflow-hidden transition-all duration-300 ${editing ? 'mr-2.5 w-[30px] opacity-100' : 'w-0 opacity-0'}`}>
                                 <button type="button" aria-label={t('music.removeTitle', 'Remove {title}', { title: track.title })} onClick={() => onEditRemove(track)}
+                                    tabIndex={editing ? 0 : -1}
                                     className="flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-full bg-ios-red active:opacity-70">
                                     <Minus className="h-[19px] w-[19px] text-white" strokeWidth={3} />
                                 </button>
                             </div>
                         )}
-                        <button onClick={() => { if (!editing && !unplayable) onPlay(track); }} className={`flex min-w-0 flex-1 items-center gap-3 text-left ${unplayable ? 'opacity-60' : ''}`}>
+                        <button disabled={editing || unplayable} onClick={() => onPlay(track)} className={`flex min-w-0 flex-1 items-center gap-3 text-left ${unplayable ? 'opacity-60' : ''}`}>
                             <Cover track={track} size={56} rounded={7} playing={active && playing} />
                             <span className="flex min-w-0 flex-col leading-tight">
                                 <span className="truncate text-[20px] font-semibold" style={active && !unplayable ? { color: 'rgb(var(--ios-blue))' } : undefined}>{track.title}</span>

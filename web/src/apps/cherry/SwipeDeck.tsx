@@ -245,6 +245,7 @@ function Card({ profile, photoIdx, onPickPhoto }: {
                         <button
                             key={i}
                             type="button"
+                            tabIndex={onPickPhoto ? 0 : -1}
                             aria-label={t('cherry.photoN', 'Photo {n}', { n: i + 1 })}
                             onPointerDown={e => e.stopPropagation()}
                             onPointerUp={e => e.stopPropagation()}

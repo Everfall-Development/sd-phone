@@ -112,6 +112,7 @@ export function Weather({ onClose }: { onClose: () => void }) {
             <button
                 type="button"
                 onClick={onClose}
+                tabIndex={-1}
                 aria-label={t('weather.closeWeather', 'Close Weather')}
                 className="absolute inset-x-0 bottom-0 z-50 h-7 cursor-default"
             />

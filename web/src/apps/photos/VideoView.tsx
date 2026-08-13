@@ -92,6 +92,7 @@ export function VideoView({ src, active }: { src: string; active: boolean }) {
                 plain click plays / pauses. */}
             <button
                 type="button"
+                tabIndex={-1}
                 aria-label={playing ? t('photos.pause', 'Pause') : t('photos.play', 'Play')}
                 onClick={togglePlay}
                 className="absolute inset-0 cursor-default"
@@ -100,6 +101,7 @@ export function VideoView({ src, active }: { src: string; active: boolean }) {
             {/* Centre play / pause. */}
             <button
                 type="button"
+                tabIndex={chrome ? 0 : -1}
                 aria-label={playing ? t('photos.pause', 'Pause') : t('photos.play', 'Play')}
                 onPointerDown={e => e.stopPropagation()}
                 onClick={togglePlay}
@@ -115,6 +117,8 @@ export function VideoView({ src, active }: { src: string; active: boolean }) {
             {/* Bottom scrubber: elapsed | track | remaining | mute. */}
             <div
                 onPointerDown={e => e.stopPropagation()}
+                inert={!chrome}
+                aria-hidden={!chrome}
                 className={`absolute inset-x-0 bottom-0 flex items-center gap-3 px-5 pb-4 transition-opacity duration-300 ${
                     chrome ? 'opacity-100' : 'pointer-events-none opacity-0'
                 }`}

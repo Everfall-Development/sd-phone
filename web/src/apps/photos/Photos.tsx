@@ -430,6 +430,7 @@ export function Photos({ onClose }: { onClose: () => void }) {
             <button
                 type="button"
                 onClick={onClose}
+                tabIndex={-1}
                 aria-label={t('photos.closePhotos','Close Photos')}
                 className="absolute inset-x-0 bottom-0 z-[5] h-5 cursor-default"
             />

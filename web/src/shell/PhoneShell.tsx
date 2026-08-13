@@ -198,6 +198,8 @@ function MusicIsland({ m, track, playing, expanded, closing, onToggle, onPlayPau
 
             <div
                 className="absolute inset-0 flex flex-col px-5 pb-[30px] pt-[18px]"
+                inert={!expanded}
+                aria-hidden={!expanded}
                 style={{
                     opacity: expanded ? 1 : 0,
                     transition: expanded ? 'opacity 0.22s ease 0.12s' : 'opacity 0.12s ease',
@@ -887,6 +889,7 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
                     {VOL_UP_BTN && (
                         <button
                             type="button"
+                            tabIndex={-1}
                             aria-label={t('shell.volumeUp','Volume up')}
                             onClick={() => bumpVolume(1)}
                             className="absolute z-[300] cursor-pointer bg-transparent"
@@ -896,6 +899,7 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
                     {VOL_DOWN_BTN && (
                         <button
                             type="button"
+                            tabIndex={-1}
                             aria-label={t('shell.volumeDown','Volume down')}
                             onClick={() => bumpVolume(-1)}
                             className="absolute z-[300] cursor-pointer bg-transparent"
@@ -906,6 +910,7 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
                     {POWER_BTN && onClose && (
                         <button
                             type="button"
+                            tabIndex={-1}
                             aria-label={t('shell.power','Power')}
                             onClick={onClose}
                             className="absolute z-[300] cursor-pointer bg-transparent"
@@ -916,6 +921,7 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
                     {SCREENSHOT_BTN && (
                         <button
                             type="button"
+                            tabIndex={-1}
                             aria-label={t('shell.screenshot','Screenshot (double-click the Action button)')}
                             onDoubleClick={() => void takeScreenshot()}
                             className="absolute z-[300] cursor-pointer bg-transparent"

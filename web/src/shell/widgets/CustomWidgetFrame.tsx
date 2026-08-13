@@ -99,6 +99,8 @@ export function CustomWidgetFrame({ kind, size, width, height }: {
                 ref={frameRef}
                 src={src}
                 title={found.widget.name}
+                tabIndex={-1}
+                aria-hidden
                 sandbox={SANDBOX}
                 referrerPolicy="no-referrer"
                 onLoad={() => setReady(true)}

@@ -421,6 +421,7 @@ export function Messages({ onClose }: { onClose: () => void }) {
             <button
                 type="button"
                 onClick={onClose}
+                tabIndex={-1}
                 aria-label={t('messages.closeMessages', 'Close Messages')}
                 className="absolute inset-x-0 bottom-0 z-50 h-7 cursor-default"
             />

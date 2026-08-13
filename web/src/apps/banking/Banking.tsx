@@ -137,7 +137,7 @@ export function Banking({ onClose: _onClose }: { onClose: () => void }) {
 
             <TabBar tabs={tabs} active={tab} onChange={setTab} />
 
-            <button type="button" onClick={_onClose} aria-label={t('banking.closeWallet', 'Close Wallet')} className="absolute inset-x-0 bottom-0 h-7 cursor-default" />
+            <button type="button" onClick={_onClose} tabIndex={-1} aria-label={t('banking.closeWallet', 'Close Wallet')} className="absolute inset-x-0 bottom-0 h-7 cursor-default" />
 
             {showAll && <AllTransactions transactions={txs} onBack={() => setShowAll(false)} onSelectTx={setActionTx} />}
 

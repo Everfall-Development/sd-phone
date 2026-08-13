@@ -162,7 +162,8 @@ function AlbumCardTile({ card, editMode, onOpen, onDelete }: {
         <div className="relative">
             <button
                 type="button"
-                onClick={editMode ? undefined : onOpen}
+                disabled={editMode}
+                onClick={onOpen}
                 className="block w-full text-left active:opacity-90"
             >
                 <div className="relative aspect-square overflow-hidden rounded-[14px] bg-black/10 dark:bg-white/10">

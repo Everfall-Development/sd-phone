@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
+import { useInertSiblings } from './useInertSiblings';
+
 const ANIM = {
     x: {
         enter:  'ios-push 0.32s cubic-bezier(0.32,0.72,0,1)',
@@ -24,6 +26,7 @@ interface SlideOverProps {
 }
 
 export function SlideOver({ onClose, animateIn = true, direction = 'x', className = '', zIndex = 30, children }: SlideOverProps) {
+    const layerRef = useRef<HTMLDivElement>(null);
     const [exiting, setExiting] = useState(false);
     const exit = useRef<() => void>(onClose);
     const finished = useRef(false);
@@ -47,9 +50,14 @@ export function SlideOver({ onClose, animateIn = true, direction = 'x', classNam
     useEffect(() => () => window.clearTimeout(timer.current), []);
 
     const anim = ANIM[direction];
+    useInertSiblings(layerRef);
+
     return (
         <div
+            ref={layerRef}
             className={`absolute inset-0 ${className}`}
+            inert={exiting}
+            aria-hidden={exiting}
             style={{
                 zIndex,
                 animation:  exiting ? anim.exit : animateIn ? anim.enter : undefined,

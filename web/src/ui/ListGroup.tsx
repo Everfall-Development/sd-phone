@@ -148,7 +148,7 @@ export function ToggleRow({ label, defaultOn = false, divider, on: controlledOn,
             {/* The 31px switch exceeds the text line; the negative margin keeps it from
                 stretching the row, so toggle rows match plain ListRow height. */}
             <div className="pointer-events-none -my-1">
-                <Toggle on={on} />
+                <Toggle on={on} tabIndex={-1} />
             </div>
             {divider && (
                 <div

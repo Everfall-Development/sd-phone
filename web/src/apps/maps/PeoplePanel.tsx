@@ -132,6 +132,7 @@ export function FriendDot({ f, selected, interactive, showAvatar = true, onSelec
         <div className="flex flex-col items-center" style={{ ...style, pointerEvents: 'none', zIndex: selected ? 40 : 20 }}>
             <button
                 type="button"
+                tabIndex={interactive ? 0 : -1}
                 aria-label={f.name}
                 onPointerDown={e => e.stopPropagation()}
                 onPointerUp={e => e.stopPropagation()}

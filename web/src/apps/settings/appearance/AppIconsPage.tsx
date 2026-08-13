@@ -137,7 +137,7 @@ export function AppIconsPage({ onBack }: { onBack: () => void }) {
                     label={t('settings.appNames', 'App Names')}
                     sub={t('settings.appNamesSub', 'Show names on the Home Screen')}
                     chevron={false}
-                    right={<div className="pointer-events-none -my-1"><Toggle on={showAppNames} /></div>}
+                    right={<div className="pointer-events-none -my-1"><Toggle on={showAppNames} tabIndex={-1} /></div>}
                     onPress={() => setShowAppNames(!showAppNames)}
                     divider
                 />

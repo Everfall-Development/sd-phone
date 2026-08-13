@@ -75,7 +75,7 @@ export function Clock({ onClose }: { onClose: () => void }) {
 
             <TabBar tabs={TABS} active={tab} onChange={setTab} />
 
-            <button type="button" onClick={onClose} aria-label={t('clock.closeClock', 'Close Clock')}
+            <button type="button" onClick={onClose} tabIndex={-1} aria-label={t('clock.closeClock', 'Close Clock')}
                 className="absolute inset-x-0 bottom-0 h-7 cursor-default" />
         </div>
     );

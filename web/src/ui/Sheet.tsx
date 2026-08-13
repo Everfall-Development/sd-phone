@@ -47,7 +47,12 @@ export function Sheet({ onClose, top = 60, fit = 'top', title, grabber = true, c
       :                  'absolute inset-x-0 bottom-0 flex max-h-[85%] flex-col overflow-y-auto rounded-t-[18px] no-scrollbar';
 
     const sheet = (
-        <div className={`absolute inset-0 isolate ${forceDark ? 'dark' : ''}`} style={{ zIndex }}>
+        <div
+            className={`absolute inset-0 isolate ${forceDark ? 'dark' : ''}`}
+            inert={exiting}
+            aria-hidden={exiting}
+            style={{ zIndex }}
+        >
             <div
                 onClick={dismissable ? close : undefined}
                 className={`absolute inset-0 ${dim ? 'bg-black/40' : ''}`}

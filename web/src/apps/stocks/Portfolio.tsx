@@ -73,6 +73,8 @@ export function Portfolio({ assets, cash, onBack, onOpenAsset }: {
     return (
         <div
             className="absolute inset-0 z-20 flex flex-col"
+            inert={!shown}
+            aria-hidden={!shown}
             style={{
                 background: pageBg,
                 color:      isDark ? '#fff' : '#000',

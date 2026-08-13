@@ -110,7 +110,7 @@ function BlurRow({ label, on, onToggle }: { label: string; on: boolean; onToggle
         >
             <span className="flex-1 text-left text-[17px] font-normal text-black dark:text-white">{label}</span>
             <div className="pointer-events-none">
-                <Toggle on={on} />
+                <Toggle on={on} tabIndex={-1} />
             </div>
         </button>
     );

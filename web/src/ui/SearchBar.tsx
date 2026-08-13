@@ -43,6 +43,7 @@ export function SearchBar({ value, onChange, placeholder = t('common.search', 'S
             {value && (
                 <button
                     type="button"
+                    tabIndex={-1}
                     onClick={() => onChange('')}
                     aria-label={t('common.clearSearch', 'Clear search')}
                     className={`shrink-0 text-[24px] font-medium leading-none active:opacity-60 ${clear}`}

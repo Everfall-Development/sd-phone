@@ -152,7 +152,11 @@ export function AppAuth({ appName, tagline, icon, theme, fields, onAuthed, onDis
                 className="flex h-full w-[200%] transition-transform duration-300 ease-out"
                 style={{ transform: showingDetail ? 'translateX(-50%)' : 'translateX(0)' }}
             >
-                <div className="h-full w-1/2 shrink-0">
+                <div
+                    className="h-full w-1/2 shrink-0"
+                    inert={showingDetail}
+                    aria-hidden={showingDetail}
+                >
                     <Welcome
                         appName={appName}
                         tagline={tagline}
@@ -165,7 +169,11 @@ export function AppAuth({ appName, tagline, icon, theme, fields, onAuthed, onDis
                         capacity={capacity}
                     />
                 </div>
-                <div className="h-full w-1/2 shrink-0">
+                <div
+                    className="h-full w-1/2 shrink-0"
+                    inert={!showingDetail}
+                    aria-hidden={!showingDetail}
+                >
                     {screen === 'success' ? (
                         <SuccessPane appName={appName} theme={theme} mode={successMode} />
                     ) : showingReset ? (
@@ -1138,6 +1146,7 @@ function Field({ label, value, onChange, type, last, suffix, onFocus, onBlur, re
                 {isPassword && (
                     <button
                         type="button"
+                        tabIndex={-1}
                         onMouseDown={e => e.preventDefault()}
                         onClick={() => setRevealed(r => !r)}
                         aria-label={revealed ? t('common.hidePassword', 'Hide password') : t('common.showPassword', 'Show password')}

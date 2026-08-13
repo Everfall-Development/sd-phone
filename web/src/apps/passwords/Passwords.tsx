@@ -100,6 +100,7 @@ export function Passwords({ onClose }: { onClose: () => void }) {
             <button
                 type="button"
                 onClick={onClose}
+                tabIndex={-1}
                 aria-label={t('passwords.closeAria', 'Close Passwords')}
                 className="absolute inset-x-0 bottom-0 z-50 h-7 cursor-default"
             />
@@ -137,7 +138,7 @@ function Detail({ entry, onBack, onDelete }: { entry: VaultEntry; onBack: () => 
                                 {reveal ? entry.password : '•'.repeat(Math.min(entry.password.length, 12))}
                             </div>
                         </div>
-                        <button type="button" onClick={() => setReveal(r => !r)} aria-label={reveal ? t('passwords.hidePassword', 'Hide password') : t('passwords.showPassword', 'Show password')} className="ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/5 active:opacity-70 dark:bg-white/10">
+                        <button type="button" tabIndex={-1} onClick={() => setReveal(r => !r)} aria-label={reveal ? t('passwords.hidePassword', 'Hide password') : t('passwords.showPassword', 'Show password')} className="ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/5 active:opacity-70 dark:bg-white/10">
                             {reveal ? <EyeOff className="h-[18px] w-[18px] text-black/55 dark:text-white/55" strokeWidth={2.1} /> : <Eye className="h-[18px] w-[18px] text-black/55 dark:text-white/55" strokeWidth={2.1} />}
                         </button>
                         <CopyButton value={entry.password} label={t('passwords.passwordLower', 'password')} />

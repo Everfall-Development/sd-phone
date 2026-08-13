@@ -160,7 +160,12 @@ export function Groups({ onClose }: { onClose: () => void }) {
     return (
         <div className="absolute inset-0 z-10 overflow-hidden">
 
-            <div className="absolute inset-0" style={parentStyle}>
+            <div
+                className="absolute inset-0"
+                style={parentStyle}
+                inert={behind}
+                aria-hidden={behind}
+            >
                 <GroupsList
                     groups={state.groups}
                     invites={state.invites}
@@ -203,6 +208,7 @@ export function Groups({ onClose }: { onClose: () => void }) {
             <button
                 type="button"
                 onClick={onClose}
+                tabIndex={-1}
                 aria-label={t('groups.closeGroups', 'Close Groups')}
                 className="absolute inset-x-0 bottom-0 z-50 h-7 cursor-default"
             />

@@ -85,6 +85,8 @@ export function ContactDetail({ contact, onBack, backLabel = t('phone.contacts',
     return (
         <div
             className="absolute inset-0 flex flex-col bg-base"
+            inert={!shown}
+            aria-hidden={!shown}
             style={{
                 transform:  shown ? 'translateX(0)' : 'translateX(100%)',
                 transition: 'transform 0.32s cubic-bezier(0.32,0.72,0,1)',

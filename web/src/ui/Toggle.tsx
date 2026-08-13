@@ -4,7 +4,7 @@ import type { MouseEvent } from 'react';
 
 const THUMB_SHADOW = '0 2px 8px rgba(0,0,0,0.26), 0 0.5px 1.5px rgba(0,0,0,0.18)';
 
-export function Toggle({ defaultOn = false, on, onChange, disabled = false, activeColor, scale = 1, ariaLabel }: {
+export function Toggle({ defaultOn = false, on, onChange, disabled = false, activeColor, scale = 1, ariaLabel, tabIndex }: {
     defaultOn?:   boolean;
     on?:          boolean;
     onChange?:    (v: boolean) => void;
@@ -12,6 +12,7 @@ export function Toggle({ defaultOn = false, on, onChange, disabled = false, acti
     activeColor?: string;
     scale?:       number;
     ariaLabel?:   string;
+    tabIndex?:    number;
 }) {
     const [internal, setInternal] = useState(defaultOn);
     const controlled = on !== undefined;
@@ -33,6 +34,7 @@ export function Toggle({ defaultOn = false, on, onChange, disabled = false, acti
             aria-checked={value}
             aria-disabled={disabled}
             aria-label={ariaLabel}
+            tabIndex={disabled ? -1 : tabIndex}
             onClick={toggle}
             className={clsx(
                 'relative shrink-0 rounded-full transition-colors duration-[280ms]',

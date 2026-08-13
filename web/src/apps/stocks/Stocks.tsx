@@ -116,7 +116,7 @@ export function Stocks({ onClose }: { onClose: () => void }) {
                 <div className="rounded-[22px] p-5 text-white" style={{ background: 'linear-gradient(135deg,#0a84ff 0%,#5e5ce6 100%)' }}>
                     <div className="flex items-center gap-2">
                         <span className="text-[18px] font-semibold text-white/95">{t('stocks.availableFunds', 'Available Funds')}</span>
-                        <button type="button" onClick={() => setHideBalance(v => !v)} aria-label={t('stocks.toggleBalance', 'Toggle balance')} className="text-white/90 active:opacity-60">
+                        <button type="button" tabIndex={-1} onClick={() => setHideBalance(v => !v)} aria-label={t('stocks.toggleBalance', 'Toggle balance')} className="text-white/90 active:opacity-60">
                             {hideBalance ? <EyeOff className="h-[22px] w-[22px]" /> : <Eye className="h-[22px] w-[22px]" />}
                         </button>
                     </div>
@@ -196,7 +196,7 @@ export function Stocks({ onClose }: { onClose: () => void }) {
                 />
             )}
 
-            <button type="button" onClick={onClose} aria-label={t('stocks.closeStocks', 'Close Stocks')} className="absolute inset-x-0 bottom-0 h-7 cursor-default" />
+            <button type="button" onClick={onClose} tabIndex={-1} aria-label={t('stocks.closeStocks', 'Close Stocks')} className="absolute inset-x-0 bottom-0 h-7 cursor-default" />
         </div>
     );
 }

@@ -129,7 +129,7 @@ export function DisplayBrightnessPage({ onBack }: { onBack: () => void }) {
                                     {t('settings.automatic', 'Automatic')}
                                 </span>
                                 <div className="pointer-events-none">
-                                    <Toggle on={auto} />
+                                    <Toggle on={auto} tabIndex={-1} />
                                 </div>
                             </button>
                         </div>

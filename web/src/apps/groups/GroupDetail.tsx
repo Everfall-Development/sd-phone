@@ -176,7 +176,7 @@ export function GroupDetail({
                                 {shownActive ? t('groups.currentlyActive', 'Currently Active') : t('groups.setAsActive', 'Set as Active')}
                             </span>
                             <div className="pointer-events-none">
-                                <Toggle on={shownActive} scale={0.9} />
+                                <Toggle on={shownActive} scale={0.9} tabIndex={-1} />
                             </div>
                         </button>
                     </div>

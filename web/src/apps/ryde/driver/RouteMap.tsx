@@ -39,6 +39,8 @@ export function RouteMap({ request, onClose }: { request: Ride; onClose: () => v
     const view = (
         <div
             className="absolute inset-0 z-[70] flex flex-col bg-base font-sf"
+            inert={!shown}
+            aria-hidden={!shown}
             style={{ transform: shown ? 'translateX(0)' : 'translateX(100%)', transition: 'transform 0.32s cubic-bezier(0.32,0.72,0,1)' }}
         >
             <div className="flex shrink-0 items-center px-3 pb-1" style={{ paddingTop: 'calc(var(--safe-top) + 10px)' }}>
