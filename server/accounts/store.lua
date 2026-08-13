@@ -274,6 +274,55 @@ function store.listSessionAccounts(app, citizenid)
     return out
 end
 
+-- An account row carries no picture: every app keeps its own profile table and its own idea of
+-- what a picture is, so the switcher reads them from the app that owns them. Apps absent from
+-- this map have no picture to offer and fall back to a placeholder.
+---@type table<string, table> app key -> { table, key column, url column, gallery = first of a JSON array }
+local AVATAR_SOURCES = {
+    birdy     = { table = 'phone_birdy_profiles',     key = 'handle',   column = 'avatar' },
+    photogram = { table = 'phone_photogram_profiles', key = 'username', column = 'avatar' },
+    vibez     = { table = 'phone_vibez_profiles',     key = 'username', column = 'avatar' },
+    cherry    = { table = 'phone_cherry_profiles',    key = 'username', column = 'photos', gallery = true },
+}
+
+---The first entry of a photo gallery, which oxmysql hands back either decoded or as raw JSON.
+---@param value any stored gallery column
+---@return string|nil url
+local function firstPhoto(value)
+    if type(value) == 'table' then return value[1] end
+    if type(value) ~= 'string' or value == '' then return nil end
+    local decoded, list = pcall(json.decode, value)
+    if not decoded or type(list) ~= 'table' then return nil end
+    return list[1]
+end
+
+---Profile pictures for a set of account usernames in one app, keyed by LOWERCASE username: the
+---username columns collate case-insensitively, so a profile may spell its own key differently
+---from the account row the caller matched it to. Read-only.
+---@param app string account app key
+---@param usernames string[] account usernames
+---@return table<string, string> avatars username (lowercase) -> url
+function store.avatarsFor(app, usernames)
+    local src = AVATAR_SOURCES[app]
+    if not src or not usernames or #usernames == 0 then return {} end
+
+    local holes = ('?, '):rep(#usernames - 1) .. '?'
+    -- The app's table, not the engine's: a server whose app has never booted has nothing to read,
+    -- which must cost the switcher a picture and nothing more.
+    local queried, rows = pcall(MySQL.query.await, ('SELECT %s AS username, %s AS avatar FROM %s WHERE %s IN (%s)')
+        :format(src.key, src.column, src.table, src.key, holes), usernames)
+    if not queried or type(rows) ~= 'table' then return {} end
+
+    local out = {}
+    for i = 1, #rows do
+        local url = src.gallery and firstPhoto(rows[i].avatar) or rows[i].avatar
+        if type(url) == 'string' and url ~= '' then
+            out[tostring(rows[i].username):lower()] = url
+        end
+    end
+    return out
+end
+
 ---Ends every session a citizen holds in an app (idempotent: no rows is a no-op).
 ---@param app string account app key
 ---@param citizenid string framework per-character id

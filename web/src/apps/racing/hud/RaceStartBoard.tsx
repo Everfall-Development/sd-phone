@@ -2,45 +2,92 @@ import { useEffect, useReducer } from 'react';
 import type { CSSProperties } from 'react';
 
 import { t } from '@/i18n';
-import { formatMoney, startsInLabel } from '@/apps/racing/data';
+import { formatMoney } from '@/apps/racing/data';
 import type { LineupState, StartBoard } from '@/apps/racing/data';
-import { RACING_ACCENT } from '@/apps/racing/racingTheme';
+import { CLASS_COLOR } from '@/apps/racing/racingTheme';
+import { HUD_EDGE_PX } from './anchor';
 
-const TICK_MS = 500;
-const BOARD_W = 336;
+const TICK_MS  = 500;
+const RAIL_MAX = 16;
+const BOARD_W  = 560;
+const BOARD_SAFE_X = BOARD_W / 2 + HUD_EDGE_PX;
+const BOARD_SAFE_TOP = 220;
 
-const INK    = 'rgba(6, 9, 14, 0.92)';
-const LINE   = 'rgba(255, 255, 255, 0.10)';
-const TEXT   = '#F2F5F8';
-const MUTE   = 'rgba(242, 245, 248, 0.48)';
-const WARN   = '#FFD60A';
-const ON_INK = '#FFFFFF';
+const INK   = '#FFFFFF';
+const MUTE  = 'rgba(255, 255, 255, 0.55)';
+const FAINT = 'rgba(255, 255, 255, 0.18)';
+const READY = '#34D399';
+const WARN  = '#FBBF24';
+const WRONG = '#F87171';
 
-const SLAB: CSSProperties = {
-    background: INK,
-    border:     `1px solid ${LINE}`,
-    boxShadow:  '0 14px 40px rgba(0, 0, 0, 0.6)',
-    width:      BOARD_W,
+const MONO   = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+
+const BACKDROP: CSSProperties = {
+    position:     'absolute',
+    left:         -16,
+    right:        -16,
+    top:          -12,
+    bottom:       -12,
+    zIndex:       -1,
+    border:       '1px solid rgba(255, 255, 255, 0.10)',
+    borderRadius: 14,
+    background:   'rgba(5, 8, 12, 0.82)',
 };
 
-function lineupCopy(state: LineupState): { text: string; tone: string } {
-    if (state === 'vehicle') return { text: t('racing.lineupVehicle', 'Get in a vehicle'), tone: WARN };
-    if (state === 'turn')    return { text: t('racing.lineupTurn', 'Turn to face the track'), tone: WARN };
-    if (state === 'backup')  return { text: t('racing.lineupBackup', 'Back up behind the line'), tone: WARN };
-    return { text: t('racing.lineupReady', 'Lined up and ready'), tone: RACING_ACCENT };
+function lineupCopy(state: LineupState): { tone: string; text: string } {
+    if (state === 'ready') return { tone: READY, text: t('racing.lineupReady', 'Lined up') };
+    if (state === 'vehicle') return { tone: MUTE, text: t('racing.lineupVehicle', 'Get in the driver seat') };
+    if (state === 'turn') return { tone: WRONG, text: t('racing.lineupTurn', 'Facing the wrong way') };
+    return { tone: WARN, text: t('racing.lineupBackup', 'Back up behind the line') };
+}
+
+function clock(left: number): string {
+    if (left >= 3600) {
+        return `${Math.floor(left / 3600)}h ${String(Math.floor((left % 3600) / 60)).padStart(2, '0')}`;
+    }
+    return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+}
+
+function GridRail({ taken, seats, joined, tone }: { taken: number; seats: number; joined: boolean; tone: string }) {
+    const slots  = Math.max(1, Math.min(RAIL_MAX, seats));
+    const filled = Math.round((Math.min(taken, seats) / Math.max(1, seats)) * slots);
+
+    return (
+        <span className="flex items-end gap-[3px]">
+            {Array.from({ length: slots }, (_, i) => {
+                const isFilled = i < filled;
+                const isMine   = joined && i === filled - 1;
+                return (
+                    <span
+                        key={i}
+                        style={{
+                            width:        6,
+                            height:       isMine ? 19 : 14,
+                            borderRadius: 1.5,
+                            background:   isMine ? tone : isFilled ? 'rgba(255,255,255,0.88)' : FAINT,
+                        }}
+                    />
+                );
+            })}
+        </span>
+    );
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
     return (
-        <div className="flex min-w-0 flex-col gap-[4px]">
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', color: MUTE }}>{label}</span>
+        <span className="flex flex-col items-end gap-[3px]">
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', color: MUTE }}>
+                {label}
+            </span>
             <span
-                className="truncate"
-                style={{ fontSize: 15, fontWeight: 700, color: TEXT, fontVariantNumeric: 'tabular-nums' }}
+                style={{
+                    fontFamily: MONO, fontSize: 16, fontWeight: 700, color: INK,
+                    fontVariantNumeric: 'tabular-nums', lineHeight: 1,
+                }}
             >
                 {value}
             </span>
-        </div>
+        </span>
     );
 }
 
@@ -58,96 +105,135 @@ export function RaceStartBoard({ board, x, y, lineup }: {
     }, []);
 
     const now  = Math.floor(Date.now() / 1000);
+    const left = Math.max(0, board.startsAt - now);
     const full = board.registered >= board.maxRacers;
     const hint = lineup && board.joined ? lineupCopy(lineup) : null;
+    const tone = CLASS_COLOR[board.class];
+
+    const clockTone = left <= 10 ? WRONG : left <= 30 ? WARN : INK;
+
+    const meta = [
+        board.trackName,
+        board.mode === 'sprint'
+            ? t('racing.boardSprint', 'Sprint')
+            : t('racing.boardLapCount', '{n} laps', { n: board.laps }),
+        t('racing.boardGates', '{n} checkpoints', { n: board.gates }),
+    ].join('  ·  ');
+
+    const stencil: CSSProperties = {
+        fontSize:              62,
+        fontWeight:            800,
+        lineHeight:            0.78,
+        letterSpacing:         '-0.05em',
+        color:                 'transparent',
+        WebkitTextStrokeWidth: 2,
+        WebkitTextStrokeColor: tone,
+    };
 
     return (
         <div
-            className="pointer-events-none absolute"
+            className="pointer-events-none absolute flex flex-col"
             style={{
-                left:      `${x * 100}%`,
-                top:       `${y * 100}%`,
-                transform: 'translate(-50%, -100%)',
+                left:      `clamp(${BOARD_SAFE_X}px, ${x * 100}%, calc(100% - ${BOARD_SAFE_X}px))`,
+                bottom:    `clamp(${HUD_EDGE_PX}px, ${(1 - y) * 100}%, calc(100% - ${BOARD_SAFE_TOP}px))`,
+                width:     BOARD_W,
+                transform: 'translateX(-50%)',
                 zIndex:    3,
+                isolation: 'isolate',
             }}
         >
-            <div className="overflow-hidden rounded-[13px]" style={SLAB}>
-                <div className="flex items-stretch">
-                    <div
-                        className="flex w-[58px] shrink-0 flex-col items-center justify-center gap-[2px] py-2.5"
-                        style={{ background: RACING_ACCENT }}
+            <span style={BACKDROP} />
+
+            <div className="flex items-start gap-4">
+                <span className="flex w-[84px] shrink-0 flex-col items-center gap-1">
+                    <span style={stencil}>{board.class}</span>
+                    <span
+                        className="whitespace-nowrap"
+                        style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.14em', color: MUTE }}
                     >
-                        <span style={{ fontSize: 26, fontWeight: 800, lineHeight: 0.9, color: ON_INK, letterSpacing: '-0.04em' }}>
-                            {board.class}
-                        </span>
-                        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.13em', color: 'rgba(255, 255, 255, 0.72)' }}>
-                            {t('racing.boardClass', 'CLASS')}
-                        </span>
-                    </div>
-                    <div className="flex min-w-0 flex-1 flex-col justify-center gap-[3px] px-3 py-2.5">
-                        <span className="truncate" style={{ fontSize: 16, fontWeight: 700, color: TEXT }}>
-                            {board.name}
-                        </span>
-                        <span className="truncate" style={{ fontSize: 13, fontWeight: 600, color: MUTE }}>
-                            {board.trackName}
-                        </span>
-                    </div>
-                </div>
-
-                <div className="h-px w-full" style={{ background: LINE }} />
-
-                <div className="px-3 py-[7px]">
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: 'rgba(242, 245, 248, 0.80)' }}>
-                        {t('racing.boardClassCeiling', 'Class {cls} and below may enter', { cls: board.class })}
+                        {t('racing.boardClassBelow', 'AND BELOW')}
                     </span>
-                </div>
+                </span>
 
-                <div className="h-px w-full" style={{ background: LINE }} />
+                <span className="flex min-w-0 flex-1 flex-col pt-[3px]">
+                    <span
+                        className="truncate"
+                        style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em', color: INK, lineHeight: 1.12 }}
+                    >
+                        {board.name}
+                    </span>
+                    <span className="mt-1 truncate" style={{ fontSize: 13, fontWeight: 600, color: MUTE }}>
+                        {meta}
+                    </span>
+                </span>
 
-                <div className="grid grid-cols-4 gap-2 px-3 py-2.5">
+                <span className="flex shrink-0 flex-col items-end pt-[2px]">
+                    <span
+                        className={left <= 10 ? 'animate-pulse motion-reduce:animate-none' : undefined}
+                        style={{
+                            fontFamily: MONO, fontSize: 42, fontWeight: 700, color: clockTone,
+                            letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums', lineHeight: 1,
+                        }}
+                    >
+                        {clock(left)}
+                    </span>
+                    <span className="mt-1" style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.22em', color: MUTE }}>
+                        {t('racing.boardToStart', 'TO START')}
+                    </span>
+                </span>
+            </div>
+
+            <span
+                className="mt-3 h-px w-full"
+                style={{ background: `linear-gradient(90deg, transparent, ${tone} 18%, ${tone} 82%, transparent)` }}
+            />
+
+            <div className="mt-3 flex items-end justify-between gap-6">
+                <span className="flex min-w-0 flex-col gap-[7px]">
+                    <GridRail taken={board.registered} seats={board.maxRacers} joined={board.joined} tone={tone} />
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: MUTE }}>
+                        {t('racing.boardGridCount', '{n} of {m} on the grid', { n: board.registered, m: board.maxRacers })}
+                    </span>
+                </span>
+
+                <span className="flex shrink-0 items-end gap-5">
                     <Stat
-                        label={t('racing.boardGrid', 'GRID')}
-                        value={`${board.registered}/${board.maxRacers}`}
+                        label={t('racing.boardBuyIn', 'BUY-IN')}
+                        value={board.entryFee > 0 ? formatMoney(board.entryFee) : t('racing.boardNoFee', 'Free')}
                     />
-                    <Stat
-                        label={t('racing.boardLaps', 'LAPS')}
-                        value={board.mode === 'sprint' ? t('racing.boardSprint', 'Sprint') : String(board.laps)}
-                    />
-                    <Stat label={t('racing.boardBuyIn', 'BUY IN')} value={board.entryFee > 0 ? formatMoney(board.entryFee) : t('racing.boardFree', 'Free')} />
-                    <Stat label={t('racing.boardPool', 'POOL')} value={formatMoney(board.prizePool)} />
-                </div>
+                    <span className="h-[26px] w-px shrink-0" style={{ background: FAINT }} />
+                    <Stat label={t('racing.boardPrize', 'PRIZE')} value={formatMoney(board.prizePool)} />
+                </span>
+            </div>
 
-                <div className="h-px w-full" style={{ background: LINE }} />
-
-                <div className="flex items-center justify-between gap-2 px-3 py-[9px]">
-                    <span style={{ fontSize: 13, fontWeight: 700, color: MUTE, fontVariantNumeric: 'tabular-nums' }}>
-                        {startsInLabel(board.startsAt, now)}
-                    </span>
-                    <span className="flex items-center gap-2">
-                        <span
-                            className="flex h-[21px] w-[21px] items-center justify-center rounded-[5px]"
-                            style={{ background: 'rgba(255,255,255,0.15)', fontSize: 11.5, fontWeight: 800, color: TEXT }}
-                        >
-                            E
-                        </span>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>
-                            {board.joined
-                                ? t('racing.boardLeave', 'Leave')
-                                : full
-                                    ? t('racing.boardFull', 'Grid full')
-                                    : t('racing.boardJoin', 'Join')}
-                        </span>
-                    </span>
-                </div>
-
+            <div className="mt-3.5 flex items-center gap-3">
                 {hint && (
-                    <>
-                        <div className="h-px w-full" style={{ background: LINE }} />
-                        <div className="px-3 py-[8px]">
-                            <span style={{ fontSize: 13, fontWeight: 700, color: hint.tone }}>{hint.text}</span>
-                        </div>
-                    </>
+                    <span className="flex min-w-0 items-center gap-2">
+                        <span style={{ width: 7, height: 7, borderRadius: 4, background: hint.tone }} />
+                        <span className="truncate" style={{ fontSize: 13.5, fontWeight: 600, color: hint.tone }}>
+                            {hint.text}
+                        </span>
+                    </span>
                 )}
+
+                <span className="ml-auto flex shrink-0 items-center gap-2">
+                    <span
+                        className="flex h-[20px] min-w-[20px] items-center justify-center rounded-[5px] px-1"
+                        style={{
+                            border: `1px solid ${MUTE}`, fontSize: 11.5, fontWeight: 700,
+                            color: INK, textShadow: 'none', lineHeight: 1,
+                        }}
+                    >
+                        E
+                    </span>
+                    <span style={{ fontSize: 13.5, fontWeight: 700, color: full && !board.joined ? MUTE : tone }}>
+                        {board.joined
+                            ? t('racing.boardLeave', 'Leave')
+                            : full
+                                ? t('racing.boardFull', 'Grid full')
+                                : t('racing.boardJoin', 'Join')}
+                    </span>
+                </span>
             </div>
         </div>
     );

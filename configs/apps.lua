@@ -100,7 +100,7 @@ return {
         -- player gets the board. Its backend has its own switch, `Enabled` in configs/racing.lua;
         -- with that off this row shows an app with nothing behind it, so turn both off together.
         -- Keep `base = true` so the board is there the moment a race is posted.
-        { id = 'racing', label = 'Racing', icon = 'racing', route = '/racing', accent = '#0BF2B4', base = true, enabled = true },
+        { id = 'racing', label = 'Racing', icon = 'racing', route = '/racing', accent = '#0A8C72', base = true, enabled = true },
 
         -- Add `wifi` to any entry above to keep its download to one network, e.g. Dark Chat only
         -- handed out inside the bank:

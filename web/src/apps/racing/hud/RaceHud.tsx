@@ -6,24 +6,30 @@ import { formatRaceTime } from '@/apps/racing/data';
 import type { HudSector, HudState, HudStyle, Standing } from '@/apps/racing/data';
 import { RACING_ACCENT, RACING_ACCENT_SOFT } from '@/apps/racing/racingTheme';
 
-const TICK_MS       = 50;
-const BOARD_ROWS    = 5;
-const SECTOR_CELLS  = 4;
-const MAX_PIPS      = 24;
+const TICK_MS      = 50;
+const BOARD_ROWS   = 5;
+const SECTOR_CELLS = 4;
+const MAX_PIPS     = 24;
 
-const INK     = 'rgba(6, 9, 14, 0.90)';
-const LINE    = 'rgba(255, 255, 255, 0.10)';
-const TEXT    = '#F2F5F8';
-const MUTE    = 'rgba(242, 245, 248, 0.46)';
-const FAINT   = 'rgba(242, 245, 248, 0.16)';
-const GAIN    = '#4ADE80';
-const LOSS    = '#FF6B5A';
-const ON_INK  = '#FFFFFF';
+const TEXT  = '#F2F5F8';
+const SOFT  = 'rgba(242, 245, 248, 0.80)';
+const MUTE  = 'rgba(242, 245, 248, 0.46)';
+const FAINT = 'rgba(242, 245, 248, 0.14)';
+const GAIN  = '#4ADE80';
+const LOSS  = '#FF6B5A';
 
-const SLAB: CSSProperties = {
-    background: INK,
-    border:     `1px solid ${LINE}`,
-    boxShadow:  '0 10px 30px rgba(0, 0, 0, 0.5)',
+const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+
+const PANEL: CSSProperties = {
+    background:   'rgba(8, 11, 16, 0.92)',
+    border:       '1px solid rgba(255, 255, 255, 0.09)',
+    boxShadow:    '0 8px 24px rgba(0, 0, 0, 0.45)',
+    borderRadius: 13,
+};
+
+const ROW: CSSProperties = {
+    background:   'rgba(255, 255, 255, 0.035)',
+    borderRadius: 8,
 };
 
 function shortTime(ms: number): string {
@@ -31,27 +37,41 @@ function shortTime(ms: number): string {
     return full.startsWith('00:') ? full.slice(3) : full.replace(/^0/, '');
 }
 
-function Slab({ width, children }: { width: number; children: ReactNode }) {
+function Panel({ width, children }: { width: number; children: ReactNode }) {
     return (
-        <div className="overflow-hidden rounded-[11px]" style={{ ...SLAB, width }}>
+        <div className="flex flex-col gap-2 p-2.5" style={{ ...PANEL, width }}>
             {children}
         </div>
     );
 }
 
-function Rule() {
-    return <div className="h-px w-full" style={{ background: LINE }} />;
+function Micro({ children, tone = MUTE }: { children: ReactNode; tone?: string }) {
+    return (
+        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.15em', lineHeight: 1, color: tone }}>
+            {children}
+        </span>
+    );
 }
 
-function Micro({ children, tone = MUTE }: { children: ReactNode; tone?: string }) {
+function Chip({ children, tone = SOFT, live = false, size = 12 }: {
+    children: ReactNode;
+    tone?:    string;
+    live?:    boolean;
+    size?:    number;
+}) {
     return (
         <span
             style={{
-                fontSize:      9,
-                fontWeight:    700,
-                letterSpacing: '0.15em',
-                lineHeight:    1,
-                color:         tone,
+                fontFamily:   MONO,
+                fontSize:     size,
+                fontWeight:   700,
+                lineHeight:   1,
+                color:        tone,
+                background:   live ? RACING_ACCENT_SOFT : 'rgba(255, 255, 255, 0.07)',
+                border:       `1px solid ${live ? 'rgba(255, 255, 255, 0.10)' : 'transparent'}`,
+                borderRadius: 6,
+                padding:      '3px 7px',
+                fontVariantNumeric: 'tabular-nums',
             }}
         >
             {children}
@@ -59,25 +79,25 @@ function Micro({ children, tone = MUTE }: { children: ReactNode; tone?: string }
     );
 }
 
-function PitBlock({ pos, total }: { pos: number; total: number }) {
+function PosTile({ pos, total }: { pos: number; total: number }) {
     return (
         <div
-            className="flex w-[54px] shrink-0 flex-col items-center justify-center gap-[3px] py-2"
-            style={{ background: RACING_ACCENT }}
+            className="flex w-[52px] shrink-0 flex-col items-center justify-center gap-[3px] py-[7px]"
+            style={{ background: RACING_ACCENT_SOFT, border: `1px solid ${RACING_ACCENT}`, borderRadius: 10 }}
         >
             <span
                 style={{
-                    fontSize:      27,
-                    fontWeight:    800,
-                    lineHeight:    0.9,
+                    fontSize:   25,
+                    fontWeight: 800,
+                    lineHeight: 0.9,
                     letterSpacing: '-0.04em',
-                    color:         ON_INK,
+                    color:      TEXT,
                     fontVariantNumeric: 'tabular-nums',
                 }}
             >
                 {pos}
             </span>
-            <Micro tone="rgba(255, 255, 255, 0.72)">{t('racing.hudOf', 'OF {n}', { n: total })}</Micro>
+            <Micro>{t('racing.hudOf', 'OF {n}', { n: total })}</Micro>
         </div>
     );
 }
@@ -110,12 +130,12 @@ function PipStrip({ done, total }: { done: number; total: number }) {
     );
 }
 
-function HeadStrip({ state, current }: { state: HudState; current: string }) {
+function HeadBlock({ state, current }: { state: HudState; current: string }) {
     return (
-        <div className="flex items-stretch">
-            <PitBlock pos={state.pos} total={state.totalRacers} />
-            <div className="flex min-w-0 flex-1 flex-col justify-center gap-[7px] px-2.5 py-2">
-                <div className="flex items-baseline justify-between gap-2">
+        <div className="flex items-stretch gap-2.5">
+            <PosTile pos={state.pos} total={state.totalRacers} />
+            <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
+                <div className="flex items-center justify-between gap-2">
                     <span className="flex items-baseline gap-1">
                         <Micro>{t('racing.hudLap', 'LAP')}</Micro>
                         <span
@@ -131,18 +151,7 @@ function HeadStrip({ state, current }: { state: HudState; current: string }) {
                         </span>
                         <span style={{ fontSize: 11, fontWeight: 600, color: MUTE }}>/{state.totalLaps}</span>
                     </span>
-                    <span
-                        style={{
-                            fontSize:      15,
-                            fontWeight:    700,
-                            lineHeight:    1,
-                            letterSpacing: '-0.02em',
-                            color:         TEXT,
-                            fontVariantNumeric: 'tabular-nums',
-                        }}
-                    >
-                        {current}
-                    </span>
+                    <Chip tone={TEXT} live size={12.5}>{current}</Chip>
                 </div>
                 <PipStrip done={state.cp} total={state.cpTotal} />
             </div>
@@ -154,7 +163,8 @@ function GapText({ ms, ahead }: { ms: number; ahead: boolean }) {
     return (
         <span
             style={{
-                fontSize:   12,
+                fontFamily: MONO,
+                fontSize:   11.5,
                 fontWeight: 700,
                 color:      ahead ? GAIN : LOSS,
                 fontVariantNumeric: 'tabular-nums',
@@ -165,28 +175,28 @@ function GapText({ ms, ahead }: { ms: number; ahead: boolean }) {
     );
 }
 
-function NeighbourRow({ glyph, name, gap, ahead, you }: {
-    glyph:  string;
-    name:   string;
-    gap:    number | null;
-    ahead:  boolean;
-    you?:   boolean;
+function RacerRow({ lead, name, gap, you, children }: {
+    lead:      ReactNode;
+    name:      string;
+    gap?:      ReactNode;
+    you?:      boolean;
+    children?: ReactNode;
 }) {
     return (
-        <div className="flex items-center gap-2 px-2.5 py-[7px]" style={you ? { background: RACING_ACCENT_SOFT } : undefined}>
-            <span
-                className="w-[10px] text-center"
-                style={{ fontSize: 10, lineHeight: 1, color: you ? RACING_ACCENT : MUTE }}
-            >
-                {glyph}
-            </span>
+        <div
+            className="relative flex items-center gap-2 overflow-hidden py-[6px] pl-2.5 pr-2"
+            style={you ? { ...ROW, background: RACING_ACCENT_SOFT } : ROW}
+        >
+            {you && <span className="absolute bottom-0 left-0 top-0 w-[3px]" style={{ background: RACING_ACCENT }} />}
+            {lead}
             <span
                 className="min-w-0 flex-1 truncate"
-                style={{ fontSize: 12.5, fontWeight: you ? 700 : 600, color: you ? TEXT : 'rgba(242, 245, 248, 0.78)' }}
+                style={{ fontSize: 12.5, fontWeight: you ? 700 : 600, color: you ? TEXT : SOFT }}
             >
                 {name}
             </span>
-            {gap !== null && <GapText ms={gap} ahead={ahead} />}
+            {children}
+            {gap}
         </div>
     );
 }
@@ -200,23 +210,27 @@ function Neighbours({ racers }: { racers: Standing[] }) {
     const behind = meIndex < racers.length - 1 ? racers[meIndex + 1] : null;
     const myGap  = me.deltaMs ?? 0;
 
+    const glyph = (mark: string, tone: string) => (
+        <span className="w-[10px] shrink-0 text-center" style={{ fontSize: 10, lineHeight: 1, color: tone }}>
+            {mark}
+        </span>
+    );
+
     return (
-        <div className="flex flex-col">
+        <div className="flex flex-col gap-1">
             {ahead && (
-                <NeighbourRow
-                    glyph="▲"
+                <RacerRow
+                    lead={glyph('▲', MUTE)}
                     name={ahead.name}
-                    gap={(ahead.deltaMs ?? 0) - myGap}
-                    ahead
+                    gap={<GapText ms={(ahead.deltaMs ?? 0) - myGap} ahead />}
                 />
             )}
-            <NeighbourRow glyph="●" name={me.name} gap={null} ahead={false} you />
+            <RacerRow lead={glyph('●', RACING_ACCENT)} name={me.name} you />
             {behind && (
-                <NeighbourRow
-                    glyph="▼"
+                <RacerRow
+                    lead={glyph('▼', MUTE)}
                     name={behind.name}
-                    gap={(behind.deltaMs ?? 0) - myGap}
-                    ahead={false}
+                    gap={<GapText ms={(behind.deltaMs ?? 0) - myGap} ahead={false} />}
                 />
             )}
         </div>
@@ -230,54 +244,44 @@ function boardRows(racers: Standing[]): Standing[] {
     return [...racers.slice(0, BOARD_ROWS - 1), you];
 }
 
-function FullBoard({ racers }: { racers: Standing[] }) {
+function Board({ racers }: { racers: Standing[] }) {
     return (
-        <div className="flex flex-col">
+        <div className="flex flex-col gap-1">
             {boardRows(racers).map(racer => (
-                <div
+                <RacerRow
                     key={racer.pos}
-                    className="relative flex items-center gap-2 px-2.5 py-[6px]"
-                    style={racer.you ? { background: RACING_ACCENT_SOFT } : undefined}
-                >
-                    {racer.you && (
-                        <span className="absolute bottom-0 left-0 top-0 w-[2px]" style={{ background: RACING_ACCENT }} />
+                    you={racer.you}
+                    name={racer.name}
+                    lead={(
+                        <span
+                            className="w-[12px] shrink-0 text-center"
+                            style={{
+                                fontFamily: MONO,
+                                fontSize:   11.5,
+                                fontWeight: 700,
+                                color:      racer.you ? RACING_ACCENT : MUTE,
+                                fontVariantNumeric: 'tabular-nums',
+                            }}
+                        >
+                            {racer.pos}
+                        </span>
                     )}
-                    <span
-                        className="w-[12px] text-center"
-                        style={{
-                            fontSize:   11,
-                            fontWeight: 700,
-                            color:      racer.you ? RACING_ACCENT : MUTE,
-                            fontVariantNumeric: 'tabular-nums',
-                        }}
-                    >
-                        {racer.pos}
-                    </span>
-                    <span
-                        className="min-w-0 flex-1 truncate"
-                        style={{
-                            fontSize:   12.5,
-                            fontWeight: racer.you ? 700 : 600,
-                            color:      racer.you ? TEXT : 'rgba(242, 245, 248, 0.78)',
-                        }}
-                    >
-                        {racer.name}
-                    </span>
-                    {racer.deltaMs === null || racer.pos === 1
+                    gap={racer.deltaMs === null || racer.pos === 1
                         ? <Micro>{t('racing.hudLeader', 'LEAD')}</Micro>
                         : (
                             <span
                                 style={{
-                                    fontSize:   11.5,
+                                    fontFamily: MONO,
+                                    fontSize:   11,
                                     fontWeight: 700,
-                                    color:      'rgba(242, 245, 248, 0.82)',
+                                    color:      SOFT,
                                     fontVariantNumeric: 'tabular-nums',
                                 }}
                             >
                                 +{shortTime(racer.deltaMs)}
                             </span>
                         )}
-                </div>
+                />
             ))}
         </div>
     );
@@ -302,7 +306,7 @@ function SectorBars({ sectors, liveMs }: { sectors: HudSector[]; liveMs: number 
     const peak = Math.max(...spans, 1);
 
     return (
-        <div className="flex flex-col gap-[5px] px-2.5 py-2">
+        <div className="flex flex-col gap-[6px]">
             {cells.map((cell, index) => {
                 const running = index === runIdx;
                 const span    = spans[index];
@@ -313,18 +317,16 @@ function SectorBars({ sectors, liveMs }: { sectors: HudSector[]; liveMs: number 
                         <Micro tone={running ? RACING_ACCENT : MUTE}>
                             {t('racing.hudSectorShort', 'S{n}', { n: index + 1 })}
                         </Micro>
-                        <div className="h-[5px] min-w-0 flex-1 overflow-hidden rounded-full" style={{ background: FAINT }}>
-                            <div
-                                className="h-full rounded-full"
-                                style={{ width: `${width * 100}%`, background: fill }}
-                            />
+                        <div className="h-[4px] min-w-0 flex-1 overflow-hidden rounded-full" style={{ background: FAINT }}>
+                            <div className="h-full rounded-full" style={{ width: `${width * 100}%`, background: fill }} />
                         </div>
                         <span
-                            className="w-[46px] text-right"
+                            className="w-[52px] text-right"
                             style={{
+                                fontFamily: MONO,
                                 fontSize:   11,
                                 fontWeight: 700,
-                                color:      cell.done ? 'rgba(242, 245, 248, 0.82)' : running ? TEXT : FAINT,
+                                color:      cell.done ? GAIN : running ? TEXT : FAINT,
                                 fontVariantNumeric: 'tabular-nums',
                             }}
                         >
@@ -339,32 +341,14 @@ function SectorBars({ sectors, liveMs }: { sectors: HudSector[]; liveMs: number 
 
 function Clocks({ best, total }: { best: string; total: string }) {
     return (
-        <div className="flex items-center justify-between px-2.5 py-[7px]">
-            <span className="flex items-baseline gap-1.5">
+        <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5">
                 <Micro>{t('racing.hudBestLap', 'BEST')}</Micro>
-                <span
-                    style={{
-                        fontSize:   12.5,
-                        fontWeight: 700,
-                        color:      'rgba(242, 245, 248, 0.86)',
-                        fontVariantNumeric: 'tabular-nums',
-                    }}
-                >
-                    {best}
-                </span>
+                <Chip size={11.5}>{best}</Chip>
             </span>
-            <span className="flex items-baseline gap-1.5">
+            <span className="flex items-center gap-1.5">
                 <Micro>{t('racing.hudTotalTime', 'TOTAL')}</Micro>
-                <span
-                    style={{
-                        fontSize:   12.5,
-                        fontWeight: 700,
-                        color:      'rgba(242, 245, 248, 0.86)',
-                        fontVariantNumeric: 'tabular-nums',
-                    }}
-                >
-                    {total}
-                </span>
+                <Chip size={11.5}>{total}</Chip>
             </span>
         </div>
     );
@@ -380,33 +364,40 @@ interface LayoutProps {
 
 function SimpleHud({ current, state }: LayoutProps) {
     return (
-        <Slab width={228}>
-            <HeadStrip state={state} current={current} />
-        </Slab>
+        <Panel width={236}>
+            <HeadBlock state={state} current={current} />
+        </Panel>
     );
 }
 
 function CasualHud({ current, state }: LayoutProps) {
     return (
-        <Slab width={236}>
-            <HeadStrip state={state} current={current} />
-            <Rule />
-            <Neighbours racers={state.racers} />
-        </Slab>
+        <div className="flex flex-col gap-2">
+            <Panel width={244}>
+                <HeadBlock state={state} current={current} />
+            </Panel>
+            <Panel width={244}>
+                <Neighbours racers={state.racers} />
+            </Panel>
+        </div>
     );
 }
 
 function AdvancedHud({ bestMs, current, currentMs, total, state }: LayoutProps) {
     return (
-        <Slab width={272}>
-            <HeadStrip state={state} current={current} />
-            <Rule />
-            <SectorBars sectors={state.sectors} liveMs={currentMs} />
-            <Rule />
-            <FullBoard racers={state.racers} />
-            <Rule />
-            <Clocks best={bestMs > 0 ? shortTime(bestMs) : t('racing.hudNoTime', '--')} total={total} />
-        </Slab>
+        <div className="flex flex-col gap-2">
+            <Panel width={280}>
+                <HeadBlock state={state} current={current} />
+            </Panel>
+            <Panel width={280}>
+                <SectorBars sectors={state.sectors} liveMs={currentMs} />
+                <span className="h-px w-full" style={{ background: 'rgba(255, 255, 255, 0.08)' }} />
+                <Clocks best={bestMs > 0 ? shortTime(bestMs) : t('racing.hudNoTime', '--')} total={total} />
+            </Panel>
+            <Panel width={280}>
+                <Board racers={state.racers} />
+            </Panel>
+        </div>
     );
 }
 

@@ -1323,21 +1323,21 @@ function RacingIcon() {
     return (
         <svg viewBox={`0 0 ${S} ${S}`} width={S} height={S}>
             <defs>
-                <LinearGrad id="apxbg" top="#3BF7CB" mid="#0BF2B4" bot="#027358" angle={160} />
-                <LinearGrad id="apxcloth" top="#FFFFFF" bot="#E4FFF6" angle={0} />
+                <LinearGrad id="apxbg" top="#17C79A" mid="#0A8C72" bot="#044E43" angle={160} />
+                <LinearGrad id="apxcloth" top="#FFFFFF" bot="#F2FCF9" angle={0} />
                 <clipPath id="apxclip"><path d={RACING_CLOTH} /></clipPath>
                 <filter id="apxsh" x="-30%" y="-30%" width="160%" height="160%">
-                    <feDropShadow dx="0" dy="1.2" stdDeviation="1.2" floodColor="#013428" floodOpacity="0.45" />
+                    <feDropShadow dx="0" dy="1.2" stdDeviation="1.2" floodColor="#02201B" floodOpacity="0.45" />
                 </filter>
             </defs>
             <rect width={S} height={S} fill="url(#apxbg)" />
             <path d={`M0 0 H${S} V19 Q${S / 2} 27 0 19 Z`} fill="rgba(255,255,255,0.13)" />
             <g filter="url(#apxsh)">
-                <rect x="12.8" y="9" width="3.2" height="42" rx="1.6" fill="#0A2B25" />
+                <rect x="12.8" y="9" width="3.2" height="42" rx="1.6" fill="#052722" />
                 <path d={RACING_CLOTH} fill="url(#apxcloth)" />
                 <g clipPath="url(#apxclip)">
                     {RACING_CHECKS.map(cell => (
-                        <rect key={cell.id} x={cell.x} y={cell.y} width="5.3334" height={cell.height} fill="#0A2B25" />
+                        <rect key={cell.id} x={cell.x} y={cell.y} width="5.3334" height={cell.height} fill="#052722" />
                     ))}
                 </g>
             </g>

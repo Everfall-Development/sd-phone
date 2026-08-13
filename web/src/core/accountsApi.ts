@@ -1,6 +1,7 @@
 import { fetchNui, isFiveM } from './nui';
 import { useMocks } from './demo';
 import { apiCall, apiData } from '@/core/api';
+import devAvatar from '@/assets/photos/background3.webp';
 
 export let MAIL_DOMAIN = 'lifeinvader.com';
 
@@ -148,6 +149,7 @@ export interface SwitchableAccount {
     username: string;
     name?:    string;
     email?:   string;
+    avatar?:  string;
 }
 
 export async function accountsSignInOptions(app: string): Promise<SwitchableAccount[]> {
@@ -160,7 +162,7 @@ export async function accountsSwitchable(app: string): Promise<{ accounts: Switc
     if (!isFiveM) {
         const mine = DEV_VAULT.filter(e => e.app === app);
         return {
-            accounts: mine.map(e => ({ username: e.username, email: e.email ?? undefined })),
+            accounts: mine.map(e => ({ username: e.username, email: e.email ?? undefined, avatar: devAvatar })),
             active: mine[0]?.username ?? null,
         };
     }

@@ -230,7 +230,7 @@ local function createRace(track, startInSeconds, class)
         entryFee       = rnd(int(fee.min, 250), int(fee.max, 2500)),
         prizePool      = rankedPrizePool(letter, gates, laps),
         maxRacers      = math.max(1, rnd(int(grid.min, 6), int(grid.max, 16))),
-        baseRegistered = math.max(0, rnd(int(seed.min, 0), int(seed.max, 6))),
+        baseRegistered = math.max(0, rnd(int(seed.min, 0), int(seed.max, 0))),
         phasingMode    = phasingMode,
         phasingSeconds = phasingSeconds,
         camera         = rankedCamera(),
@@ -325,7 +325,7 @@ local function cardFor(race, cid, status)
         entryFee      = race.entryFee,
         prizePool     = race.isCustom and (race.entryFee * race.joinedCount) or race.prizePool,
         maxRacers     = race.maxRacers,
-        registered    = race.baseRegistered + race.joinedCount,
+        registered    = math.min(race.maxRacers, race.baseRegistered + race.joinedCount),
         joined        = race.members[cid] ~= nil,
         custom        = race.isCustom == true,
         phasing       = race.phasingMode,
@@ -365,10 +365,12 @@ function racegen.memberAccount(race, cid)
     return type(account) == 'string' and account or nil
 end
 
+---Real racers only: the seeded count is a display flourish, and counting it here would hand a
+---generated race a grid of players who do not exist and turn anyone away behind them.
 ---@param race table
 ---@return boolean
 function racegen.isFull(race)
-    return (race.baseRegistered + race.joinedCount) >= race.maxRacers
+    return race.joinedCount >= race.maxRacers
 end
 
 ---Every lobby the caller can see, soonest first.

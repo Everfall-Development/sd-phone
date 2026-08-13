@@ -18,6 +18,7 @@ export function AccountSwitcher({ app, forceDark = false, onClose, onSwitched, o
     const [active,   setActive]   = useState<string | null>(null);
     const [busy,     setBusy]     = useState<string | null>(null);
     const [error,    setError]    = useState<string | null>(null);
+    const [broken,   setBroken]   = useState<Record<string, boolean>>({});
 
     useEffect(() => {
         void accountsSwitchable(app).then(d => { setAccounts(d.accounts); setActive(d.active); });
@@ -61,9 +62,19 @@ export function AccountSwitcher({ app, forceDark = false, onClose, onSwitched, o
                         disabled={!!busy}
                         className="flex items-center gap-3 rounded-[12px] px-3 py-2.5 text-left transition-opacity active:opacity-60 disabled:opacity-50"
                     >
-                        <span className={`flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full ${forceDark ? 'bg-white/10' : 'bg-black/[0.07] dark:bg-white/10'}`}>
-                            <UserRound className={`h-[19px] w-[19px] ${sub}`} strokeWidth={2.2} />
-                        </span>
+                        {a.avatar && !broken[a.username] ? (
+                            <img
+                                src={a.avatar}
+                                alt=""
+                                draggable={false}
+                                onError={() => setBroken(b => ({ ...b, [a.username]: true }))}
+                                className={`h-[38px] w-[38px] shrink-0 rounded-full object-cover ${forceDark ? 'bg-white/10' : 'bg-black/[0.07] dark:bg-white/10'}`}
+                            />
+                        ) : (
+                            <span className={`flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full ${forceDark ? 'bg-white/10' : 'bg-black/[0.07] dark:bg-white/10'}`}>
+                                <UserRound className={`h-[19px] w-[19px] ${sub}`} strokeWidth={2.2} />
+                            </span>
+                        )}
                         <span className="flex min-w-0 flex-1 flex-col">
                             <span className={`truncate text-[16px] font-medium ${label}`}>{a.name || a.username}</span>
                             <span className={`truncate text-[13px] ${sub}`}>@{a.username}</span>

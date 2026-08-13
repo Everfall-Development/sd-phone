@@ -852,9 +852,15 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
     const tx = -(page * SCREEN_W) + dragX;
     const padCell = dockPlan?.landedCell != null ? dockPlan.landedCell - page * itemsPerPage() : overCell;
 
-    const parallaxOn = wallpaperParallax && visiblePages > 1;
+    const parallaxOn = wallpaperParallax;
     const fracPage = page - dragX / SCREEN_W;
-    const parallaxTransform = `translateX(${(1 - (fracPage / (visiblePages - 1)) * 2) * PARALLAX_SHIFT}px) scale(${blurHome ? 1.08 : PARALLAX_SCALE})`;
+    const parallaxSpan = Math.max(1, visiblePages - 1);
+    const parallaxTransform = `translateX(${(1 - (fracPage / parallaxSpan) * 2) * PARALLAX_SHIFT}px) scale(${blurHome ? 1.08 : PARALLAX_SCALE})`;
+
+    const parallaxReady = useRef(false);
+    const markWallpaperReady = useCallback((node: HTMLDivElement | null) => {
+        if (node) parallaxReady.current = true;
+    }, []);
 
     const dragWidget = dragW ? previewWidgets.find(w => w.uid === dragW.uid) : undefined;
     const dragWidgetDef = dragWidget ? widgetByKind(dragWidget.kind) : undefined;
@@ -866,12 +872,13 @@ export function Homescreen({ apps, dock, wallpaper, onLaunchApp, onUninstall, sa
     return (
         <div ref={rootRef} className="absolute inset-0 select-none">
             <div
+                ref={markWallpaperReady}
                 className="wallpaper absolute inset-0"
                 style={{
                     backgroundImage: `url(${resolveWallpaper(wallpaper)})`,
                     filter:    blurHome ? 'blur(28px) saturate(0.85)' : undefined,
                     transform: parallaxOn ? parallaxTransform : (blurHome ? 'scale(1.08)' : undefined),
-                    transition: parallaxOn && !isDraggingRef.current
+                    transition: parallaxOn && parallaxReady.current && !isDraggingRef.current
                         ? 'transform 0.38s cubic-bezier(0.25,0.46,0.45,0.94)'
                         : undefined,
                 }}

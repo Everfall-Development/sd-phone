@@ -369,8 +369,8 @@ function actions.signOutAll(source, payload)
     return ok({ signedOut = actions.signOutEverywhere(cid, app) })
 end
 
----The caller's saved logins for one app, as switch targets: username + display name, and which
----one is signed in. Passwords never leave the server.
+---The caller's saved logins for one app, as switch targets: username, display name, profile
+---picture, and which one is signed in. Passwords never leave the server.
 ---@param source number player server id
 ---@param payload table|nil client-supplied { app }
 ---@return table envelope on success data = { accounts, active }
@@ -382,9 +382,20 @@ function actions.switchable(source, payload)
     -- Live sessions, not vault entries: the switcher moves between accounts the player is
     -- actually signed into, so signing out of one drops it from the list until they add it back.
     local signedIn = store.listSessionAccounts(app, cid)
+    local names = {}
+    for i = 1, #signedIn do names[i] = signedIn[i].username end
+
+    -- The picture belongs to the app's profile row, not the account row, so it is read in one
+    -- batch here rather than left to the UI, which has no session for the accounts it is offering.
+    local avatars = store.avatarsFor(app, names)
     local out = {}
     for i = 1, #signedIn do
-        out[i] = { username = signedIn[i].username, name = signedIn[i].displayName, email = signedIn[i].email }
+        out[i] = {
+            username = signedIn[i].username,
+            name     = signedIn[i].displayName,
+            email    = signedIn[i].email,
+            avatar   = avatars[signedIn[i].username:lower()],
+        }
     end
     return ok({ accounts = out, active = signedIn[1] and signedIn[1].username or nil })
 end

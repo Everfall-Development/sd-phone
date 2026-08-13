@@ -30,14 +30,18 @@ local MODEL_BUDGET <const> = 3000
 ---@type integer Gates planted between yields, so a long track cannot stall the frame.
 local SPAWN_YIELD_EVERY <const> = 8
 
----@type integer Blip colour for a gate not yet taken.
-local BLIP_PENDING <const> = 5
----@type integer Blip colour for a gate already taken this lap.
-local BLIP_HIT <const> = 2
+---@type integer Blip colour for the gate being driven to, matching the billboard above it.
+local BLIP_NEXT <const> = 5
+---@type integer Blip colour for the gates queued behind it.
+local BLIP_LATER <const> = 2
 ---@type number Blip size for the numbered gate markers.
 local BLIP_SCALE <const> = 0.85
 ---@type integer Colour index of the GPS route drawn through the gates.
 local ROUTE_COLOUR <const> = 6
+---@type integer Gates carrying a blip and a route line at any moment: the one being driven to and
+---the two after it. The whole track at once reads as a wall of pins on the minimap and gives away
+---lines the driver should be reading off the road, so the set slides forward gate by gate instead.
+local GATES_AHEAD <const> = math.max(1, math.floor(tonumber(raceCfg.GatesAhead) or 3))
 
 ---@type integer Sectors a lap is split into for the HUD's split times.
 local SECTOR_COUNT <const> = 4
@@ -241,21 +245,64 @@ local function discard(blipList, propList)
     end
 end
 
----Drops a numbered map blip on every gate.
----@param targets number[][]
----@return integer[] handles
-local function dropBlips(targets)
-    local handles = {}
-    for i = 1, #targets do
-        local t    = targets[i]
+---The gates the driver may see at any moment: the one being driven to and the GATES_AHEAD - 1 after
+---it. The lookahead wraps back to gate 1 on every lap but the last, where there is nothing after the
+---finish to point at, and a track shorter than the window never lists the same gate twice.
+---@param targets number[][] gate rows for the lap, gate 1 of the track excluded
+---@param current integer index of the gate being driven to
+---@param cpPerLap integer gates in one lap
+---@param lap integer lap being driven, 1-based
+---@param totalLaps integer laps in the race
+---@return integer[] indices gate indices, nearest first
+local function gateWindow(targets, current, cpPerLap, lap, totalLaps)
+    local out, seen = {}, {}
+    for k = 0, GATES_AHEAD - 1 do
+        local idx = current + k
+        if idx > cpPerLap and lap < totalLaps then idx = idx - cpPerLap end
+        if targets[idx] and not seen[idx] then
+            seen[idx] = true
+            out[#out + 1] = idx
+        end
+    end
+    return out
+end
+
+---Repaints the map pins and the GPS line over the window, dropping whatever was there before.
+---Called on the grid and again on every gate taken, so the set slides forward with the driver
+---instead of standing as a finished picture of the track.
+---@param targets number[][] gate rows for the lap
+---@param current integer index of the gate being driven to
+---@param cpPerLap integer gates in one lap
+---@param lap integer lap being driven, 1-based
+---@param totalLaps integer laps in the race
+---@param into integer[] blip handle list, emptied and refilled in place
+local function paintWindow(targets, current, cpPerLap, lap, totalLaps, into)
+    for i = #into, 1, -1 do
+        if DoesBlipExist(into[i]) then RemoveBlip(into[i]) end
+        into[i] = nil
+    end
+
+    local window = gateWindow(targets, current, cpPerLap, lap, totalLaps)
+
+    ClearGpsMultiRoute()
+    if #window == 0 then
+        SetGpsMultiRouteRender(false)
+        return
+    end
+
+    StartGpsMultiRoute(ROUTE_COLOUR, true, true)
+    for i = 1, #window do
+        local idx  = window[i]
+        local t    = targets[idx]
         local blip = AddBlipForCoord(t[1] + 0.0, t[2] + 0.0, t[3] + 0.0)
         SetBlipSprite(blip, 1)
-        SetBlipColour(blip, BLIP_PENDING)
+        SetBlipColour(blip, i == 1 and BLIP_NEXT or BLIP_LATER)
         SetBlipScale(blip, BLIP_SCALE)
-        ShowNumberOnBlip(blip, i)
-        handles[i] = blip
+        ShowNumberOnBlip(blip, idx)
+        into[#into + 1] = blip
+        AddPointToGpsMultiRoute(t[1] + 0.0, t[2] + 0.0, t[3] + 0.0)
     end
-    return handles
+    SetGpsMultiRouteRender(true)
 end
 
 ---Streams the gate prop in, giving up after the budget rather than holding the grid on a model that
@@ -304,17 +351,6 @@ local function plantGates(targets)
     end
     SetModelAsNoLongerNeeded(hash)
     return handles
-end
-
----Draws the whole track as a GPS route, gate 1 included so the line starts at the grid.
----@param points number[][]
-local function startRoute(points)
-    ClearGpsMultiRoute()
-    StartGpsMultiRoute(ROUTE_COLOUR, true, true)
-    for i = 1, #points do
-        AddPointToGpsMultiRoute(points[i][1] + 0.0, points[i][2] + 0.0, points[i][3] + 0.0)
-    end
-    SetGpsMultiRouteRender(true)
 end
 
 ---Ends camera enforcement; the loop thread restores the saved view modes as it exits.
@@ -536,7 +572,6 @@ local function runLoop(state)
             local dx, dy = coords.x - target[1], coords.y - target[2]
 
             if math.sqrt(dx * dx + dy * dy) <= CHECKPOINT_RADIUS then
-                if DoesBlipExist(blips[cur]) then SetBlipColour(blips[cur], BLIP_HIT) end
                 PlaySoundFrontend(-1, 'CHECKPOINT_NORMAL', 'HUD_MINI_GAME_SOUNDSET', true)
 
                 local tick       = GetGameTimer()
@@ -567,13 +602,11 @@ local function runLoop(state)
                     state.current      = 1
                     state.lapStartedAt = tick
                     state.sectors      = {}
-                    for i = 1, #blips do
-                        if DoesBlipExist(blips[i]) then SetBlipColour(blips[i], BLIP_PENDING) end
-                    end
                 else
                     state.current = cur + 1
                 end
 
+                paintWindow(state.targets, state.current, state.cpPerLap, state.lap, state.totalLaps, blips)
                 pushState(state)
             else
                 markers.update(state.targets, cur, state.cpPerLap, state.lap, state.totalLaps, coords)
@@ -630,9 +663,9 @@ function race.begin(data)
             return
         end
 
-        local ownBlips = dropBlips(targets)
+        local ownBlips = {}
         local ownProps = plantGates(targets)
-        startRoute(points)
+        paintWindow(targets, 1, #targets, 1, math.max(1, math.floor(tonumber(data.laps) or 1)), ownBlips)
 
         while GetGameTimer() < greenAt do Wait(50) end
 

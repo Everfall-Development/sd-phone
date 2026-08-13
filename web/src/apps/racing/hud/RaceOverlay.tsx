@@ -55,6 +55,7 @@ export function RaceOverlay() {
     useNuiEvent('sd-phone:racing:board:hide', useCallback(() => {
         setBoard(null);
         setBoardAt(null);
+        setLineup(null);
     }, []));
 
     useNuiEvent('sd-phone:racing:board:lineup', useCallback((data) => {

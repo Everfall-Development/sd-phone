@@ -6,6 +6,7 @@ import { formatClockTime, formatLongDate, useDisplayClock } from '@/hooks/useClo
 import { useKeypadInput } from '@/hooks/useKeypadInput';
 import { fetchNui, isFiveM } from '@/core/nui';
 import { resolveWallpaper } from './wallpapers';
+import { PARALLAX_SCALE, PARALLAX_SHIFT } from './shellLook';
 import { useTheme } from '@/stores/themeStore';
 import { Clockface } from './lockClock';
 import { LockClockEditor } from './LockClockEditor';
@@ -34,7 +35,7 @@ export function Lockscreen({ use24h, showDate, wallpaper, unlockTrigger, onUnloc
     const date = formatLongDate(now);
     const [exiting, setExiting] = useState(false);
 
-    const { lockClock, setLockClock, passcode, faceId, blurLock } = useTheme('lockClock', 'setLockClock', 'passcode', 'faceId', 'blurLock');
+    const { lockClock, setLockClock, passcode, faceId, blurLock, wallpaperParallax } = useTheme('lockClock', 'setLockClock', 'passcode', 'faceId', 'blurLock', 'wallpaperParallax');
     const [customizing, setCustomizing] = useState(false);
     const [authMode, setAuthMode] = useState<null | 'face' | 'passcode'>(null);
 
@@ -124,7 +125,9 @@ export function Lockscreen({ use24h, showDate, wallpaper, unlockTrigger, onUnloc
                 style={{
                     backgroundImage: `url(${resolveWallpaper(wallpaper)})`,
                     filter:    blurLock ? 'blur(28px) saturate(0.85)' : undefined,
-                    transform: blurLock ? 'scale(1.08)'               : undefined,
+                    transform: blurLock || wallpaperParallax
+                        ? `translateX(${wallpaperParallax ? PARALLAX_SHIFT : 0}px) scale(${blurLock ? 1.08 : PARALLAX_SCALE})`
+                        : undefined,
                 }}
             />
 
