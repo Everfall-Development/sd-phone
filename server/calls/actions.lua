@@ -850,11 +850,15 @@ end
 function actions.callGroup(source, targets, displayName, displayNumber)
     local cid = player.getIdentifier(source)
     if not cid then return fail('Player not found') end
+    if not reachable(source) then return fail('You need a phone to make calls') end
     if sessionForSource(source) or ringForSource(source) then return fail('You are already on a call') end
+    if not util.rateLimit(cid, 'call:dial', DIAL_WINDOW, DIAL_PER_WINDOW) then return fail('Slow down') end
     if settings.isAirplane(cid) then return fail('Airplane Mode is on') end
     if not service.allows(source, 'call') then return fail('No Service') end
+    local muted = moderation.guard(cid, 'calls'); if muted then return muted end
 
     local myNumber = digits(settings.ensurePhoneNumber(cid))
+    if myNumber == '' then return fail('You need a phone number to make calls') end
 
     local ringTargets = {}
     for _, t in ipairs(targets) do

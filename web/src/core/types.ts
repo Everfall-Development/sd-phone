@@ -454,6 +454,7 @@ export type NuiMessage =
     | { action: 'sd-phone:maps:tilecheck' }
     | { action: 'sd-phone:services:inbox'; data?: { job?: string; thread?: string } }
     | { action: 'sd-phone:services:jobsChanged' }
+    | { action: 'sd-phone:services:directoryChanged'; data?: { job?: string; previousJob?: string } }
     | { action: 'sd-phone:services:invoices' }
     | { action: 'sd-phone:homes:refresh' }
     | { action: 'customApps:set';     data: CustomAppDef[] }

@@ -38,9 +38,13 @@ const DEV_DIRECTORY: Directory = { companies: COMPANIES };
 
 export async function fetchDirectory(): Promise<Directory> {
     if (!isFiveM) return DEV_DIRECTORY;
-    const response = await fetchNui<Envelope<Directory>>('sd-phone:services:directory');
-    if (response?.success && response.data) return response.data;
-    return { companies: [], unavailable: response?.message ?? t('services.unavailable', 'Businesses are unavailable right now.') };
+    try {
+        const response = await fetchNui<Envelope<Directory>>('sd-phone:services:directory');
+        if (response?.success && response.data) return response.data;
+        return { companies: [], unavailable: response?.message ?? t('services.unavailable', 'Businesses are unavailable right now.') };
+    } catch {
+        return { companies: [], unavailable: t('services.unavailable', 'Businesses are unavailable right now.') };
+    }
 }
 
 async function mutate(event: string, payload?: unknown): Promise<ServiceResult> {
@@ -97,7 +101,12 @@ export interface InboxThread {
     unread:   number;
     messages: InboxMessage[];
 }
-export interface Inbox { personal: InboxThread[]; job: InboxThread[]; hasJob: boolean }
+export interface Inbox {
+    personal: InboxThread[];
+    job: InboxThread[];
+    hasJob: boolean;
+    unavailable?: string;
+}
 
 const DEV_INBOX: Inbox = {
     personal: [
@@ -122,12 +131,38 @@ const DEV_INBOX: Inbox = {
 
 export async function fetchInbox(): Promise<Inbox> {
     if (!isFiveM) return DEV_INBOX;
-    return (await apiData<Inbox>('sd-phone:services:inbox')) ?? { personal: [], job: [], hasJob: false };
+    try {
+        const response = await fetchNui<Envelope<Inbox>>('sd-phone:services:inbox');
+        if (response?.success && response.data) return response.data;
+        return {
+            personal: [],
+            job: [],
+            hasJob: false,
+            unavailable: response?.message ?? t('services.inboxUnavailable', 'Messages are unavailable right now.'),
+        };
+    } catch {
+        return {
+            personal: [],
+            job: [],
+            hasJob: false,
+            unavailable: t('services.inboxUnavailable', 'Messages are unavailable right now.'),
+        };
+    }
 }
 
-export async function messageCompany(job: string, draft: ServiceDraft): Promise<Inbox | null> {
-    if (!isFiveM) return DEV_INBOX;
-    return (await apiData<{ inbox: Inbox }>('sd-phone:services:messageCompany', { job, ...draft }))?.inbox ?? null;
+export type ServiceMessageResult = Envelope<{ inbox: Inbox }>;
+
+function messagePayload(key: 'job' | 'citizen', value: string, drafts: ServiceDraft | ServiceDraft[]): Record<string, unknown> {
+    if (Array.isArray(drafts)) return { [key]: value, drafts };
+    return { [key]: value, ...drafts };
+}
+
+export async function messageCompany(job: string, drafts: ServiceDraft | ServiceDraft[]): Promise<ServiceMessageResult> {
+    if (!isFiveM) return { success: true, data: { inbox: DEV_INBOX } };
+    return (await fetchNui<ServiceMessageResult>(
+        'sd-phone:services:messageCompany',
+        messagePayload('job', job, drafts),
+    )) ?? { success: false, message: t('services.noResponse', 'No response from server') };
 }
 
 export async function markThreadRead(scope: 'personal' | 'job', key: string): Promise<void> {
@@ -135,9 +170,12 @@ export async function markThreadRead(scope: 'personal' | 'job', key: string): Pr
     await fetchNui('sd-phone:services:markRead', { scope, key });
 }
 
-export async function replyCompany(citizen: string, draft: ServiceDraft): Promise<Inbox | null> {
-    if (!isFiveM) return DEV_INBOX;
-    return (await apiData<{ inbox: Inbox }>('sd-phone:services:replyCompany', { citizen, ...draft }))?.inbox ?? null;
+export async function replyCompany(citizen: string, drafts: ServiceDraft | ServiceDraft[]): Promise<ServiceMessageResult> {
+    if (!isFiveM) return { success: true, data: { inbox: DEV_INBOX } };
+    return (await fetchNui<ServiceMessageResult>(
+        'sd-phone:services:replyCompany',
+        messagePayload('citizen', citizen, drafts),
+    )) ?? { success: false, message: t('services.noResponse', 'No response from server') };
 }
 
 export interface SavedJob {

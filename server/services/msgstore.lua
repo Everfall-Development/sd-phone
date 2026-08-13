@@ -41,6 +41,24 @@ local util = require 'server.util'
 local function newId() return util.newId(7) end
 store.newId = newId
 
+local DEFAULT_THREAD_LIMIT = 100
+local MAX_THREAD_LIMIT = 100
+local DEFAULT_INBOX_LIMIT = 50
+local MAX_INBOX_LIMIT = 50
+local MAX_BATCH_KEYS = 50
+
+---@param value any
+---@param fallback integer
+---@param maximum integer
+---@return integer
+local function boundedLimit(value, fallback, maximum)
+    local numeric = tonumber(value)
+    if not util.finite(numeric) then return fallback end
+    local limit = math.floor(numeric)
+    if limit < 1 then return fallback end
+    return math.min(limit, maximum)
+end
+
 ---Appends one message to a (job, citizen) thread.
 ---@param rec { id: string, job: string, citizenNumber: string, citizenName?: string, sender: string, staffCid?: string, staffName?: string, body: string, kind?: string, meta?: string, createdAt: number }
 function store.insert(rec)
@@ -55,26 +73,29 @@ function store.insert(rec)
     })
 end
 
----Every message in a (job, citizen) thread, oldest first. Read-only.
+---The newest rows in a (job, citizen) thread, returned oldest first for display. Read-only.
 ---@param job string
 ---@param citizenNumber string
 ---@param limit? number row cap (default 100)
 ---@return table[]
 function store.threadMessages(job, citizenNumber, limit)
+    local rowLimit = boundedLimit(limit, DEFAULT_THREAD_LIMIT, MAX_THREAD_LIMIT)
     return MySQL.query.await([[
         SELECT id, sender, staff_cid, staff_name, citizen_name, body, kind, meta, created_at
-        FROM phone_service_messages
-        WHERE job = ? AND citizen_number = ?
+        FROM (
+            SELECT id, sender, staff_cid, staff_name, citizen_name, body, kind, meta, created_at
+            FROM phone_service_messages
+            WHERE job = ? AND citizen_number = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+        ) recent
         ORDER BY created_at ASC, id ASC
-        LIMIT ?
-    ]], { job, citizenNumber, limit or 100 }) or {}
+    ]], { job, citizenNumber, rowLimit }) or {}
 end
 
----Every message of several threads at once, so an inbox rebuild costs one round trip instead of
----one per thread. `fixedCol`/`inCol` are file constants, never client input.
----The row cap is the same total the per-thread reads could return, so a thread long enough to eat
----it alone cannot make this cost more than the loop it replaces. A key missing from the result is
----the caller's cue to read that one thread itself.
+---The newest rows of several threads at once, returned oldest first per thread, so an inbox rebuild
+---costs one round trip instead of one per thread. `fixedCol`/`inCol` are file constants, never
+---client input. A key missing from the result is the caller's cue to read that one thread itself.
 ---@param fixedCol string column pinned to one value
 ---@param fixedValue string
 ---@param inCol string column the thread set is keyed by, and the returned map's key
@@ -82,38 +103,48 @@ end
 ---@param limit number per-thread row cap, matching threadMessages
 ---@return table<string, table[]> byKey threads this covers; keys it could not cover are absent
 local function batchThreads(fixedCol, fixedValue, inCol, values, limit)
-    local n = #values
+    if type(values) ~= 'table' then return {} end
+
+    local rowLimit = boundedLimit(limit, DEFAULT_THREAD_LIMIT, MAX_THREAD_LIMIT)
+    local keys, seen = {}, {}
+    for index = 1, math.min(#values, MAX_BATCH_KEYS) do
+        local value = values[index]
+        if type(value) == 'string' and value ~= '' and not seen[value] then
+            seen[value] = true
+            keys[#keys + 1] = value
+        end
+    end
+
+    local n = #keys
     if n == 0 then return {} end
 
-    local cap  = n * limit + 1
     local args = { fixedValue }
-    for i = 1, n do args[i + 1] = values[i] end
-    args[#args + 1] = cap
+    for i = 1, n do args[i + 1] = keys[i] end
+    args[#args + 1] = rowLimit
 
     local rows = MySQL.query.await(([[
         SELECT %s, id, sender, staff_cid, staff_name, citizen_name, body, kind, meta, created_at
-        FROM phone_service_messages
-        WHERE %s = ? AND %s IN (%s)
+        FROM (
+            SELECT %s, id, sender, staff_cid, staff_name, citizen_name, body, kind, meta, created_at,
+                   ROW_NUMBER() OVER (PARTITION BY %s ORDER BY created_at DESC, id DESC) AS row_num
+            FROM phone_service_messages
+            WHERE %s = ? AND %s IN (%s)
+        ) recent
+        WHERE row_num <= ?
         ORDER BY %s ASC, created_at ASC, id ASC
-        LIMIT ?
-    ]]):format(inCol, fixedCol, inCol, string.rep('?', n, ','), inCol), args) or {}
+    ]]):format(inCol, inCol, inCol, fixedCol, inCol, string.rep('?', n, ','), inCol), args) or {}
 
-    local out, order = {}, {}
+    local out = {}
     for i = 1, #rows do
         local row = rows[i]
         local key = row[inCol]
         if key ~= nil then
             local list = out[key]
-            if not list then list = {}; out[key] = list; order[#order + 1] = key end
-            -- Rows arrive in the per-thread query's own order, so the first `limit` of each are
-            -- exactly what that query would have returned.
-            if #list < limit then list[#list + 1] = row end
+            if not list then list = {}; out[key] = list end
+            list[#list + 1] = row
         end
     end
 
-    -- Cap reached: rows come grouped by `inCol`, so every key but the last is whole. Drop the last
-    -- (it may be cut short) and leave the untouched keys absent rather than serve a short thread.
-    if #rows >= cap and #order > 0 then out[order[#order]] = nil end
     return out
 end
 
@@ -153,6 +184,7 @@ end
 ---@param limit? number thread cap (default 50); the inbox runs one query per thread returned
 ---@return { citizen_number: string, citizen_name?: string, last_body?: string, created_at: number }[]
 function store.jobThreads(job, limit)
+    local threadLimit = boundedLimit(limit, DEFAULT_INBOX_LIMIT, MAX_INBOX_LIMIT)
     return MySQL.query.await([[
         SELECT t.citizen_number, t.created_at,
                (SELECT body FROM phone_service_messages
@@ -168,7 +200,7 @@ function store.jobThreads(job, limit)
         ) t
         ORDER BY t.created_at DESC
         LIMIT ?
-    ]], { job, job, job, limit or 50 }) or {}
+    ]], { job, job, job, threadLimit }) or {}
 end
 
 ---Marks a (viewer, job, citizen) thread read up to `ts`; the stored timestamp never moves
@@ -189,8 +221,10 @@ end
 ---Only counts messages from the customer side. Read-only.
 ---@param viewer string
 ---@param job string
+---@param limit? number
 ---@return table<string, number>
-function store.jobUnread(viewer, job)
+function store.jobUnread(viewer, job, limit)
+    local rowLimit = boundedLimit(limit, DEFAULT_INBOX_LIMIT, MAX_INBOX_LIMIT)
     local rows = MySQL.query.await([[
         SELECT m.citizen_number AS k, COUNT(*) AS unread
         FROM phone_service_messages m
@@ -198,7 +232,9 @@ function store.jobUnread(viewer, job)
             ON r.viewer = ? AND r.job = m.job AND r.citizen_number = m.citizen_number
         WHERE m.job = ? AND m.sender = 'citizen' AND m.created_at > COALESCE(r.last_read, 0)
         GROUP BY m.citizen_number
-    ]], { viewer, job }) or {}
+        ORDER BY MAX(m.created_at) DESC
+        LIMIT ?
+    ]], { viewer, job, rowLimit }) or {}
     local map = {}
     for _, row in ipairs(rows) do map[row.k] = tonumber(row.unread) or 0 end
     return map
@@ -208,8 +244,10 @@ end
 ---from the staff side. Read-only.
 ---@param viewer string
 ---@param citizenNumber string
+---@param limit? number
 ---@return table<string, number>
-function store.personalUnread(viewer, citizenNumber)
+function store.personalUnread(viewer, citizenNumber, limit)
+    local rowLimit = boundedLimit(limit, DEFAULT_INBOX_LIMIT, MAX_INBOX_LIMIT)
     local rows = MySQL.query.await([[
         SELECT m.job AS k, COUNT(*) AS unread
         FROM phone_service_messages m
@@ -217,7 +255,9 @@ function store.personalUnread(viewer, citizenNumber)
             ON r.viewer = ? AND r.job = m.job AND r.citizen_number = m.citizen_number
         WHERE m.citizen_number = ? AND m.sender = 'staff' AND m.created_at > COALESCE(r.last_read, 0)
         GROUP BY m.job
-    ]], { viewer, citizenNumber }) or {}
+        ORDER BY MAX(m.created_at) DESC
+        LIMIT ?
+    ]], { viewer, citizenNumber, rowLimit }) or {}
     local map = {}
     for _, row in ipairs(rows) do map[row.k] = tonumber(row.unread) or 0 end
     return map
@@ -226,8 +266,10 @@ end
 ---Distinct company threads for a customer (one row per job, newest first), each carrying the
 ---latest body. Read-only.
 ---@param citizenNumber string
+---@param limit? number
 ---@return { job: string, last_body?: string, created_at: number }[]
-function store.citizenThreads(citizenNumber)
+function store.citizenThreads(citizenNumber, limit)
+    local threadLimit = boundedLimit(limit, DEFAULT_INBOX_LIMIT, MAX_INBOX_LIMIT)
     return MySQL.query.await([[
         SELECT t.job, t.created_at,
                (SELECT body FROM phone_service_messages
@@ -239,7 +281,8 @@ function store.citizenThreads(citizenNumber)
             GROUP BY job
         ) t
         ORDER BY t.created_at DESC
-    ]], { citizenNumber, citizenNumber }) or {}
+        LIMIT ?
+    ]], { citizenNumber, citizenNumber, threadLimit }) or {}
 end
 
 return store

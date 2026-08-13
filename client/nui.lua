@@ -86,12 +86,24 @@ local function remember(key, res)
     lastGood[key] = res
 end
 
+---Runs an optional response normalizer without allowing it to break the NUI callback.
+---@param response any
+---@param transform? fun(response: any): any
+---@return any
+local function transformResponse(response, transform)
+    if type(transform) ~= 'function' then return response end
+    local succeeded, transformed = pcall(transform, response)
+    if succeeded and transformed ~= nil then return transformed end
+    return response
+end
+
 ---Binds a NUI callback that forwards its payload to the matching server callback and returns the
 ---response envelope unchanged, falling back to a uniform failure when the server never answers.
 ---@param nuiAction string NUI action name the React app fetches
 ---@param serverEvent string server callback name to await
 ---@param onAccepted? fun() ran only when the server accepted the write, never on a rejection
-local function proxy(nuiAction, serverEvent, onAccepted)
+---@param transform? fun(response: any): any optional response transform; failures keep the original
+local function proxy(nuiAction, serverEvent, onAccepted, transform)
     ---@type string|nil '<app>:<action>', nil for anything not shaped like one
     local action = serverEvent:match('^sd%-phone:server:(.+)$')
     ---@type boolean Whether this action's answers are worth keeping.
@@ -112,7 +124,8 @@ local function proxy(nuiAction, serverEvent, onAccepted)
                 local copy = {}
                 for k, v in pairs(kept) do copy[k] = v end
                 copy.cached = true
-                cb(copy)
+                local transformed = transformResponse(copy, transform)
+                cb(transformed)
                 return
             end
             cb({ success = false, message = 'No Service' })
@@ -122,7 +135,8 @@ local function proxy(nuiAction, serverEvent, onAccepted)
         local res = lib.callback.await(serverEvent, false, payload)
         if onAccepted and type(res) == 'table' and res.success == true then onAccepted() end
         if key and type(res) == 'table' and res.success == true then remember(key, res) end
-        cb(res or { success = false, message = 'No response from server' })
+        local response = res or { success = false, message = 'No response from server' }
+        cb(transformResponse(response, transform))
     end)
 end
 

@@ -1,7 +1,6 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { Building2, MessageSquare, Navigation, Phone, RotateCcw } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Building2, ChevronRight, RotateCcw, Search, SlidersHorizontal } from 'lucide-react';
 
-import { device } from '@device';
 import { fetchNui, isFiveM } from '@/core/nui';
 import { t } from '@/i18n';
 import { requestOpenMaps } from '@/shell/deeplink';
@@ -10,11 +9,34 @@ import { AlertDialog } from '@/ui/AlertDialog';
 import { EmptyState } from '@/ui/EmptyState';
 import { PromptDialog } from '@/ui/PromptDialog';
 import { SearchBar } from '@/ui/SearchBar';
+import { SegmentedControl } from '@/ui/SegmentedControl';
+import { portalToPhoneScreen } from '@/ui/portal';
+import { BusinessDetail } from './BusinessDetail';
 import { ServiceAvatar } from './ServiceAvatar';
 import { callCompany, messageCompany, type Inbox } from './servicesApi';
-import { filterBusinesses, type Company } from './data';
+import {
+    filterBusinesses,
+    type BusinessAvailability,
+    type Company,
+} from './data';
 
 const ALL_CATEGORIES = 'All';
+
+type PendingAction = {
+    companyId: string;
+    action: 'call' | 'message';
+};
+
+function openCompanyInMaps(company: Company) {
+    if (!company.coords) return;
+    requestOpenMaps({
+        label: company.name,
+        x: company.coords.x,
+        y: company.coords.y,
+        color: company.color,
+        companyId: company.id,
+    });
+}
 
 export function CompaniesTab({ companies, loaded, unavailable, onRetry, onMessaged }: {
     companies: Company[];
@@ -25,8 +47,12 @@ export function CompaniesTab({ companies, loaded, unavailable, onRetry, onMessag
 }) {
     const [query, setQuery] = useState('');
     const [category, setCategory] = useState(ALL_CATEGORIES);
+    const [availability, setAvailability] = useState<BusinessAvailability>('all');
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [categorySheet, setCategorySheet] = useState(false);
     const [messageTarget, setMessageTarget] = useState<Company | null>(null);
     const [locationTarget, setLocationTarget] = useState<Company | null>(null);
+    const [pending, setPending] = useState<PendingAction | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const categories = useMemo(() => [
@@ -35,9 +61,10 @@ export function CompaniesTab({ companies, loaded, unavailable, onRetry, onMessag
     ], [companies]);
 
     const visibleCompanies = useMemo(
-        () => filterBusinesses(companies, query, category),
-        [category, companies, query],
+        () => filterBusinesses(companies, query, category, availability),
+        [availability, category, companies, query],
     );
+    const selected = companies.find(company => company.id === selectedId) ?? null;
 
     function locate(company: Company) {
         if (!company.coords) {
@@ -47,44 +74,64 @@ export function CompaniesTab({ companies, loaded, unavailable, onRetry, onMessag
         setLocationTarget(company);
     }
 
-    function setWaypoint(company: Company) {
+    async function setWaypoint(company: Company) {
         if (!company.coords || !isFiveM) return;
-        void fetchNui('sd-phone:maps:waypoint', { x: company.coords.x, y: company.coords.y });
-    }
-
-    function openInMaps(company: Company) {
-        if (!company.coords) return;
-        requestOpenMaps({
-            label: company.name,
-            x: company.coords.x,
-            y: company.coords.y,
-            color: company.color,
-            companyId: company.id,
-        });
-    }
-
-    async function call(company: Company) {
-        const result = await callCompany(company.id);
-        if (!result.success) {
-            setError(result.message ?? t('services.couldntCall', "Couldn't place the call."));
+        try {
+            const result = await fetchNui<{ success?: boolean; message?: string }>('sd-phone:maps:waypoint', {
+                x: company.coords.x,
+                y: company.coords.y,
+            });
+            if (result?.success !== false) return;
+            setError(result.message ?? t('services.couldntLocate', "Couldn't set the waypoint."));
+        } catch {
+            setError(t('services.couldntLocate', "Couldn't set the waypoint."));
         }
     }
 
-    function sendMessage(body: string) {
-        if (!messageTarget) return;
+    async function call(company: Company) {
+        if (pending) return;
+        setPending({ companyId: company.id, action: 'call' });
+        try {
+            const result = await callCompany(company.id);
+            if (result.success) return;
+            setError(result.message ?? t('services.couldntCall', "Couldn't place the call."));
+        } catch {
+            setError(t('services.couldntCall', "Couldn't place the call."));
+        } finally {
+            setPending(null);
+        }
+    }
+
+    async function sendMessage(body: string): Promise<string | void> {
+        if (!messageTarget || pending) return t('services.pleaseWait', 'Please wait a moment.');
         const company = messageTarget;
         const text = body.trim();
-        setMessageTarget(null);
-        if (!text) return;
+        if (!text) return t('services.emptyMessage', 'Enter a message.');
 
-        void messageCompany(company.id, { kind: 'text', body: text }).then(inbox => {
-            if (inbox) {
-                onMessaged(inbox);
-                return;
+        setPending({ companyId: company.id, action: 'message' });
+        try {
+            const result = await messageCompany(company.id, { kind: 'text', body: text });
+            if (!result.success || !result.data?.inbox) {
+                return result.message ?? t('services.couldntSend', "Couldn't send your message.");
             }
-            setError(t('services.couldntSend', "Couldn't send your message."));
-        });
+            onMessaged(result.data.inbox);
+        } catch {
+            return t('services.couldntSend', "Couldn't send your message.");
+        } finally {
+            setPending(null);
+        }
     }
+
+    function resetFilters() {
+        setQuery('');
+        setCategory(ALL_CATEGORIES);
+        setAvailability('all');
+    }
+
+    const selectedPending = selected && pending?.companyId === selected.id ? pending.action : null;
+    const categoryLabel = category === ALL_CATEGORIES
+        ? t('services.categories', 'Categories')
+        : category;
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
@@ -96,30 +143,41 @@ export function CompaniesTab({ companies, loaded, unavailable, onRetry, onMessag
                 value={query}
                 onChange={setQuery}
                 placeholder={t('services.searchBusinesses', 'Search businesses')}
-                className="mx-4 mb-2"
+                className="mx-4 mb-3"
             />
 
-            {categories.length > 2 && (
-                <div className="flex shrink-0 gap-2 overflow-x-auto no-scrollbar px-4 pb-3">
-                    {categories.map(option => (
-                        <button
-                            key={option}
-                            type="button"
-                            onClick={() => setCategory(option)}
-                            className={`shrink-0 rounded-full px-3.5 py-1.5 text-[14px] font-semibold transition-colors ${
-                                category === option
-                                    ? 'bg-black text-white dark:bg-white dark:text-black'
-                                    : 'bg-surface text-black/70 dark:text-white/75'
-                            }`}
-                        >
-                            {option}
-                        </button>
-                    ))}
-                </div>
-            )}
+            <div className="flex shrink-0 items-center gap-2 px-4 pb-3">
+                <SegmentedControl
+                    value={availability}
+                    onChange={setAvailability}
+                    options={[
+                        { value: 'all', label: t('services.all', 'All') },
+                        { value: 'open', label: t('services.openNow', 'Open') },
+                    ]}
+                    className="min-w-0 flex-1"
+                />
+                {categories.length > 2 && (
+                    <button
+                        type="button"
+                        aria-label={t('services.filterCategory', 'Filter by category')}
+                        aria-pressed={category !== ALL_CATEGORIES}
+                        onClick={() => setCategorySheet(true)}
+                        className={`flex h-[38px] max-w-[156px] shrink-0 items-center gap-2 rounded-[9px] px-3 text-[15px] font-medium active:opacity-65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ios-blue ${
+                            category === ALL_CATEGORIES
+                                ? 'bg-black/[0.06] text-black/75 dark:bg-white/[0.12] dark:text-white/75'
+                                : 'bg-ios-blue text-white'
+                        }`}
+                    >
+                        <SlidersHorizontal className="h-[17px] w-[17px] shrink-0" strokeWidth={2.3} />
+                        <span className="truncate">{categoryLabel}</span>
+                    </button>
+                )}
+            </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar px-4 pb-6">
-                {!loaded ? null : unavailable ? (
+                {!loaded ? (
+                    <DirectoryLoading />
+                ) : unavailable ? (
                     <EmptyState
                         icon={Building2}
                         title={t('services.unavailableTitle', 'Businesses Unavailable')}
@@ -128,7 +186,7 @@ export function CompaniesTab({ companies, loaded, unavailable, onRetry, onMessag
                             <button
                                 type="button"
                                 onClick={onRetry}
-                                className="inline-flex items-center gap-2 rounded-full bg-ios-blue px-5 py-2.5 text-[15px] font-semibold text-white active:opacity-70"
+                                className="inline-flex items-center gap-2 rounded-[12px] bg-ios-blue px-5 py-3 text-[15px] font-semibold text-white active:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue focus-visible:ring-offset-2"
                             >
                                 <RotateCcw className="h-4 w-4" />
                                 {t('services.tryAgain', 'Try Again')}
@@ -136,25 +194,44 @@ export function CompaniesTab({ companies, loaded, unavailable, onRetry, onMessag
                         )}
                     />
                 ) : visibleCompanies.length === 0 ? (
-                    <EmptyState icon={Building2} title={t('services.noBusinesses', 'No Businesses Found')} />
+                    <EmptyState
+                        icon={Search}
+                        title={t('services.noMatches', 'No Matches')}
+                        circle={false}
+                        action={(
+                            <button
+                                type="button"
+                                onClick={resetFilters}
+                                className="text-[16px] font-semibold text-ios-blue active:opacity-65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue focus-visible:ring-offset-2"
+                            >
+                                {t('services.clearFilters', 'Clear Filters')}
+                            </button>
+                        )}
+                    />
                 ) : (
                     <div className="overflow-hidden rounded-[14px] bg-surface">
                         {visibleCompanies.map((company, index) => (
                             <div key={company.id}>
-                                {index > 0 && <div className="ml-[86px] h-px bg-black/10 dark:bg-white/10" />}
-                                <CompanyRow
-                                    company={company}
-                                    onLocate={() => locate(company)}
-                                    onCall={() => void call(company)}
-                                    onMessage={() => setMessageTarget(company)}
-                                />
+                                {index > 0 && <div className="ml-[78px] h-px bg-black/[0.08] dark:bg-white/[0.09]" />}
+                                <CompanyRow company={company} onOpen={() => setSelectedId(company.id)} />
                             </div>
                         ))}
                     </div>
                 )}
             </div>
 
-            {messageTarget && (
+            {selected && (
+                <BusinessDetail
+                    company={selected}
+                    pending={selectedPending}
+                    onBack={() => setSelectedId(null)}
+                    onCall={() => void call(selected)}
+                    onMessage={() => setMessageTarget(selected)}
+                    onLocate={() => locate(selected)}
+                />
+            )}
+
+            {messageTarget && portalToPhoneScreen(
                 <PromptDialog
                     title={t('services.messageName', 'Message {name}', { name: messageTarget.name })}
                     placeholder={t('services.typeAMessage', 'Type a message…')}
@@ -165,12 +242,32 @@ export function CompaniesTab({ companies, loaded, unavailable, onRetry, onMessag
                 />
             )}
 
+            {categorySheet && (
+                <ActionSheet
+                    actions={categories.map(option => ({
+                        label: option === ALL_CATEGORIES
+                            ? t('services.allCategories', 'All Categories')
+                            : option,
+                        onClick: () => setCategory(option),
+                    }))}
+                    cancelLabel={t('services.cancel', 'Cancel')}
+                    onClose={() => setCategorySheet(false)}
+                />
+            )}
+
             {locationTarget && (
                 <ActionSheet
                     actions={[
-                        { label: t('services.setWaypoint', 'Set Waypoint'), onClick: () => setWaypoint(locationTarget) },
-                        { label: t('services.openInMaps', 'Open in Maps'), onClick: () => openInMaps(locationTarget) },
+                        ...(isFiveM ? [{
+                            label: t('services.setWaypoint', 'Set Waypoint'),
+                            onClick: () => void setWaypoint(locationTarget),
+                        }] : []),
+                        {
+                            label: t('services.openInMaps', 'Open in Maps'),
+                            onClick: () => openCompanyInMaps(locationTarget),
+                        },
                     ]}
+                    cancelLabel={t('services.cancel', 'Cancel')}
                     onClose={() => setLocationTarget(null)}
                 />
             )}
@@ -189,54 +286,57 @@ export function CompaniesTab({ companies, loaded, unavailable, onRetry, onMessag
     );
 }
 
-function CompanyRow({ company, onLocate, onCall, onMessage }: {
-    company: Company;
-    onLocate: () => void;
-    onCall: () => void;
-    onMessage: () => void;
-}) {
-    return (
-        <div className="flex min-h-[86px] items-center gap-3 px-3 py-3.5">
-            <ServiceAvatar color={company.color} emoji={company.emoji} iconUrl={company.iconUrl} size={58} />
-
-            <div className="min-w-0 flex-1">
-                <div className="truncate text-[18px] font-semibold text-black dark:text-white">{company.name}</div>
-                <div className="mt-0.5 truncate text-[14px] font-medium text-ios-gray">{company.category}</div>
-                <div className={`mt-1 text-[13px] font-semibold ${company.status === 'open' ? 'text-[#248A3D] dark:text-[#30D158]' : 'text-ios-gray'}`}>
-                    {company.status === 'open' ? t('services.open', 'Open') : t('services.closed', 'Closed')}
-                </div>
-            </div>
-
-            <div className="flex shrink-0 items-center gap-1.5">
-                {company.coords && (
-                    <ActionButton label={t('services.locateName', 'Locate {name}', { name: company.name })} onClick={onLocate}>
-                        <Navigation className="h-[19px] w-[19px]" strokeWidth={2.3} />
-                    </ActionButton>
-                )}
-                {company.canCall && device.calls && (
-                    <ActionButton label={t('services.callName', 'Call {name}', { name: company.name })} onClick={onCall}>
-                        <Phone className="h-[19px] w-[19px]" strokeWidth={2.3} />
-                    </ActionButton>
-                )}
-                {company.canMessage && (
-                    <ActionButton label={t('services.messageName', 'Message {name}', { name: company.name })} onClick={onMessage}>
-                        <MessageSquare className="h-[19px] w-[19px]" strokeWidth={2.3} />
-                    </ActionButton>
-                )}
-            </div>
-        </div>
-    );
-}
-
-function ActionButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+function CompanyRow({ company, onOpen }: { company: Company; onOpen: () => void }) {
+    const open = company.status === 'open';
     return (
         <button
             type="button"
-            aria-label={label}
-            onClick={onClick}
-            className="flex h-[40px] w-[40px] items-center justify-center rounded-full bg-black/[0.06] text-ios-blue active:bg-black/10 dark:bg-white/10 dark:active:bg-white/15"
+            onClick={onOpen}
+            className="flex min-h-[88px] w-full items-center gap-3 px-3 py-3 text-left active:bg-black/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ios-blue dark:active:bg-white/[0.06]"
         >
-            {children}
+            <ServiceAvatar color={company.color} emoji={company.emoji} iconUrl={company.iconUrl} size={54} />
+
+            <div className="min-w-0 flex-1">
+                <div className="truncate text-[18px] font-semibold text-black dark:text-white">{company.name}</div>
+                <div className="mt-0.5 truncate text-[14px] font-medium text-black/50 dark:text-white/50">
+                    {company.location}
+                </div>
+                <div className="mt-1 flex items-center gap-1.5 text-[13px] font-semibold">
+                    <span className={`h-2 w-2 rounded-full ${open ? 'bg-ios-green' : 'bg-ios-gray'}`} aria-hidden />
+                    <span className={open ? 'text-[#248A3D] dark:text-[#30D158]' : 'text-ios-gray'}>
+                        {open ? t('services.open', 'Open') : t('services.closed', 'Closed')}
+                    </span>
+                    <span className="font-medium text-black/35 dark:text-white/35" aria-hidden>·</span>
+                    <span className="truncate font-medium text-black/45 dark:text-white/45">{company.category}</span>
+                </div>
+            </div>
+
+            <ChevronRight className="h-5 w-5 shrink-0 text-black/20 dark:text-white/25" strokeWidth={2.4} />
         </button>
+    );
+}
+
+function DirectoryLoading() {
+    return (
+        <div
+            role="status"
+            aria-label={t('services.loadingBusinesses', 'Loading businesses')}
+            aria-busy="true"
+            className="overflow-hidden rounded-[14px] bg-surface"
+        >
+            {[0, 1, 2, 3].map(index => (
+                <div key={index}>
+                    {index > 0 && <div className="ml-[78px] h-px bg-black/[0.06] dark:bg-white/[0.07]" />}
+                    <div className="flex min-h-[88px] items-center gap-3 px-3 py-3">
+                        <div className="h-[54px] w-[54px] shrink-0 rounded-full bg-black/[0.07] dark:bg-white/[0.08]" />
+                        <div className="min-w-0 flex-1">
+                            <div className="h-4 w-3/5 rounded bg-black/[0.08] dark:bg-white/[0.09]" />
+                            <div className="mt-2 h-3 w-2/5 rounded bg-black/[0.06] dark:bg-white/[0.07]" />
+                            <div className="mt-2 h-3 w-1/3 rounded bg-black/[0.06] dark:bg-white/[0.07]" />
+                        </div>
+                    </div>
+                </div>
+            ))}
+        </div>
     );
 }

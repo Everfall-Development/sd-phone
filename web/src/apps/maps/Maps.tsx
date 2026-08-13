@@ -77,6 +77,9 @@ export function Maps({ onClose }: { onClose: () => void }) {
         void fetchDirectory().then(d => { if (alive) setCompanies(d.companies ?? []); });
         return () => { alive = false; };
     }, []);
+    useNuiEvent('sd-phone:services:directoryChanged', () => {
+        void fetchDirectory().then(directory => setCompanies(directory.companies ?? []));
+    });
 
     useEffect(() => {
         const target = takeMapsTarget();

@@ -20,6 +20,12 @@ return {
     -- ef_businesses directory even though they are not business locations.
     EmergencyCompanies = { 'police', 'ambulance' },
 
+    -- Customer message images are loaded by every staff member who opens the thread. Keep the
+    -- default to the server-owned Fivemanage upload host so a player cannot make recipients load
+    -- arbitrary tracking or private-network URLs. Add an exact host or '*.domain.com' only for a
+    -- trusted custom media CDN used by this server.
+    MessageImageHosts = { 'r2.fivemanage.com' },
+
     -- ESX-ONLY fallback. On QBCore/QBox boss status is read from the grade's
     -- `isboss` flag and this is ignored. On ESX (no isboss flag) it's the minimum
     -- grade treated as a boss when a company has no own `bossGrade`.

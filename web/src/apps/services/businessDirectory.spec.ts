@@ -17,12 +17,29 @@ describe('Businesses directory', () => {
 
     it('searches names, categories, and locations case-insensitively', () => {
         expect(filterBusinesses(COMPANIES, 'hayes', 'All').map(company => company.id)).toEqual(['mechanic']);
-        expect(filterBusinesses(COMPANIES, 'EMERGENCY', 'All').map(company => company.id)).toEqual(['police', 'ambulance']);
+        expect(filterBusinesses(COMPANIES, 'EMERGENCY', 'All').map(company => company.id)).toEqual(['ambulance', 'police']);
         expect(filterBusinesses(COMPANIES, 'transport', 'All').map(company => company.id)).toEqual(['taxi']);
     });
 
     it('combines search with an exact compact category filter', () => {
-        expect(filterBusinesses(COMPANIES, '', 'Emergency').map(company => company.id)).toEqual(['police', 'ambulance']);
+        expect(filterBusinesses(COMPANIES, '', 'Emergency').map(company => company.id)).toEqual(['ambulance', 'police']);
         expect(filterBusinesses(COMPANIES, 'ambulance', 'Automotive')).toEqual([]);
+    });
+
+    it('can show only open businesses', () => {
+        expect(filterBusinesses(COMPANIES, '', 'All', 'open').map(company => company.id)).toEqual([
+            'ambulance',
+            'police',
+            'taxi',
+        ]);
+    });
+
+    it('sorts open businesses before closed businesses', () => {
+        expect(filterBusinesses(COMPANIES, '', 'All').map(company => company.id)).toEqual([
+            'ambulance',
+            'police',
+            'taxi',
+            'mechanic',
+        ]);
     });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
@@ -16,24 +16,40 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
     const [tab, setTab] = useSessionState<ServicesTab>('services:tab', 'directory');
     const activeTab: ServicesTab = tab === 'inbox' ? 'inbox' : 'directory';
     const { data: directory, settled: directoryLoaded, refetch: refreshDirectory } = useAsyncData(fetchDirectory, []);
-    const { data: inboxData, settled: inboxLoaded, refetch: refreshInbox } = useAsyncData(fetchInbox, []);
+    const {
+        data: inboxData,
+        settled: inboxLoaded,
+        refetch: refreshInbox,
+    } = useAsyncData(fetchInbox, []);
     const [inboxOverride, setInboxOverride] = useState<Inbox | null>(null);
     const inbox = inboxOverride ?? inboxData ?? EMPTY_INBOX;
 
-    useNuiEvent('sd-phone:services:inbox', useCallback(() => {
+    useNuiEvent('sd-phone:services:inbox', () => {
         setInboxOverride(null);
         refreshInbox();
-    }, [refreshInbox]));
+    });
 
-    const openInbox = useCallback((updatedInbox: Inbox) => {
+    useNuiEvent('sd-phone:services:jobsChanged', () => {
+        setInboxOverride(null);
+        refreshDirectory();
+        refreshInbox();
+    });
+
+    useNuiEvent('sd-phone:services:directoryChanged', () => {
+        refreshDirectory();
+    });
+
+    function openInbox(updatedInbox: Inbox) {
         setInboxOverride(updatedInbox);
         setTab('inbox');
-    }, [setTab]);
+    }
 
-    const markRead = useCallback((scope: Scope, key: string) => {
-        const clearUnread = (threads: Inbox['personal']) => threads.map(thread => (
-            thread.key === key && thread.unread > 0 ? { ...thread, unread: 0 } : thread
-        ));
+    function markRead(scope: Scope, key: string) {
+        function clearUnread(threads: Inbox['personal']) {
+            return threads.map(thread => (
+                thread.key === key && thread.unread > 0 ? { ...thread, unread: 0 } : thread
+            ));
+        }
         setInboxOverride(current => {
             const source = current ?? inbox;
             return scope === 'job'
@@ -41,14 +57,19 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
                 : { ...source, personal: clearUnread(source.personal) };
         });
         void markThreadRead(scope, key);
-    }, [inbox]);
+    }
+
+    function retryInbox() {
+        setInboxOverride(null);
+        refreshInbox();
+    }
 
     return (
         <div className="absolute inset-0 flex flex-col bg-base font-sf">
             <div className="h-[58px] shrink-0" aria-hidden />
 
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div key={activeTab} className="flex min-h-0 flex-1 flex-col animate-swipe-in-left">
+                <div className="flex min-h-0 flex-1 flex-col">
                     {activeTab === 'directory' ? (
                         <CompaniesTab
                             companies={directory?.companies ?? []}
@@ -61,6 +82,8 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
                         <ServiceMessagesTab
                             inbox={inbox}
                             loaded={inboxLoaded}
+                            unavailable={inbox.unavailable}
+                            onRetry={retryInbox}
                             onInboxChange={setInboxOverride}
                             onMarkRead={markRead}
                         />

@@ -5,7 +5,18 @@ local activeJobs = { [7] = 'beanmachine', [8] = 'beanmachine', [9] = 'unemployed
 local duty = { [7] = true, [8] = false, [9] = false }
 local messages = {}
 local clientEvents = {}
+local serverEvents = {}
 local callTargets
+local directoryCalls = 0
+local blockedRateKeys = {}
+local rateCalls = {}
+
+local function read(path)
+    local file = assert(io.open(path, 'r'))
+    local source = file:read('*a')
+    file:close()
+    return source
+end
 local liveBusinesses = {
     beanmachine = {
         Enabled = true,
@@ -33,16 +44,37 @@ exports = {
     ef_businesses = {
         GetBusinesses = function(_, includeStorefront)
             assert(includeStorefront == true)
+            directoryCalls = directoryCalls + 1
             return liveBusinesses
         end,
     },
+    ['sd-phone'] = {
+        hasPhone = function(source) return source == 9 and 'black' or nil end,
+    },
+}
+
+lib = {
+    string = {
+        startsWith = function(value, prefix)
+            return value:sub(1, #prefix) == prefix
+        end,
+    },
+}
+
+json = {
+    encode = function(value) return value.mediaUrl or value.wpCode or '' end,
+    decode = function(value) return { mediaUrl = value } end,
 }
 
 package.preload['configs.config'] = function()
     return {
         Services = {
             EmergencyCompanies = { 'police', 'ambulance' },
-            DirectoryOverrides = {},
+            MessageImageHosts = { 'cdn.example' },
+            DirectoryOverrides = {
+                police = { label = 'LSPD', color = '#123456', iconUrl = 'https://cdn.example/police.png' },
+                beanmachine = { label = '', location = '', color = '', iconUrl = '' },
+            },
             Companies = {
                 { job = 'police', label = 'Police', emergency = true, coords = { x = 10, y = 20, z = 30 } },
                 { job = 'ambulance', label = 'Ambulance', emergency = true, coords = { x = 40, y = 50, z = 60 } },
@@ -127,7 +159,10 @@ end
 package.preload['server.calls.actions'] = function()
     return {
         isBusy = function() return false end,
-        callGroup = function(_, targets, _, identity)
+        callGroup = function(source, targets, _, identity)
+            if exports['sd-phone'].hasPhone(source) == nil then
+                return { success = false, message = 'You need a phone to make calls' }
+            end
             callTargets = targets
             return { success = true, data = { number = identity } }
         end,
@@ -155,18 +190,23 @@ package.preload['server.util'] = function()
         digits = function(value) return tostring(value or ''):gsub('%D', '') end,
         trim = function(value) return tostring(value or '') end,
         cooldown = function() return true end,
-        rateLimit = function() return true end,
+        rateLimit = function(_, key)
+            rateCalls[#rateCalls + 1] = key
+            return blockedRateKeys[key] ~= true
+        end,
     }
 end
 
 TriggerClientEvent = function(name, source, payload)
     clientEvents[#clientEvents + 1] = { name = name, source = source, payload = payload }
 end
-TriggerEvent = function() end
+TriggerEvent = function(name, payload)
+    serverEvents[#serverEvents + 1] = { name = name, payload = payload }
+end
 
 local businesses = require 'server.services.businesses'
 
-local available = businesses.directory()
+local available = businesses.directory(9)
 assert(available.success == true)
 assert(#available.data.companies == 3, 'two emergency entries and one public business expected')
 
@@ -174,29 +214,102 @@ local byId = {}
 for _, company in ipairs(available.data.companies) do byId[company.id] = company end
 assert(byId.police.emergency == true)
 assert(byId.ambulance.emergency == true)
-assert(byId.beanmachine.name == 'Bean Machine')
+assert(byId.police.name == 'LSPD')
+assert(byId.police.color == '#123456')
+assert(byId.police.iconUrl == 'https://cdn.example/police.png')
+assert(byId.beanmachine.name == 'Bean Machine', 'empty override must preserve the source name fallback')
 assert(byId.beanmachine.category == 'Food')
+assert(byId.beanmachine.location == 'Food', 'empty override must preserve the category location fallback')
 assert(byId.beanmachine.status == 'open')
 assert(byId.beanmachine.coords.x == 12 and byId.beanmachine.coords.y == 34)
 assert(byId.hidden == nil)
 assert(byId.no_blip == nil)
 
+blockedRateKeys['businesses:directory'] = true
+assert(businesses.directory(9).success == false, 'directory reads must be rate limited')
+blockedRateKeys['businesses:directory'] = nil
+blockedRateKeys['businesses:inbox'] = true
+assert(businesses.inbox(9).success == false, 'inbox reads must be rate limited')
+blockedRateKeys['businesses:inbox'] = nil
+
+local source = read('server/calls/actions.lua')
+assert(source:find("if not reachable(source) then return fail('You need a phone to make calls') end", 1, true))
+assert(source:find("if myNumber == '' then return fail('You need a phone number to make calls') end", 1, true))
+assert(source:find("moderation.guard(cid, 'calls')", 1, true), 'group calls must share call moderation')
+local servicesInitSource = read('server/services/init.lua')
+assert(servicesInitSource:find("AddEventHandler('QBCore:Server:SetDuty'", 1, true), 'duty changes must refresh open directories')
+local storeSource = read('server/services/msgstore.lua')
+assert(storeSource:find('ROW_NUMBER() OVER (PARTITION BY', 1, true))
+assert(storeSource:find('ORDER BY created_at DESC, id DESC', 1, true))
+
 local called = businesses.call(9, { job = 'beanmachine' })
 assert(called.success == true)
 assert(called.data.number == 'business:beanmachine')
 assert(#callTargets == 1 and callTargets[1].src == 7, 'only online, on-duty staff should ring')
+assert(businesses.call(10, { job = 'beanmachine' }).success == false, 'callGroup must reject callers without a phone')
 
-local sent = businesses.message(9, { job = 'beanmachine', body = 'Are you open?' })
+local invalidImage = businesses.message(9, {
+    job = 'beanmachine',
+    kind = 'image',
+    mediaUrl = 'data:text/html,<script>alert(1)</script>',
+})
+assert(invalidImage.success == false and #messages == 0, 'unsafe image schemes must be rejected before persistence')
+
+local untrustedImage = businesses.message(9, {
+    job = 'beanmachine',
+    kind = 'image',
+    mediaUrl = 'https://127.0.0.1/private.png',
+})
+assert(untrustedImage.success == false and #messages == 0, 'message images must use a trusted configured host')
+
+local userinfoImage = businesses.message(9, {
+    job = 'beanmachine',
+    kind = 'image',
+    mediaUrl = 'https://cdn.example:80@127.0.0.1/private.png',
+})
+assert(userinfoImage.success == false and #messages == 0, 'message image userinfo must not bypass the trusted host check')
+
+local tooManyDrafts = {}
+for index = 1, 9 do tooManyDrafts[index] = { kind = 'text', body = 'Draft ' .. index } end
+local rateBeforeTooMany = #rateCalls
+local tooMany = businesses.message(9, { job = 'beanmachine', drafts = tooManyDrafts })
+assert(tooMany.success == false and #messages == 0, 'oversized batches must be rejected before persistence')
+assert(#rateCalls == rateBeforeTooMany, 'rejected batches must not consume a rate token')
+
+local rateBeforeBatch = #rateCalls
+local directoryBeforeBatch = directoryCalls
+local sent = businesses.message(9, {
+    job = 'beanmachine',
+    drafts = {
+        { kind = 'image', mediaUrl = 'http://cdn.example/photo.jpg' },
+        { kind = 'text', body = 'Are you open?' },
+    },
+})
 assert(sent.success == true)
-assert(#messages == 1 and messages[1].sender == 'citizen')
+assert(#messages == 2 and messages[1].sender == 'citizen' and messages[2].body == 'Are you open?')
+assert(#rateCalls == rateBeforeBatch + 1, 'a batch must consume one rate-limit request')
+assert(directoryCalls == directoryBeforeBatch + 1, 'the post-write inbox must reuse its authorized directory snapshot')
+local messageEvents = 0
+for _, event in ipairs(serverEvents) do
+    if event.name == 'sd-phone:server:services:message' then messageEvents = messageEvents + 1 end
+end
+assert(messageEvents == 2, 'each persisted draft must emit its compatibility event')
 local notifiedOnDuty, notifiedOffDuty = false, false
+local batchNotifications, batchInvalidations = 0, 0
 for _, event in ipairs(clientEvents) do
     if event.name == 'sd-phone:client:notify' then
         notifiedOnDuty = notifiedOnDuty or event.source == 7
         notifiedOffDuty = notifiedOffDuty or event.source == 8
+        if event.source == 7 then
+            batchNotifications = batchNotifications + 1
+            assert(event.payload.body:find('Are you open?', 1, true), 'batch notification should prefer the final text')
+        end
+    elseif event.name == 'sd-phone:client:services:inbox' and event.source == 7 then
+        batchInvalidations = batchInvalidations + 1
     end
 end
 assert(notifiedOnDuty and not notifiedOffDuty, 'business notifications must only reach on-duty staff')
+assert(batchNotifications == 1 and batchInvalidations == 1, 'a batch must notify and invalidate the staff inbox once')
 
 local staffInbox = businesses.inbox(7)
 assert(staffInbox.success == true and staffInbox.data.hasJob == true)
@@ -209,12 +322,14 @@ assert(businesses.reply(7, { citizen = '5550100', body = 'No access' }).success 
 activeJobs[8] = 'beanmachine'
 local replied = businesses.reply(8, { citizen = '5550100', body = 'We can help.' })
 assert(replied.success == true, 'matching active staff may reply even while off duty')
-assert(#messages == 2 and messages[2].sender == 'staff')
+assert(#messages == 3 and messages[3].sender == 'staff')
 
 resourceState = 'stopped'
-local unavailable = businesses.directory()
+local unavailable = businesses.directory(9)
 assert(unavailable.success == false)
 assert(unavailable.message == 'Businesses are unavailable right now.')
+local companyList, companyListError = businesses.companyList()
+assert(companyList == nil and companyListError == 'Businesses are unavailable right now.')
 
 resourceState = 'started'
 liveBusinesses.new_shop = {
@@ -222,7 +337,7 @@ liveBusinesses.new_shop = {
     Type = 'vendor',
     Blip = { Enable = true, Name = 'New Shop', Coords = { x = 90, y = 80, z = 70 } },
 }
-local retried = businesses.directory()
+local retried = businesses.directory(9)
 assert(retried.success == true)
 assert(#retried.data.companies == 4, 'an unavailable response must not cache an empty directory')
 

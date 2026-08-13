@@ -203,15 +203,29 @@ package.preload['server.contacts.store'] = function()
     }
 end
 package.preload['server.badges.init'] = function() return { pushApp = function() end } end
-package.preload['server.admin.moderation'] = function() return { guard = function() end } end
+local moderationMuted = false
+local moderationChecks = 0
+package.preload['server.admin.moderation'] = function()
+    return {
+        guard = function(_, scope)
+            assert(scope == 'calls')
+            moderationChecks = moderationChecks + 1
+            if moderationMuted then return { success = false, message = 'Calls muted' } end
+        end,
+    }
+end
 package.preload['server.payphone.store'] = function() return { locationForNumber = function() end } end
 package.preload['server.service'] = function() return { allows = function() return true end } end
+local dialLimitChecks = 0
 package.preload['server.util'] = function()
     return {
         ok = function(data) return { success = true, data = data } end,
         fail = function(message) return { success = false, message = message } end,
         digits = function(value) return tostring(value or ''):gsub('%D', '') end,
-        rateLimit = function() return true end,
+        rateLimit = function(_, key)
+            if key == 'call:dial' then dialLimitChecks = dialLimitChecks + 1 end
+            return true
+        end,
         cooldown = function() return true end,
         trim = function(value) return tostring(value or '') end,
         initialsFor = function(value) return tostring(value or ''):sub(1, 2) end,
@@ -249,6 +263,7 @@ package.loaded['server.calls.actions'] = nil
 local calls = require 'server.calls.actions'
 local ring = calls.callGroup(1, { { src = 2, cid = 'cid-2' } }, 'Public Relations', 'business:public_relations')
 assert(ring.success == true)
+assert(dialLimitChecks == 1 and moderationChecks == 1, 'group calls must share dial limits and moderation')
 local channel = ring.data.channel
 local outgoing
 for _, event in ipairs(clientEvents) do
@@ -264,6 +279,9 @@ assert(pcall(calls.setSpeaker, 1, true))
 assert(pcall(calls.setSpeaker, 1, false))
 assert(calls.hangup(1, { channel = channel }).success == true)
 assert(calls.current(1).data == nil)
+moderationMuted = true
+local mutedRing = calls.callGroup(1, { { src = 2, cid = 'cid-2' } }, 'Public Relations', 'business:public_relations')
+assert(mutedRing.success == false and mutedRing.message == 'Calls muted')
 assert(pcall(calls.setSpeaker, 1, true))
 assert(calls.hangup(1, { channel = channel }).success == true)
 

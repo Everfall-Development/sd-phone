@@ -862,7 +862,10 @@ function AppContent() {
         useWidgetData.getState().setHealth(data ?? null);
     }, []));
 
+    const homeVisible = !!view && !locked && !currentApp;
+
     const refreshBusinessesWidget = useCallback(() => {
+        if (!homeVisible) return;
         if (!view?.apps.some(app => app.id === 'services')) {
             useWidgetData.getState().setBusinesses([], null, null);
             return;
@@ -874,12 +877,17 @@ function AppContent() {
 
         void Promise.all([fetchDirectory(), fetchInbox(), here])
             .then(([directory, inbox, location]) => {
-                useWidgetData.getState().setBusinesses(directory.companies, inbox, location, directory.unavailable);
+                useWidgetData.getState().setBusinesses(
+                    directory.companies,
+                    inbox,
+                    location,
+                    directory.unavailable ?? inbox.unavailable,
+                );
             })
             .catch(() => {
                 useWidgetData.getState().setBusinesses([], null, null, 'Unavailable');
             });
-    }, [view]);
+    }, [homeVisible, view]);
 
     const refreshRydeWidget = useCallback(() => {
         if (!view?.apps.some(app => app.id === 'ryde')) {
@@ -894,6 +902,7 @@ function AppContent() {
 
     useNuiEvent('sd-phone:services:inbox', refreshBusinessesWidget);
     useNuiEvent('sd-phone:services:jobsChanged', refreshBusinessesWidget);
+    useNuiEvent('sd-phone:services:directoryChanged', refreshBusinessesWidget);
     useNuiEvent('sd-phone:ryde:offer', refreshRydeWidget);
     useNuiEvent('sd-phone:ryde:offerRemoved', refreshRydeWidget);
     useNuiEvent('sd-phone:ryde:tripUpdate', refreshRydeWidget);
@@ -911,7 +920,6 @@ function AppContent() {
      * cost nothing. Deliberately NOT watchMarket(): subscribing to per-tick pushes is the right
      * cost for an open Stocks screen and the wrong one for a tile you glance at.
      */
-    const homeVisible = !!view && !locked && !currentApp;
     useEffect(() => {
         if (!homeVisible) return;
         refreshWallet();

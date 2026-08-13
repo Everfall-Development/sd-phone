@@ -50,6 +50,26 @@ lib.callback.register('sd-phone:server:services:markRead', function(source, payl
     return businesses.markRead(source, payload)
 end)
 
+-- Open phones refresh the public directory when a QBox job or duty state changes. The client
+-- drops this event while the phone is closed, so a duty toggle does not fan server reads out to
+-- hidden NUIs; opening Businesses always performs its own fresh read.
+local function broadcastDirectoryChanged(currentName, previousName)
+    TriggerClientEvent('sd-phone:client:services:directoryChanged', -1, {
+        job = currentName,
+        previousJob = previousName,
+    })
+end
+
+AddEventHandler('QBCore:Server:OnJobUpdate', function(_, currentJob, previousJob)
+    local currentName = type(currentJob) == 'table' and currentJob.name or nil
+    local previousName = type(previousJob) == 'table' and previousJob.name or nil
+    broadcastDirectoryChanged(currentName, previousName)
+end)
+
+AddEventHandler('QBCore:Server:SetDuty', function()
+    broadcastDirectoryChanged()
+end)
+
 -- Wallet owns every reachable invoice callback. There is no Services-side create, list, or
 -- cancel authority, so company invoicing and management cannot be invoked through stale NUI.
 lib.callback.register('sd-phone:server:banking:invoices:create', function(source, payload)
@@ -73,7 +93,8 @@ lib.callback.register('sd-phone:server:banking:invoices:pay', function(source, p
 end)
 
 ---Returns the current live Businesses directory without caching an unavailable resource result.
----@return table[] companies
+---@return table[]|nil companies
+---@return string|nil error
 exports('getCompanyDirectory', function()
     return businesses.companyList()
 end)
