@@ -20,6 +20,7 @@ export function SegmentedControl<T extends string>({ value, onChange, options, c
                 <button
                     key={opt.value}
                     type="button"
+                    aria-pressed={value === opt.value}
                     disabled={disabled}
                     onClick={() => onChange(opt.value)}
                     className={`${fit ? 'px-3.5' : 'flex-1'} rounded-[8px] py-1.5 text-[15px] font-medium transition-colors ${

@@ -35,9 +35,11 @@ export function TabBar<T extends string>({ tabs, active, onChange, labelClassNam
                                 {tab.icon(isActive)}
                                 {(tab.badge ?? 0) > 0 && (
                                     <span
-                                        className="absolute -top-[2px] -right-[3px] h-[11px] w-[11px] rounded-full bg-ios-red ring-2 ring-elevated dark:ring-base"
-                                        aria-label={t('shell.unreadMessages','Unread messages')}
-                                    />
+                                        className="absolute -right-2 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-ios-red px-1 text-[11px] font-bold leading-none text-white ring-2 ring-elevated dark:ring-base"
+                                        aria-label={t('shell.unreadMessagesCount', '{count} unread messages', { count: tab.badge ?? 0 })}
+                                    >
+                                        {(tab.badge ?? 0) > 99 ? '99+' : tab.badge}
+                                    </span>
                                 )}
                             </span>
                             <span className={labelClassName}>{tab.label}</span>

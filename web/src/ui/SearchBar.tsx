@@ -36,6 +36,7 @@ export function SearchBar({ value, onChange, placeholder = t('common.search', 'S
                 onChange={e => onChange(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Escape') onChange(''); }}
                 placeholder={placeholder}
+                aria-label={placeholder}
                 autoFocus={autoFocus}
                 className={`min-w-0 flex-1 bg-transparent outline-none ${text}`}
                 style={caretColor ? { caretColor } : undefined}

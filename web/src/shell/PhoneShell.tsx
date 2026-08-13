@@ -555,7 +555,7 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
                 >
                     <div
                         data-phone-screen
-                        className="absolute overflow-hidden"
+                        className="absolute overflow-clip"
                         style={{
                             left: SX, top: SY, width: SW, height: SH,
                             borderRadius: SR,
