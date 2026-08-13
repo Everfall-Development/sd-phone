@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { Clock, Info } from 'lucide-react';
 
-import { ContactAvatar, PlaceholderAvatar } from '@/shared/ContactAvatar';
+import { ContactAvatar, InitialsAvatar, PlaceholderAvatar } from '@/shared/ContactAvatar';
 import { EmptyState } from '@/ui/EmptyState';
 import { useSessionState } from '@/hooks/useSessionState';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { AddContact } from '../contacts/AddContact';
 import { CallDetail } from './CallDetail';
 import { ContactDetail } from '../contacts/ContactDetail';
-import { formatPhone, type CallEntry, type Contact } from '../data';
+import { callEntryTitle, formatPhone, isBusinessNumber, isDialableCallEntry, type CallEntry, type Contact } from '../data';
 import { t } from '@/i18n';
 
 type Filter = 'all' | 'missed';
@@ -16,7 +16,7 @@ type Filter = 'all' | 'missed';
 export function RecentsTab({ recents, onAddContact, onRequestCall, onUpdateContact, onDeleteContact, onToggleFavorite }: {
     recents:          CallEntry[];
     onAddContact:     (c: Contact) => Promise<string | null>;
-    onRequestCall:    (target: { number: string; name?: string }) => void;
+    onRequestCall:    (target: { number: string; name?: string; video?: boolean }) => void;
     onUpdateContact:  (c: Contact) => void;
     onDeleteContact:  (id: string) => void;
     onToggleFavorite: (id: string, favorite: boolean) => void;
@@ -38,9 +38,12 @@ export function RecentsTab({ recents, onAddContact, onRequestCall, onUpdateConta
     }
 
     function requestCall(entry: CallEntry) {
-        if (entry.contact)     onRequestCall({ number: entry.number, name: entry.contact.name });
-        else if (entry.number) onRequestCall({ number: entry.number });
-        else                   openProfile(entry);
+        if (!isDialableCallEntry(entry)) {
+            openProfile(entry);
+            return;
+        }
+        if (entry.contact) onRequestCall({ number: entry.number, name: entry.contact.name });
+        else onRequestCall({ number: entry.number });
     }
 
     return (
@@ -95,6 +98,7 @@ export function RecentsTab({ recents, onAddContact, onRequestCall, onUpdateConta
                     entry={liveCall}
                     onBack={() => setSelectedCall(null)}
                     onAddToContacts={() => setAddNumber(liveCall.number)}
+                    onRequestCall={onRequestCall}
                 />
             )}
             {addNumber !== null && (
@@ -113,8 +117,10 @@ function CallRow({ entry, onBody, onInfo }: {
     onBody: (e: CallEntry) => void;
     onInfo: (e: CallEntry) => void;
 }) {
-    const primary   = entry.contact ? entry.contact.name : entry.noCallerId ? t('phone.noCallerId','No Caller ID') : formatPhone(entry.number);
-    const secondary = entry.contact ? formatPhone(entry.contact.phone) : t('phone.unknown','Unknown');
+    const primary = callEntryTitle(entry);
+    let secondary = t('phone.unknown','Unknown');
+    if (entry.contact) secondary = formatPhone(entry.contact.phone);
+    else if (isBusinessNumber(entry.number)) secondary = t('phone.businessCall','Business');
 
     return (
         <div className="flex w-full items-center px-3.5 py-3.5">
@@ -148,8 +154,11 @@ function RecentAvatar({ entry }: { entry: CallEntry }) {
     if (entry.contact) {
         return <ContactAvatar contact={entry.contact} size={size} />;
     }
-    if (entry.noCallerId) {
+    if (entry.noCallerId && !entry.name?.trim()) {
         return <PlaceholderAvatar size={size} />;
+    }
+    if (entry.name?.trim() || isBusinessNumber(entry.number)) {
+        return <InitialsAvatar name={callEntryTitle(entry)} color="#8e8e93" size={size} />;
     }
     return (
         <ContactAvatar

@@ -79,8 +79,12 @@ export function Phone({ onClose: _onClose }: { onClose: () => void }) {
     }, []));
     async function placeCall(target: CallTarget) {
         if (!target.number) return;
-        const res = await dialCall(target.number, target.name, target.video === true);
-        if (!res.success) setDialError(res.message ?? t('phone.unableToPlaceCall','Unable to place call'));
+        try {
+            const res = await dialCall(target.number, target.name, target.video === true);
+            if (!res.success) setDialError(res.message ?? t('phone.unableToPlaceCall','Unable to place call'));
+        } catch {
+            setDialError(t('phone.unableToPlaceCall','Unable to place call'));
+        }
     }
 
     useNuiEvent('sd-phone:call:ended', useCallback(() => {

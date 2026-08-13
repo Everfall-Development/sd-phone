@@ -1,4 +1,5 @@
 import { t } from '@/i18n';
+import { formatPhone } from '@/lib/phone';
 
 export interface Contact {
     id:        string;
@@ -56,7 +57,7 @@ export function matchesQuery(c: Contact, query: string): boolean {
     return digits.length > 0 && c.phone.replace(/\D/g, '').includes(digits);
 }
 
-export { formatPhone } from '@/lib/phone';
+export { formatPhone };
 
 
 export interface RawCall {
@@ -71,6 +72,7 @@ export interface RawCall {
 export interface CallEntry {
     id:          string;
     contact?:    Contact;
+    name?:       string;
     number:      string;
     noCallerId?: boolean;
     missed:      boolean;
@@ -108,6 +110,23 @@ function fmtDuration(seconds: number): string {
     return mins === 1 ? t('phone.minuteOne','{count} minute',{ count: mins }) : t('phone.minuteOther','{count} minutes',{ count: mins });
 }
 
+export function isBusinessNumber(number: string): boolean {
+    return number.toLowerCase().startsWith('business:');
+}
+
+export function isDialableCallEntry(entry: Pick<CallEntry, 'number'>): boolean {
+    return Boolean(entry.number) && !isBusinessNumber(entry.number);
+}
+
+export function callEntryTitle(entry: Pick<CallEntry, 'contact' | 'name' | 'number' | 'noCallerId'>): string {
+    if (entry.contact) return entry.contact.name;
+    const suppliedName = entry.name?.trim();
+    if (suppliedName && !isBusinessNumber(suppliedName)) return suppliedName;
+    if (entry.noCallerId) return t('phone.noCallerId','No Caller ID');
+    if (isBusinessNumber(entry.number)) return t('phone.businessCall','Business');
+    return formatPhone(entry.number);
+}
+
 export function toCallEntry(raw: RawCall, contacts: Contact[]): CallEntry {
     const directionLabel: Record<RawCall['direction'], string> = {
         incoming: t('phone.incomingCall','Incoming Call'),
@@ -120,6 +139,7 @@ export function toCallEntry(raw: RawCall, contacts: Contact[]): CallEntry {
     return {
         id:         raw.id,
         contact,
+        name:       raw.name,
         number:     raw.number,
         noCallerId: !raw.number,
         missed:     raw.direction === 'missed',
