@@ -68,7 +68,6 @@ local activeDuty = false
 package.preload['configs.ryde'] = function()
     return {
         DriverJobs = { taxi = 0, taxi_tuggers = 0 },
-        DriverPolicy = 'Active taxi or taxi_tuggers job, on duty',
         MinFare = 1, MaxFare = 100000,
     }
 end
@@ -77,6 +76,9 @@ package.preload['bridge.server.job'] = function()
         getName = function() return activeJob end,
         getGrade = function() return 0 end,
         getDuty = function() return activeDuty end,
+        getLabel = function(name)
+            return ({ taxi = 'Taxi Service', taxi_tuggers = "Tugger's Taxis" })[name]
+        end,
     }
 end
 package.preload['bridge.server.player'] = function()
@@ -126,7 +128,7 @@ local denied = ryde.config(7)
 assert(denied.data.driverAllowed == false)
 assert(denied.data.job == 'unemployed')
 assert(denied.data.duty == false)
-assert(denied.data.policy == 'Active taxi or taxi_tuggers job, on duty')
+assert(denied.data.policy == "Active Taxi Service or Tugger's Taxis job, on duty.")
 assert(ryde.setOnline(7, { online = true }).success == false)
 assert(ryde.accept(7, { requestId = 'missing', fare = 10 }).success == false)
 

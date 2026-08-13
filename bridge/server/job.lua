@@ -154,8 +154,8 @@ function job.getAll(source)
     return out
 end
 
----Resolve a job's display label ('Police'): qb-core's Shared.Jobs first, then the pcall-guarded
----qbx_core GetJob export. Nil when unknown. Read-only.
+---Resolve a job's display label ('Police') from the active framework. QBox uses its GetJob
+---export, QBCore uses Shared.Jobs, and ESX uses its job registry. Nil when unknown. Read-only.
 ---@param jobName string
 ---@return string|nil
 function job.getLabel(jobName)
@@ -171,6 +171,17 @@ function job.getLabel(jobName)
         if not def then pcall(function() def = exports.qbx_core:GetJob(jobName) end) end
         return def and def.label or nil
     end
+
+    if framework.name == 'esx' and framework.core then
+        local definitions = framework.core.Jobs
+        if type(framework.core.GetJobs) == 'function' then
+            local succeeded, jobs = pcall(function() return framework.core.GetJobs() end)
+            if succeeded and type(jobs) == 'table' then definitions = jobs end
+        end
+        local def = type(definitions) == 'table' and definitions[jobName] or nil
+        return type(def) == 'table' and def.label or nil
+    end
+
     return nil
 end
 

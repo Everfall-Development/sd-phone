@@ -207,7 +207,7 @@ export function PersonRecord({ citizenid }: { citizenid: string }) {
             <Fact label={t('mdt.dob', 'Date of birth')} value={person.dob} />
             <Fact label={t('mdt.sex', 'Sex')} value={person.sex} />
             <Fact label={t('mdt.phone', 'Phone')} value={person.phone} />
-            <Fact label={t('mdt.occupation', 'Occupation')} value={person.job} />
+            <Fact label={t('mdt.occupation', 'Occupation')} value={person.jobLabel || person.job} />
         </div>
     );
 

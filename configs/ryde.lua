@@ -2,9 +2,10 @@
 -- always the rider's live position), plus the fare/payout rules.
 return {
     -- Only players whose active framework job is listed here may drive. The value is the
-    -- minimum grade level; riders do not need either job.
+    -- minimum grade level; riders do not need either job. The access message resolves these
+    -- keys through the framework's display labels. Set DriverPolicy only to override that copy.
     DriverJobs           = { taxi = 0, taxi_tuggers = 0 },
-    DriverPolicy         = 'Active taxi or taxi_tuggers job, on duty',
+    -- DriverPolicy      = 'Your custom eligibility message.',
 
     -- Saved destinations offered in the Ryde "Where to?" picker. Riders can
     -- also drop a custom pin on the map; these are just the quick-pick shortcuts.

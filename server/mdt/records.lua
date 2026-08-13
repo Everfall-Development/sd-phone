@@ -2,6 +2,8 @@
 local util = require 'server.util'
 ---@type table Framework record bridge (bridge.server.records): read-only citizen + vehicle reads.
 local frameworkRecords = require 'bridge.server.records'
+---@type table Job bridge (bridge.server.job): framework job labels for player-facing records.
+local job = require 'bridge.server.job'
 ---@type table MDT permission layer (server.mdt.access): gated/audited wrappers and identity.
 local access = require 'server.mdt.access'
 ---@type table Reports and cases (server.mdt.paperwork): the report visibility clause priors reuse.
@@ -326,6 +328,7 @@ local function composePerson(me, citizenid)
 
     local overlay  = personOverlay(citizenid)
     local warrants = warrantsModule().activeFor(citizenid)
+    local jobName  = citizen.job or ''
 
     local licences = {}
     if type(citizen.licences) == 'table' then
@@ -346,7 +349,8 @@ local function composePerson(me, citizenid)
         firstname   = citizen.firstname or '',
         lastname    = citizen.lastname or '',
         nationality = citizen.nationality or '',
-        job         = citizen.job or '',
+        job         = jobName,
+        jobLabel    = job.getLabel(jobName) or jobName,
         jobGrade    = tonumber(citizen.jobGrade) or 0,
         licences    = licences,
         fingerprint = citizen.fingerprint or '',

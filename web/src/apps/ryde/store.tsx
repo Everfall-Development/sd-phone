@@ -157,7 +157,7 @@ export function RydeProvider({ children }: { children: ReactNode }) {
     const [driverAccess, setDriverAccess] = useState<RydeDriverAccess>(() => ({
         driverAllowed: !isFiveM,
         duty: !isFiveM,
-        policy: 'Active taxi or taxi_tuggers job, on duty',
+        policy: "Active Taxi Service or Tugger's Taxis job, on duty.",
     }));
     const [state, setStateRaw] = useState<RyderState>(() => loadState());
     const [requests, setRequests] = useState<Ride[]>([]);

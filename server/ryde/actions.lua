@@ -51,6 +51,28 @@ local ok, fail = util.ok, util.fail
 
 local DRIVER_DENIED = 'Only on-duty taxi drivers can drive for Ryde.'
 
+---Builds the player-facing eligibility text from configured framework labels. A deliberate
+---server override still wins, while unknown jobs fall back to their stable framework keys.
+---@return string policy
+local function driverPolicy()
+    if type(config.DriverPolicy) == 'string' and config.DriverPolicy ~= '' then
+        return config.DriverPolicy
+    end
+
+    local labels = {}
+    for jobName in pairs(config.DriverJobs or {}) do
+        labels[#labels + 1] = job.getLabel(jobName) or jobName
+    end
+    table.sort(labels)
+
+    if #labels == 0 then return DRIVER_DENIED end
+    if #labels == 1 then return ('Active %s job, on duty.'):format(labels[1]) end
+
+    local finalLabel = labels[#labels]
+    labels[#labels] = nil
+    return ('Active %s or %s job, on duty.'):format(table.concat(labels, ', '), finalLabel)
+end
+
 ---Resolves the caller's live driver eligibility from the active framework job and duty state.
 ---@param src integer player server id
 ---@return table access { driverAllowed, job, duty, policy }
@@ -64,7 +86,7 @@ local function driverAccess(src)
         driverAllowed = minGrade ~= nil and grade >= minGrade and duty,
         job = activeJob,
         duty = duty,
-        policy = config.DriverPolicy or DRIVER_DENIED,
+        policy = driverPolicy(),
     }
 end
 

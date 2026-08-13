@@ -279,6 +279,7 @@ export interface PersonDetail extends PersonRow {
     lastname:    string;
     nationality: string;
     job:         string;
+    jobLabel:    string;
     jobGrade:    number;
     licences:    string[];
     fingerprint: string;
