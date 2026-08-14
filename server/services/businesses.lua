@@ -16,6 +16,20 @@ local util = require 'server.util'
 local servicesConfig = config.Services or {}
 local overrides = type(servicesConfig.DirectoryOverrides) == 'table'
     and servicesConfig.DirectoryOverrides or {}
+local visibility = type(servicesConfig.DirectoryVisibility) == 'table'
+    and servicesConfig.DirectoryVisibility or {}
+
+local function stringSet(values)
+    local result = {}
+    if type(values) ~= 'table' then return result end
+    for _, value in ipairs(values) do
+        if type(value) == 'string' and value ~= '' then result[value] = true end
+    end
+    return result
+end
+
+local alwaysIncludeTypes = stringSet(visibility.AlwaysIncludeTypes)
+local excludedTypes = stringSet(visibility.ExcludeTypes)
 
 local emergencyJobs = {}
 local emergencyCompanyList = type(servicesConfig.EmergencyCompanies) == 'table'
@@ -151,13 +165,19 @@ end
 local function directoryEntry(businessId, business, duty)
     if business.Enabled == false then return nil end
     local blip = business.Blip
-    if type(blip) ~= 'table' or blip.Enable ~= true then return nil end
+    if type(blip) ~= 'table' then return nil end
 
     local configured = overrides[businessId]
     local override = type(configured) == 'table' and configured or {}
-    if override.hidden == true then return nil end
 
     local categoryKey = tostring(business.Type or 'general')
+    local visible = blip.Enable == true
+    if alwaysIncludeTypes[categoryKey] then visible = true end
+    if excludedTypes[categoryKey] then visible = false end
+    if override.visible ~= nil then visible = override.visible == true end
+    if override.hidden == true then visible = false end
+    if not visible then return nil end
+
     local style = categoryStyles[categoryKey] or categoryStyles.general
     local name = firstNonEmpty(override.label, business.Name, blip.Name, job.getLabel(businessId), businessId)
     local storefront = business.Storefront or {}

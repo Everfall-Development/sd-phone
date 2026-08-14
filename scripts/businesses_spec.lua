@@ -33,6 +33,16 @@ local liveBusinesses = {
         Type = 'vendor',
         Blip = { Enable = false, Name = 'No Blip', Coords = { x = 1, y = 2, z = 3 } },
     },
+    mechanic_shop = {
+        Enabled = true,
+        Type = 'mechanic',
+        Blip = { Enable = false, Name = 'Pitstop Garage', Coords = { x = 90, y = 91, z = 92 } },
+    },
+    public_factory = {
+        Enabled = true,
+        Type = 'industrial',
+        Blip = { Enable = true, Name = 'Grapeseed Factory', Coords = { x = 93, y = 94, z = 95 } },
+    },
 }
 
 function GetResourceState(name)
@@ -71,6 +81,10 @@ package.preload['configs.config'] = function()
         Services = {
             EmergencyCompanies = { 'police', 'ambulance' },
             MessageImageHosts = { 'cdn.example' },
+            DirectoryVisibility = {
+                AlwaysIncludeTypes = { 'mechanic' },
+                ExcludeTypes = { 'industrial' },
+            },
             DirectoryOverrides = {
                 police = { label = 'LSPD', color = '#123456', iconUrl = 'https://cdn.example/police.png' },
                 beanmachine = { label = '', location = '', color = '', iconUrl = '' },
@@ -208,7 +222,7 @@ local businesses = require 'server.services.businesses'
 
 local available = businesses.directory(9)
 assert(available.success == true)
-assert(#available.data.companies == 3, 'two emergency entries and one public business expected')
+assert(#available.data.companies == 4, 'emergency entries, the public business, and the mechanic expected')
 
 local byId = {}
 for _, company in ipairs(available.data.companies) do byId[company.id] = company end
@@ -224,6 +238,10 @@ assert(byId.beanmachine.status == 'open')
 assert(byId.beanmachine.coords.x == 12 and byId.beanmachine.coords.y == 34)
 assert(byId.hidden == nil)
 assert(byId.no_blip == nil)
+assert(byId.mechanic_shop.name == 'Pitstop Garage')
+assert(byId.mechanic_shop.category == 'Automotive')
+assert(byId.mechanic_shop.coords.x == 90 and byId.mechanic_shop.coords.y == 91)
+assert(byId.public_factory == nil, 'industrial processing sites must not appear as customer businesses')
 
 blockedRateKeys['businesses:directory'] = true
 assert(businesses.directory(9).success == false, 'directory reads must be rate limited')
@@ -339,6 +357,6 @@ liveBusinesses.new_shop = {
 }
 local retried = businesses.directory(9)
 assert(retried.success == true)
-assert(#retried.data.companies == 4, 'an unavailable response must not cache an empty directory')
+assert(#retried.data.companies == 5, 'an unavailable response must not cache an empty directory')
 
 print('businesses_spec: ok')

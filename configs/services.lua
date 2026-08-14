@@ -4,9 +4,17 @@ return {
     -- The public Businesses directory is built live from ef_businesses. These
     -- values only cover presentation/contact exceptions; they never replace
     -- ef_businesses as the source of business identity or location.
+    DirectoryVisibility = {
+        -- Customer-facing mechanic shops commonly keep their world-map blips off. They still
+        -- belong in the phone directory. Industrial processing sites may expose map blips for
+        -- gameplay navigation, but they are not companies customers should call or message.
+        AlwaysIncludeTypes = { 'mechanic' },
+        ExcludeTypes = { 'industrial' },
+    },
+
     DirectoryOverrides = {
         -- ['job_name'] = {
-        --     hidden = true,
+        --     visible = true, -- false excludes it; either value overrides the type/blip policy
         --     label = 'Display name',
         --     location = 'Short location',
         --     color = '#16B8A6',
