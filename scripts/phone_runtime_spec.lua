@@ -20,6 +20,13 @@ local function has(path, value)
     return read(path):find(value, 1, true) ~= nil
 end
 
+local function exists(path)
+    local file = io.open(path, 'r')
+    if not file then return false end
+    file:close()
+    return true
+end
+
 local function assertExactDisabled(result)
     assert(type(result) == 'table')
     assert(result.success == false)
@@ -35,6 +42,20 @@ for _, id in ipairs({ 'phone', 'messages', 'maps', 'birdy', 'services', 'ryde', 
     assert(configuredApps[id].base == true, id .. ' must ship on the default home screen')
 end
 assert(configuredApps.bank.enabled == false, 'the built-in Bank must stay disabled in favour of ef_banking')
+
+-- External first-party integrations use native SD Phone contracts, while the phone's bundled
+-- compatibility surface remains intact for third-party resources.
+assert(has('fxmanifest.lua', "provide 'lb-phone'"))
+assert(exists('client/compat/lbphone.lua'))
+assert(exists('server/compat/lbphone/init.lua'))
+assert(has('client/main.lua', "require 'client.compat.lbphone'"))
+assert(has('server/main.lua', "require 'server.compat.lbphone.init'"))
+assert(has('server/main.lua', "require 'server.compat.lbphone.clientsupport'"))
+assert(has('client/customapps.lua', 'data.onUse'))
+assert(has('server/mail/init.lua', "exports('createMailAccount'"))
+assert(has('server/mail/init.lua', 'return actions.signUp(source, payload)'))
+assert(has('server/birdy/init.lua', "exports('deleteBirdyAccount'"))
+assert(has('server/birdy/actions.lua', 'function actions.deleteAccountByHandle(rawHandle)'))
 
 -- Prefix checks are deliberately local and type-safe. Keep this list beside the regression
 -- harness so a later dependency update cannot reintroduce the removed ox_lib prefix API.

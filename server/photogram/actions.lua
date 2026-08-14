@@ -12,6 +12,8 @@ local live                 = require 'server.photogram.live'
 local moderation           = require 'server.admin.moderation'
 ---@type table Watcher registry (server.watchers): shared with server.photogram.live and init.
 local watchers             = require('server.watchers').of('photogram')
+---@type table Public Quip/Kaleido Discord embeds + global Quip phone notifications.
+local socialAnnouncements  = require 'server.socialannouncements'
 
 ---@type table Actions module; the table returned at end of file.
 local actions              = {}
@@ -556,7 +558,7 @@ function actions.create(src, payload)
     end
     broadcast('feedChanged', {})
     -- First-party hook: one server-local event per created post.
-    TriggerEvent('sd-phone:server:photogram:post', {
+    local createdPost = {
         id = id,
         source = src,
         citizenid = player.getIdentifier(src),
@@ -565,7 +567,12 @@ function actions.create(src, payload)
         caption = caption,
         location = location,
         private = flag(me.is_private),
-    })
+    }
+    TriggerEvent('sd-phone:server:photogram:post', createdPost)
+    local announced, announceError = pcall(socialAnnouncements.kaleido, createdPost)
+    if not announced then
+        print(('^1[sd-phone]^0 Kaleido post %s announcement failed: %s'):format(id, tostring(announceError)))
+    end
     return ok({ post = serializePost(store.getPost(acc.username, id)) })
 end
 

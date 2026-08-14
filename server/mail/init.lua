@@ -169,6 +169,17 @@ exports('sendMailFromPlayer', function(source, payload)
     return dispatchSend(actions.send(source, payload))
 end)
 
+---Creates and signs into a Mail account for a live player through the same authoritative
+---validation, account cap, password hashing, and rollback path as the phone UI.
+---@param source number acting player's server id
+---@param payload { email?: string, password?: string, displayName?: string, phone?: string }
+---@return table envelope; data.account is present on success
+exports('createMailAccount', function(source, payload)
+    if type(source) ~= 'number' then return fail('Acting player source is required') end
+    if type(payload) ~= 'table' then return fail('Payload must be a table') end
+    return actions.signUp(source, payload)
+end)
+
 ---Lists every mail account a player is signed into as { id, name, email }; empty when the
 ---source is offline or signed into nothing.
 ---@param source number player server id

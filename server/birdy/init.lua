@@ -86,6 +86,14 @@ end)
 -- Drops a departing watcher's entry.
 util.onCleanup(function(src) watchers.drop(src) end)
 
+---Deletes an account by handle for trusted server resources. This is deliberately a server-only
+---export; clients must use the signed-in delete callback above.
+---@param handle string Birdy username, with or without leading @
+---@return boolean removed
+exports('deleteBirdyAccount', function(handle)
+    return actions.deleteAccountByHandle(handle)
+end)
+
 ---Sends a DM: delivers the recipient's copy as a live push when they're online, then rewrites
 ---the envelope so the sender only receives their own message.
 ---@param src number player server id

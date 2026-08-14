@@ -23,6 +23,7 @@ local config = {
     Groups      = require 'configs.groups',        -- player groups / crews
     Birdy       = require 'configs.birdy',         -- microblog
     Photogram   = require 'configs.photogram',     -- photo social + live video streaming
+    SocialWebhooks = require 'configs.socialwebhooks', -- Quip/Kaleido posts -> public Discord embeds
     Voice       = require 'configs.voice',          -- camera/Live audio: own mic + nearby voices (WebRTC)
     CallAudio   = require 'configs.callaudio',      -- how calls sound: handset/speaker/video/payphone submixes
     Contacts    = require 'configs.contacts',      -- phone-book + recents

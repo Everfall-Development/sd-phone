@@ -20,6 +20,8 @@ local badges = require 'server.badges.init'
 local moderation = require 'server.admin.moderation'
 ---@type table Watcher registry (server.watchers): shared with server.birdy.init.
 local watchers = require('server.watchers').of('birdy')
+---@type table Public Quip/Kaleido Discord embeds + global Quip phone notifications.
+local socialAnnouncements = require 'server.socialannouncements'
 
 ---@type table Birdy config (config.Birdy): field bounds + feed/notification limits.
 local birdyCfg = config.Birdy
@@ -569,6 +571,23 @@ function actions.deleteAccount(source)
     return ok()
 end
 
+---Permanently deletes a Birdy account by handle for trusted server resources such as content
+---moderation. Content and the shared account-engine identity are both removed when present.
+---@param rawHandle any
+---@return boolean removed true when either account surface existed
+function actions.deleteAccountByHandle(rawHandle)
+    local handle = normalizeHandle(rawHandle)
+    if not handle or handle == '' then return false end
+
+    local profile = store.getProfileByHandle(handle)
+    local account = acctStore.getAccount('birdy', handle)
+    if not profile and not account then return false end
+
+    if profile then store.deleteAccount(profile.handle) end
+    if account then acctStore.deleteAccount(account.id) end
+    return true
+end
+
 ---Top-level feed, newest first. The "Following" filter needs a signed-in viewer; guests always
 ---get the public "all" feed. Read-only.
 ---@param source number player server id
@@ -627,17 +646,21 @@ function actions.create(source, payload)
 
     -- First-party hook: one server-local event per created post; the citizenid is the character
     -- who posted, which is not necessarily the one that created the account.
-    TriggerEvent('sd-phone:server:birdy:post', {
+    local createdPost = {
         id = id, source = source, citizenid = cid,
         username = prof.handle, displayName = prof.displayName,
         body = body, images = images,
-    })
+    }
+    TriggerEvent('sd-phone:server:birdy:post', createdPost)
+    local announced, announceError = pcall(socialAnnouncements.quip, createdPost)
+    if not announced then
+        print(('^1[sd-phone]^0 Quip post %s announcement failed: %s'):format(id, tostring(announceError)))
+    end
 
     -- The TriggerEvent above is server-local; this is what reaches players. Scoped to the phones
     -- with Birdy in the foreground: every other player only refetched to discard the result.
     watchers.push('sd-phone:client:birdy:feedChanged', {})
 
-    local preview   = body ~= '' and body:sub(1, 80) or 'shared a photo'
     local followers = store.followerHandles(prof.handle)
 
     if #followers == 0 then return ok({ post = serializePost(store.getPost(id, prof.handle)) }) end
@@ -657,12 +680,6 @@ function actions.create(source, payload)
     end
 
     util.pushMany('sd-phone:client:birdy:notification', targets, {})
-    util.pushMany('sd-phone:client:notify', targets, {
-        app = 'birdy', appId = 'birdy', title = 'Quip',
-        body = ('%s posted: %s'):format(prof.displayName, preview),
-        time = 'now', quietInApp = true,
-    })
-
     for _, src in ipairs(targets) do badges.pushApp(src, 'birdy') end
 
     return ok({ post = serializePost(store.getPost(id, prof.handle)) })

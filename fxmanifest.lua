@@ -46,9 +46,4 @@ files {
     'web/build/assets/*.mp3',
 }
 
-dependencies {
-    'ox_lib',
-    'oxmysql',
-}
-
 provide 'lb-phone'
