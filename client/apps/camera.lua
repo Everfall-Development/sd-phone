@@ -51,10 +51,6 @@ local inputLoopRunning = false
 ---@type boolean Mirror of the phone's open state (sd-phone:client:openState).
 local phoneOpen = false
 
-AddEventHandler('sd-phone:client:openState', function(open)
-    phoneOpen = open and true or false
-end)
-
 ---Records the viewfinder cursor state and announces it, so the movement thread knows whether the
 ---mouse is aiming the lens. Call it after SetNuiFocus, so the keep-input re-sync lands last.
 ---@param on boolean whether the NUI cursor is showing
@@ -219,6 +215,17 @@ end
 local function stopFlash()
     flashing = false
 end
+
+-- Closing the phone does not guarantee that React unmounts the Camera app immediately: the app
+-- deck can retain its tree across the shell animation. Lua owns the native mobile-phone entity,
+-- so the authoritative close signal must release it directly instead of relying on the later NUI
+-- cleanup callback. Reopening onto Camera makes deckActive true again and reacquires the view.
+AddEventHandler('sd-phone:client:openState', function(open)
+    phoneOpen = open and true or false
+    if phoneOpen then return end
+    stopFlash()
+    exitCameraView()
+end)
 
 ---React -> Lua: flash toggle from the on-screen control (or the E key relayed back).
 RegisterNUICallback('sd-phone:camera:flash', function(data, cb)

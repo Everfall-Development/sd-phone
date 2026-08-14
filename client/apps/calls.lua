@@ -186,10 +186,6 @@ local inputLoopRunning = false
 ---@type boolean Mirror of the phone's open state (sd-phone:client:openState).
 local phoneOpen = false
 
-AddEventHandler('sd-phone:client:openState', function(open)
-    phoneOpen = open and true or false
-end)
-
 ---Records the call's cursor state and announces it, so client.main knows whether the mouse is
 ---steering the view rather than clicking the call UI - that flag is what stops the phone
 ---suppressing mouse-look. Call it after SetNuiFocus, so the keep-input re-sync lands last.
@@ -301,6 +297,17 @@ local function setVideoCamera(on, front)
         setVideoCursor(true)
     end
 end
+
+-- Stowing the shell ends the video upgrade but leaves the underlying audio call alone. The call
+-- layer remains mounted while the phone is hidden, so its React cleanup is not an authoritative
+-- native-entity lifecycle hook. Tear down the local camera/phone immediately and tell the server
+-- to stop the peer's video before the hidden layer can leave either side on a frozen frame.
+AddEventHandler('sd-phone:client:openState', function(open)
+    phoneOpen = open and true or false
+    if phoneOpen or not videoCamActive then return end
+    setVideoCamera(false)
+    TriggerServerEvent('sd-phone:server:call:video:stop')
+end)
 
 -- NUI to server one-way signaling (request/accept/stop/signal): fire-and-forget events.
 RegisterNUICallback('sd-phone:video:request', function(_, cb) TriggerServerEvent('sd-phone:server:call:video:request'); cb('ok') end)

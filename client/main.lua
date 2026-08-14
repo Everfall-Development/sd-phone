@@ -228,6 +228,8 @@ local ClosePhone
 ---@type table<integer, {obj: integer, color: string}> Server id -> local phone-prop copy welded
 ---onto that remote holder's ped.
 local remoteProps = {}
+---@type table<integer, integer> Server id -> monotonic owner for asynchronous remote prop creation.
+local remotePropGenerations = {}
 ---@type boolean Lockscreen torch state; persists after the UI closes.
 local flashlightOn = false
 ---@type boolean True while the Camera app's native cell-cam owns the pose and controls.
@@ -873,8 +875,9 @@ end)
 ---Deletes a remote holder's welded prop copy, if any. Idempotent.
 ---@param source integer server id of the remote holder
 local function removeRemoteProp(source)
+    remotePropGenerations[source] = (remotePropGenerations[source] or 0) + 1
     local entry = remoteProps[source]
-    if entry and entry.obj and DoesEntityExist(entry.obj) then DeleteObject(entry.obj) end
+    if entry then pose.deleteProp(entry.obj) end
     remoteProps[source] = nil
 end
 
@@ -904,7 +907,13 @@ if config.Phone.PropVisibleToOthers then
         local entry = remoteProps[source]
         if entry and entry.color == value and DoesEntityExist(entry.obj) then return end
         removeRemoteProp(source)
+        local generation = remotePropGenerations[source]
         local obj = pose.createProp(ped, value)
+        local _, currentPed = bagOwner(bagName)
+        if generation ~= remotePropGenerations[source] or currentPed ~= ped then
+            pose.deleteProp(obj)
+            return
+        end
         if obj then remoteProps[source] = { obj = obj, color = value } end
         debugPrint(('remote prop for %s -> %s'):format(source, value))
     end)

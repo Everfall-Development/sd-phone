@@ -194,6 +194,30 @@ assert(ringPush and ringOpen and ringPush < ringOpen)
 assert(mainSource:find('function OpenPhone%(%)', 1) ~= nil)
 assert(has('client/main.lua', "cb(appgate.disabledResult())"))
 assert(has('client/main.lua', "cb({ ok = OpenPhone() })"))
+
+-- Prop model streaming yields. Closing or replacing the pose during that yield must invalidate
+-- the stale creator on both the local holder and remote-replica paths, and the idle watchdog must
+-- clean any orphan that survives an unexpected native interruption.
+local poseSource = read('client/pose.lua')
+assert(poseSource:find('local propGeneration = 0', 1, true))
+assert(poseSource:find('generation ~= propGeneration or not pose.shouldHold() or ped ~= cache.ped', 1, true))
+assert(poseSource:find('elseif prop then', 1, true))
+assert(poseSource:find('pose.deleteProp(obj)', 1, true))
+assert(poseSource:find('DetachEntity(obj, true, true)', 1, true))
+assert(poseSource:find('SetEntityAsMissionEntity(obj, true, true)', 1, true))
+assert(mainSource:find('local remotePropGenerations = {}', 1, true))
+assert(mainSource:find('generation ~= remotePropGenerations[source] or currentPed ~= ped', 1, true))
+
+-- Camera and video calls create GTA's native mobile-phone entity outside pose.lua. A shell close
+-- must tear those owners down directly because the retained React app tree may not unmount.
+local cameraSource = read('client/apps/camera.lua')
+assert(cameraSource:find("AddEventHandler('sd-phone:client:openState'", 1, true))
+assert(cameraSource:find('stopFlash()', 1, true))
+assert(cameraSource:find('exitCameraView()', 1, true))
+local callsSource = read('client/apps/calls.lua')
+assert(callsSource:find("AddEventHandler('sd-phone:client:openState'", 1, true))
+assert(callsSource:find('setVideoCamera(false)', 1, true))
+assert(callsSource:find("TriggerServerEvent('sd-phone:server:call:video:stop')", 1, true))
 local cellTowers = read('configs/celltowers.lua')
 for _, disabledAction in ipairs({ 'radio', 'pages:list', 'stocks:market', 'garages:list', 'homes:list' }) do
     assert(not cellTowers:find("'" .. disabledAction .. "'", 1, true), disabledAction .. ' remains in celltower offline/cache policy')

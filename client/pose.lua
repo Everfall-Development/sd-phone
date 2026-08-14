@@ -66,6 +66,9 @@ local landscape = false
 local color = config.Phone.DefaultColor or 'black'
 ---@type integer|nil Handle of the attached phone prop, nil while stowed.
 local prop
+---@type integer Monotonic owner for local prop creation. Model streaming yields, so a close or
+---re-weld must invalidate any creator that started under the previous pose state.
+local propGeneration = 0
 ---@type boolean True while a text field in the phone has focus
 local typing = false
 ---@type table<integer, true> Prop models this client has already failed to stream.
@@ -136,6 +139,10 @@ function pose.createProp(ped, frame, wide)
 
     local coords = GetEntityCoords(ped)
     local obj = CreateObject(model, coords.x, coords.y, coords.z, false, true, true)
+    if not obj or obj == 0 or not DoesEntityExist(obj) then
+        SetModelAsNoLongerNeeded(model)
+        return nil
+    end
     SetEntityCollision(obj, false, false)
     local off, rot = propTransform(wide)
     AttachEntityToEntity(obj, ped, GetPedBoneIndex(ped, config.Phone.PropBone),
@@ -144,17 +151,42 @@ function pose.createProp(ped, frame, wide)
     return obj
 end
 
+---Deletes one exact phone prop. Safe after partial creation or an earlier cleanup.
+---@param obj integer|nil
+function pose.deleteProp(obj)
+    if not obj or not DoesEntityExist(obj) then return end
+    DetachEntity(obj, true, true)
+    SetEntityAsMissionEntity(obj, true, true)
+    DeleteObject(obj)
+    if DoesEntityExist(obj) then DeleteEntity(obj) end
+end
+
 ---Attaches our own hand prop in the current frame colour and grip. No-op if one is already
 ---attached or the model won't stream.
 ---@param ped integer player ped handle
 local function attachProp(ped)
     if prop and DoesEntityExist(prop) then return end
-    prop = pose.createProp(ped, color, landscape)
+    local generation = propGeneration
+    local obj = pose.createProp(ped, color, landscape)
+    if not obj then return end
+
+    if generation ~= propGeneration or not pose.shouldHold() or ped ~= cache.ped then
+        pose.deleteProp(obj)
+        return
+    end
+
+    if prop and DoesEntityExist(prop) then
+        pose.deleteProp(obj)
+        return
+    end
+
+    prop = obj
 end
 
 ---Delete the attached phone prop, if any. Idempotent.
 function pose.removeProp()
-    if prop and DoesEntityExist(prop) then DeleteObject(prop) end
+    propGeneration = propGeneration + 1
+    pose.deleteProp(prop)
     prop = nil
 end
 
@@ -273,6 +305,8 @@ CreateThread(function()
             if not IsEntityPlayingAnim(cache.ped, clip.dict, clip.anim, 3) then
                 play()
             end
+        elseif prop then
+            pose.removeProp()
         end
         Wait(500)
     end
