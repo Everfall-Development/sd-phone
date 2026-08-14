@@ -57,7 +57,7 @@ export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, o
                 <div className="flex items-center px-4 py-2">
                     <button type="button" onClick={onOpenProfile} aria-label={t('squawk.yourProfile', 'Your profile')}><Avatar size={44} src={me.avatar} /></button>
                     <div className="flex flex-1 justify-center">
-                        <QuipMark className="h-[45px] w-[45px]" />
+                        <QuipMark color="theme" className="h-[45px] w-[45px]" />
                     </div>
                     <div className="w-11" aria-hidden />
                 </div>
