@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft } from 'lucide-react';
 
-import { useTheme } from '@/stores/themeStore';
+import { HIDDEN_TEXT } from '@/shell/streamerMode';
+import { useStreamerHidden, useTheme } from '@/stores/themeStore';
 import { AreaChart, Sparkline } from './Sparkline';
 import {
     type Asset, formatMoney, formatPct, formatUnits, holdingValue, trendColor,
 } from './data';
 import { t } from '@/i18n';
 
-function PortfolioRow({ asset, divider, onOpen }: { asset: Asset; divider: boolean; onOpen: () => void }) {
+function PortfolioRow({ asset, divider, onOpen, hideInvestments }: { asset: Asset; divider: boolean; onOpen: () => void; hideInvestments: boolean }) {
     const value = holdingValue(asset);
     const cost  = asset.units * asset.avgCost;
     const pl    = value - cost;
@@ -22,12 +23,12 @@ function PortfolioRow({ asset, divider, onOpen }: { asset: Asset; divider: boole
                 </span>
                 <div className="min-w-0 flex-1">
                     <div className="truncate text-[19px] font-semibold text-black dark:text-white">{asset.symbol}</div>
-                    <div className="truncate text-[15px] text-black/60 dark:text-white/60">{formatUnits(asset.units)} {t('stocks.units', 'units')}</div>
+                    <div className="truncate text-[15px] text-black/60 dark:text-white/60">{hideInvestments ? HIDDEN_TEXT : `${formatUnits(asset.units)} ${t('stocks.units', 'units')}`}</div>
                 </div>
                 <Sparkline data={asset.history} width={64} height={32} strokeWidth={2.4} />
                 <div className="w-[104px] shrink-0 text-right">
-                    <div className="text-[18px] font-semibold tabular-nums text-black dark:text-white">{formatMoney(value)}</div>
-                    <div className="text-[15px] font-semibold tabular-nums" style={{ color: trendColor(pl) }}>{formatPct(plPct)}</div>
+                    <div className="text-[18px] font-semibold tabular-nums text-black dark:text-white">{hideInvestments ? HIDDEN_TEXT : formatMoney(value)}</div>
+                    <div className="text-[15px] font-semibold tabular-nums" style={{ color: trendColor(pl) }}>{hideInvestments ? HIDDEN_TEXT : formatPct(plPct)}</div>
                 </div>
             </button>
             {divider && <div className="pointer-events-none bg-black/10 dark:bg-white/10" style={{ height: '0.5px' }} />}
@@ -43,6 +44,7 @@ export function Portfolio({ assets, cash, onBack, onOpenAsset }: {
 }) {
     const { theme } = useTheme('theme');
     const isDark = theme === 'dark';
+    const hideInvestments = useStreamerHidden('investments');
 
     const [shown, setShown] = useState(false);
     const exit = useRef<() => void>(() => {});
@@ -95,9 +97,9 @@ export function Portfolio({ assets, cash, onBack, onOpenAsset }: {
 
             <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-10">
                 <div className="mt-1 text-[15px] font-medium text-black/60 dark:text-white/60">{t('stocks.totalValue', 'Total Value')}</div>
-                <div className="text-[42px] font-bold tabular-nums leading-tight">{formatMoney(total)}</div>
+                <div className="text-[42px] font-bold tabular-nums leading-tight">{hideInvestments ? HIDDEN_TEXT : formatMoney(total)}</div>
                 <div className="mt-0.5 text-[17px] font-semibold tabular-nums" style={{ color: trendColor(pl) }}>
-                    {formatMoney(pl, { showSign: true })} ({formatPct(plPct)})
+                    {hideInvestments ? HIDDEN_TEXT : `${formatMoney(pl, { showSign: true })} (${formatPct(plPct)})`}
                 </div>
 
                 {held.length === 0 ? (
@@ -113,7 +115,7 @@ export function Portfolio({ assets, cash, onBack, onOpenAsset }: {
                         <div className="mb-1 mt-6 px-1 text-[13px] font-semibold uppercase tracking-wider text-ios-gray">{t('stocks.holdings', 'Holdings')}</div>
                         <div className="overflow-hidden rounded-[14px]" style={{ background: cardBg }}>
                             {held.map((a, i) => (
-                                <PortfolioRow key={a.symbol} asset={a} divider={i < held.length - 1} onOpen={() => onOpenAsset(a.symbol)} />
+                                <PortfolioRow key={a.symbol} asset={a} divider={i < held.length - 1} onOpen={() => onOpenAsset(a.symbol)} hideInvestments={hideInvestments} />
                             ))}
                         </div>
                     </>

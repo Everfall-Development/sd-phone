@@ -6,6 +6,8 @@ import { getCategories } from '@/apps/banking/data';
 import type { Category } from '@/apps/banking/data';
 import { t } from '@/i18n';
 import { formatMoney } from '@/lib/money';
+import { HIDDEN_TEXT } from '@/shell/streamerMode';
+import { useStreamerHidden } from '@/stores/themeStore';
 import { useWidgetData } from '@/stores/widgetDataStore';
 import { WidgetTile, palette } from './WidgetTile';
 import type { Palette } from './WidgetTile';
@@ -31,7 +33,7 @@ function ago(iso: string): string {
     return `${Math.floor(h / 24)}d`;
 }
 
-function Row({ tx, p, up }: { tx: BankTx; p: Palette; up: string }) {
+function Row({ tx, p, up, hideAmount }: { tx: BankTx; p: Palette; up: string; hideAmount: boolean }) {
     const meta   = catMeta(tx.category);
     const Icon   = meta.icon;
     const income = tx.amount > 0;
@@ -51,7 +53,7 @@ function Row({ tx, p, up }: { tx: BankTx; p: Palette; up: string }) {
                 className="w-[62px] shrink-0 text-right text-[12px] font-semibold tabular-nums"
                 style={{ color: income ? up : p.fg }}
             >
-                {income ? '+' : ''}{formatMoney(tx.amount, { whole: true })}
+                {hideAmount ? HIDDEN_TEXT : `${income ? '+' : ''}${formatMoney(tx.amount, { whole: true })}`}
             </span>
         </div>
     );
@@ -63,10 +65,12 @@ export function WalletWidget({ size, width, height, theme = 'dark' }: {
     const balance = useWidgetData(s => s.balance);
     const cash    = useWidgetData(s => s.cash);
     const txs     = useWidgetData(s => s.transactions);
+    const hideBalance = useStreamerHidden('balance');
+    const hideTransactions = useStreamerHidden('transactions');
 
     const p    = palette(theme);
     const up   = UP[theme] ?? UP.dark;
-    const amount = balance === null ? '—' : formatMoney(balance, { whole: true });
+    const amount = balance === null ? '—' : hideBalance ? HIDDEN_TEXT : formatMoney(balance, { whole: true });
     const latest = txs[0] ?? null;
 
     const rows = txs.slice(0, Math.max(1, Math.floor((height - CHROME_PX) / ROW_H_PX)));
@@ -112,7 +116,7 @@ export function WalletWidget({ size, width, height, theme = 'dark' }: {
                                 <Wallet className="h-[11px] w-[11px] shrink-0 translate-y-[1px]" strokeWidth={2.6} style={{ color: p.faint }} />
                                 <span className="text-[11px]" style={{ color: p.sub }}>{t('banking.cash', 'Cash')}</span>
                                 <span className="text-[12px] font-semibold tabular-nums">
-                                    {formatMoney(cash, { whole: true })}
+                                    {hideBalance ? HIDDEN_TEXT : formatMoney(cash, { whole: true })}
                                 </span>
                             </div>
                         )}
@@ -125,7 +129,7 @@ export function WalletWidget({ size, width, height, theme = 'dark' }: {
                                             className="text-[13px] font-semibold tabular-nums"
                                             style={{ color: latest.amount > 0 ? up : p.fg }}
                                         >
-                                            {latest.amount > 0 ? '+' : ''}{formatMoney(latest.amount, { whole: true })}
+                                            {hideTransactions ? HIDDEN_TEXT : `${latest.amount > 0 ? '+' : ''}${formatMoney(latest.amount, { whole: true })}`}
                                         </span>
                                         <span className="text-[10px] tabular-nums" style={{ color: p.faint }}>{ago(latest.date)}</span>
                                     </div>
@@ -143,7 +147,7 @@ export function WalletWidget({ size, width, height, theme = 'dark' }: {
                             <div className="text-[11px]" style={{ color: p.sub }}>
                                 {t('banking.noRecent', 'No recent activity')}
                             </div>
-                        ) : rows.map(tx => <Row key={tx.id} tx={tx} p={p} up={up} />)}
+                        ) : rows.map(tx => <Row key={tx.id} tx={tx} p={p} up={up} hideAmount={hideTransactions} />)}
                     </div>
                 )}
             </div>

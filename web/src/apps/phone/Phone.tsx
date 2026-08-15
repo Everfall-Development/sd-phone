@@ -8,13 +8,14 @@ import { PhoneTabBar, type PhoneTab } from './PhoneTabBar';
 import { AlertDialog } from '@/ui/AlertDialog';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { useSessionState } from '@/hooks/useSessionState';
-import { formatPhone, toCallEntry, type Contact } from './data';
+import { toCallEntry, type Contact } from './data';
 import {
     updateContactApi, deleteContactApi,
     setFavoriteApi, saveCardApi, type CardOverrides,
 } from './contactsApi';
 import { dialCall } from './callsApi';
 import { useContacts, useContactsStore, saveNewContact } from '@/stores/contactsStore';
+import { useMaskedPhone } from '@/stores/themeStore';
 import { t } from '@/i18n';
 
 interface CallTarget { number: string; name?: string; video?: boolean }
@@ -37,6 +38,7 @@ export function Phone({ onClose: _onClose }: { onClose: () => void }) {
     }, [tab]);
     const { contacts, recents: recentsRaw, myNumber, myName, card } =
         useContacts('contacts', 'recents', 'myNumber', 'myName', 'card');
+    const phone = useMaskedPhone();
     const [callTarget, setCallTarget] = useState<CallTarget | null>(null);
     const [dialError,  setDialError]  = useState<string | null>(null);
 
@@ -144,11 +146,11 @@ export function Phone({ onClose: _onClose }: { onClose: () => void }) {
             {callTarget !== null && (
                 <AlertDialog
                     title={callTarget.video
-                        ? t('phone.videoCallName','Video call {name}',{ name: callTarget.name || formatPhone(callTarget.number) })
-                        : t('phone.callName','Call {name}',{ name: callTarget.name || formatPhone(callTarget.number) })}
+                        ? t('phone.videoCallName','Video call {name}',{ name: callTarget.name || phone(callTarget.number) })
+                        : t('phone.callName','Call {name}',{ name: callTarget.name || phone(callTarget.number) })}
                     message={callTarget.video
-                        ? t('phone.videoCallConfirm','Start a video call with {name}?',{ name: callTarget.name || formatPhone(callTarget.number) })
-                        : t('phone.callConfirm','Call {name}?',{ name: callTarget.name || formatPhone(callTarget.number) })}
+                        ? t('phone.videoCallConfirm','Start a video call with {name}?',{ name: callTarget.name || phone(callTarget.number) })
+                        : t('phone.callConfirm','Call {name}?',{ name: callTarget.name || phone(callTarget.number) })}
                     cancelLabel={t('phone.cancel','Cancel')}
                     confirmLabel={callTarget.video ? t('phone.videoCall','Video Call') : t('phone.call','Call')}
                     onCancel={() => setCallTarget(null)}

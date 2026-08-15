@@ -5,6 +5,8 @@ import type { Asset } from '@/apps/stocks/data';
 import { formatPct, formatPrice, formatUnits, holdingValue, trendColor } from '@/apps/stocks/data';
 import { t } from '@/i18n';
 import { formatMoney } from '@/lib/money';
+import { HIDDEN_TEXT } from '@/shell/streamerMode';
+import { useStreamerHidden } from '@/stores/themeStore';
 import { useWidgetData } from '@/stores/widgetDataStore';
 import { WidgetTile, palette } from './WidgetTile';
 import type { Palette } from './WidgetTile';
@@ -56,7 +58,7 @@ function Chip({ frac, size = 11 }: { frac: number; size?: number }) {
     );
 }
 
-function Row({ a, p, spark }: { a: Asset; p: Palette; spark: boolean }) {
+function Row({ a, p, spark, hideInvestments }: { a: Asset; p: Palette; spark: boolean; hideInvestments: boolean }) {
     const pos = position(a);
     return (
         <div className="flex items-center gap-2">
@@ -65,10 +67,10 @@ function Row({ a, p, spark }: { a: Asset; p: Palette; spark: boolean }) {
                 {pos.held ? (
                     <div className="flex items-baseline gap-1.5 leading-tight">
                         <span className="shrink-0 text-[12px] font-semibold tabular-nums" style={{ color: trendColor(pos.pnl) }}>
-                            {signedMoney(pos.pnl)}
+                            {hideInvestments ? HIDDEN_TEXT : signedMoney(pos.pnl)}
                         </span>
                         <span className="truncate text-[11px] tabular-nums" style={{ color: p.sub }}>
-                            {formatMoney(pos.value, { whole: true })}
+                            {hideInvestments ? HIDDEN_TEXT : formatMoney(pos.value, { whole: true })}
                         </span>
                     </div>
                 ) : (
@@ -88,6 +90,7 @@ export function StocksWidget({ size, width, height, theme = 'dark' }: {
     size: WidgetSize; width: number; height: number; theme?: WidgetTheme;
 }) {
     const assets = useWidgetData(s => s.assets);
+    const hideInvestments = useStreamerHidden('investments');
     const p = palette(theme);
     const radius = size === 'sm' ? 22 : 26;
 
@@ -125,10 +128,10 @@ export function StocksWidget({ size, width, height, theme = 'dark' }: {
                     {position(a).held && (
                         <div className="mt-1 flex items-baseline gap-1.5">
                             <span className="text-[13px] font-semibold tabular-nums" style={{ color: trendColor(position(a).pnl) }}>
-                                {signedMoney(position(a).pnl)}
+                                {hideInvestments ? HIDDEN_TEXT : signedMoney(position(a).pnl)}
                             </span>
                             <span className="truncate text-[11px] tabular-nums" style={{ color: p.sub }}>
-                                {formatMoney(position(a).value, { whole: true })}
+                                {hideInvestments ? HIDDEN_TEXT : formatMoney(position(a).value, { whole: true })}
                             </span>
                         </div>
                     )}
@@ -162,10 +165,10 @@ export function StocksWidget({ size, width, height, theme = 'dark' }: {
                     {folio.held && (
                         <div className="flex shrink-0 items-baseline gap-1.5">
                             <span className="text-[12px] font-semibold tabular-nums" style={{ color: p.fg }}>
-                                {formatMoney(folio.value, { whole: true })}
+                                {hideInvestments ? HIDDEN_TEXT : formatMoney(folio.value, { whole: true })}
                             </span>
                             <span className="text-[11px] font-semibold tabular-nums" style={{ color: trendColor(folio.pnl) }}>
-                                {signedMoney(folio.pnl)}
+                                {hideInvestments ? HIDDEN_TEXT : signedMoney(folio.pnl)}
                             </span>
                         </div>
                     )}
@@ -179,10 +182,10 @@ export function StocksWidget({ size, width, height, theme = 'dark' }: {
                                 <div className="truncate text-[13px] font-medium leading-tight" style={{ color: p.body }}>{lead.name}</div>
                                 {position(lead).held && (
                                     <div className="mt-1 truncate text-[12px] tabular-nums" style={{ color: p.sub }}>
-                                        {t('widgets.unitsHeld', '{n} held', { n: formatUnits(lead.units) })}
+                                        {hideInvestments ? HIDDEN_TEXT : t('widgets.unitsHeld', '{n} held', { n: formatUnits(lead.units) })}
                                         {' · '}
                                         <span className="font-semibold" style={{ color: trendColor(position(lead).pnl) }}>
-                                            {signedMoney(position(lead).pnl)} ({formatPct(position(lead).pct)})
+                                            {hideInvestments ? HIDDEN_TEXT : `${signedMoney(position(lead).pnl)} (${formatPct(position(lead).pct)})`}
                                         </span>
                                     </div>
                                 )}
@@ -199,7 +202,7 @@ export function StocksWidget({ size, width, height, theme = 'dark' }: {
                 )}
 
                 <div className="flex min-h-0 flex-1 flex-col justify-between">
-                    {list.map(a => <Row key={a.symbol} a={a} p={p} spark={size === 'md'} />)}
+                    {list.map(a => <Row key={a.symbol} a={a} p={p} spark={size === 'md'} hideInvestments={hideInvestments} />)}
                 </div>
             </div>
         </WidgetTile>

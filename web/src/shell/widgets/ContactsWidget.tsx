@@ -3,10 +3,11 @@ import { Plus } from 'lucide-react';
 
 import type { WidgetSize, WidgetTheme } from '@/apps/appstore/appsApi';
 import { dialCall } from '@/apps/phone/callsApi';
-import { formatPhone, type Contact } from '@/apps/phone/data';
+import type { Contact } from '@/apps/phone/data';
 import { t } from '@/i18n';
 import { ContactPickerSheet } from '@/shared/ContactPickerSheet';
 import { useContactsStore } from '@/stores/contactsStore';
+import { useMaskedPhone } from '@/stores/themeStore';
 import { AlertDialog } from '@/ui/AlertDialog';
 import { WidgetTile, palette } from './WidgetTile';
 
@@ -104,6 +105,7 @@ export function ContactsWidget({ size, width, height, theme = 'dark', picks, onP
     onPicks?: (ids: string[]) => void;
 }) {
     const contacts = useContactsStore(s => s.contacts);
+    const phone = useMaskedPhone();
     useEffect(() => { void useContactsStore.getState().load(); }, []);
     const p = palette(theme);
     const [picking, setPicking] = useState(false);
@@ -170,8 +172,8 @@ export function ContactsWidget({ size, width, height, theme = 'dark', picks, onP
 
                 {callTarget !== null && (
                     <AlertDialog
-                        title={t('phone.callName', 'Call {name}', { name: callTarget.name || formatPhone(callTarget.phone) })}
-                        message={t('phone.callConfirm', 'Call {name}?', { name: callTarget.name || formatPhone(callTarget.phone) })}
+                        title={t('phone.callName', 'Call {name}', { name: callTarget.name || phone(callTarget.phone) })}
+                        message={t('phone.callConfirm', 'Call {name}?', { name: callTarget.name || phone(callTarget.phone) })}
                         cancelLabel={t('phone.cancel', 'Cancel')}
                         confirmLabel={t('phone.call', 'Call')}
                         onCancel={() => setCallTarget(null)}

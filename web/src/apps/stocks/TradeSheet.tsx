@@ -2,6 +2,8 @@ import { useState } from 'react';
 
 import { Sheet } from '@/ui/Sheet';
 import { Keypad } from '@/ui/Keypad';
+import { HIDDEN_TEXT } from '@/shell/streamerMode';
+import { useStreamerHidden } from '@/stores/themeStore';
 import { type Asset, formatMoney, formatUnits } from './data';
 import { t } from '@/i18n';
 
@@ -19,6 +21,7 @@ export function TradeSheet({ mode, asset, available, onConfirm, onClose }: {
     const [amountStr, setAmountStr] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy]   = useState(false);
+    const hideInvestments = useStreamerHidden('investments');
 
     const amount  = Number(amountStr) || 0;
     const isSell  = mode === 'sell';
@@ -29,12 +32,14 @@ export function TradeSheet({ mode, asset, available, onConfirm, onClose }: {
     const accent = mode === 'sell' || mode === 'withdraw' ? '#ea3943' : '#16c784';
 
     const units = asset && asset.price > 0 ? amount / asset.price : 0;
+    const availableText = capped ? (hideInvestments ? HIDDEN_TEXT : formatMoney(available)) : '';
+    const unitsText = hideInvestments ? HIDDEN_TEXT : formatUnits(units);
     const subline = (() => {
         if (isBuy || isSell) {
-            const avail = isBuy ? t('stocks.cashAmount', 'Cash {amount}', { amount: formatMoney(available) }) : t('stocks.holdingsAmount', 'Holdings {amount}', { amount: formatMoney(available) });
-            return asset ? `≈ ${formatUnits(units)} ${asset.symbol} · ${avail}` : avail;
+            const avail = isBuy ? t('stocks.cashAmount', 'Cash {amount}', { amount: availableText }) : t('stocks.holdingsAmount', 'Holdings {amount}', { amount: availableText });
+            return asset ? `≈ ${unitsText} ${asset.symbol} · ${avail}` : avail;
         }
-        if (mode === 'withdraw') return t('stocks.cashAvailable', 'Cash {amount} available', { amount: formatMoney(available) });
+        if (mode === 'withdraw') return t('stocks.cashAvailable', 'Cash {amount} available', { amount: availableText });
         return t('stocks.fromBankAccount', 'From your bank account');
     })();
 

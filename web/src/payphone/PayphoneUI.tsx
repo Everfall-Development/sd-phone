@@ -9,7 +9,7 @@ import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { playDtmf } from '@/apps/phone/keypad/dtmf';
 import { startRing } from '@/apps/phone/calls/ringtone';
 import { playHandsetHang, playHandsetLift } from './sfx';
-import { formatPhone } from '@/lib/phone';
+import { useMaskedPhone } from '@/stores/themeStore';
 
 type Phase = 'idle' | 'calling' | 'connected' | 'ended';
 
@@ -280,6 +280,7 @@ function TapedNote({ tilt, children }: { tilt: number; children: ReactNode }) {
 }
 
 export function PayphoneUI() {
+    const phone = useMaskedPhone();
     const [open,      setOpen]      = useState(false);
     const [leaving,   setLeaving]   = useState(false);
     const leaveTimer = useRef<number | null>(null);
@@ -502,15 +503,15 @@ export function PayphoneUI() {
         : phase === 'calling'   ? t('payphone.calling', 'CALLING…')
         : phase === 'connected' ? fmtClock(elapsed)
         : phase === 'ended'     ? t('payphone.callEnded', 'CALL ENDED')
-        : digits ? formatPhone(digits)
+        : digits ? phone(digits)
         : needsCoin ? t('payphone.insertCoin', 'INSERT COIN')
-        : booth.anonymous ? t('payphone.withheld', 'NO CALLER ID') : formatPhone(booth.number);
+        : booth.anonymous ? t('payphone.withheld', 'NO CALLER ID') : phone(booth.number);
 
     /** The classic arcade blink, only while the display is begging for a coin. */
     const lcdBlink = !lcdNote && phase === 'idle' && (incoming !== null || (!digits && needsCoin));
 
     const inCall = phase === 'calling' || phase === 'connected';
-    const boothScrawl = booth.anonymous ? t('payphone.withheld', 'NO CALLER ID') : formatPhone(booth.number);
+    const boothScrawl = booth.anonymous ? t('payphone.withheld', 'NO CALLER ID') : phone(booth.number);
 
     return (
         <div
@@ -955,7 +956,7 @@ export function PayphoneUI() {
                                         className="flex w-full items-baseline justify-between gap-2 text-left active:opacity-60"
                                     >
                                         <span className="min-w-0 flex-1 truncate text-[11.5px] font-semibold leading-[21px] text-[#3f3627]" style={NOTE_LABEL}>{f.name}</span>
-                                        <span className="shrink-0 text-[14.5px] font-semibold leading-[21px] text-[#27357f]" style={NOTE_NUMBER}>{formatPhone(f.phone)}</span>
+                                        <span className="shrink-0 text-[14.5px] font-semibold leading-[21px] text-[#27357f]" style={NOTE_NUMBER}>{phone(f.phone)}</span>
                                     </button>
                                 ))}
                                 {favorites.length === 0 && (

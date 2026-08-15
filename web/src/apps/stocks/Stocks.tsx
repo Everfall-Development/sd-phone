@@ -16,6 +16,7 @@ import {
     formatMoney, formatPct, holdingValue, sortAssets,
 } from './data';
 import { t } from '@/i18n';
+import { HIDDEN_TEXT } from '@/shell/streamerMode';
 import { useStreamerHidden } from '@/stores/themeStore';
 
 const HISTORY_CAP = 48;
@@ -128,7 +129,7 @@ export function Stocks({ onClose }: { onClose: () => void }) {
                     </div>
                     <div className="mt-2 flex items-center justify-between text-[15px] text-white/90">
                         <span className="tabular-nums">{t('stocks.cash', 'Cash')} {hideBalance ? '••••' : formatMoney(market.cash)}</span>
-                        {totalCost > 0 && <span className="tabular-nums">{formatPct(returnPct)} {t('stocks.return', 'return')}</span>}
+                        {totalCost > 0 && <span className="tabular-nums">{hideBalance ? HIDDEN_TEXT : formatPct(returnPct)} {t('stocks.return', 'return')}</span>}
                     </div>
                     <button
                         type="button"
