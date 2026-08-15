@@ -16,6 +16,7 @@ import {
     formatMoney, formatPct, holdingValue, sortAssets,
 } from './data';
 import { t } from '@/i18n';
+import { useStreamerHidden } from '@/stores/themeStore';
 
 const HISTORY_CAP = 48;
 
@@ -31,7 +32,9 @@ export function Stocks({ onClose }: { onClose: () => void }) {
     const [sortKey, setSortKey] = useSessionState<SortKey>('stocks:sortKey', 'price');
     const [sortDir, setSortDir] = useSessionState<'asc' | 'desc'>('stocks:sortDir', 'desc');
     const [openSymbol, setOpenSymbol] = useSessionState<string | null>('stocks:open', null);
-    const [hideBalance, setHideBalance] = useSessionState('stocks:hideBalance', false);
+    const [hiddenByUser, setHideBalance] = useSessionState('stocks:hideBalance', false);
+    const forcedHidden = useStreamerHidden('investments');
+    const hideBalance = hiddenByUser || forcedHidden;
     const [showPortfolio, setShowPortfolio] = useSessionState('stocks:portfolio', false);
     const [trade, setTrade] = useState<{ mode: TradeMode; symbol?: string } | null>(null);
 

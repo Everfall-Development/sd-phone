@@ -8,7 +8,7 @@ import { t } from '@/i18n';
 import { useIosPush } from '@/hooks/useIosPush';
 import { useReanimateOnChange } from '@/hooks/useReanimateOnChange';
 import { useSessionState } from '@/hooks/useSessionState';
-import { useTheme } from '@/stores/themeStore';
+import { useMaskedPhone, useTheme } from '@/stores/themeStore';
 import { ActionSheet } from '@/ui/ActionSheet';
 import { AlertDialog } from '@/ui/AlertDialog';
 import { ImageLightbox } from '@/ui/ImageLightbox';
@@ -198,7 +198,8 @@ function InboxLoading() {
 }
 
 function ThreadRow({ thread, scope, onOpen }: { thread: InboxThread; scope: Scope; onOpen: () => void }) {
-    const identity = getThreadIdentity(thread, scope);
+    const phone = useMaskedPhone();
+    const identity = getThreadIdentity(thread, scope, phone);
     const unread = (thread.unread ?? 0) > 0;
     const unreadCount = Math.max(thread.unread ?? 0, 0);
     const unreadText = unreadCount > 99 ? '99+' : String(unreadCount);
@@ -253,6 +254,7 @@ function Conversation({ scope, thread, onBack, onSent }: {
     onSent: (inbox: Inbox) => void;
 }) {
     const { theme } = useTheme('theme');
+    const phone = useMaskedPhone();
     const isDark = theme === 'dark';
     const [sending, setSending]   = useState(false);
     const [locSheet, setLocSheet] = useState<InboxMessage | null>(null);
@@ -262,7 +264,7 @@ function Conversation({ scope, thread, onBack, onSent }: {
     const [saveError, setSaveError] = useState<string | null>(null);
     const listRef = useRef<HTMLDivElement>(null);
     const { goBack, pageStyle, animating } = useIosPush(onBack);
-    const identity = getThreadIdentity(thread, scope);
+    const identity = getThreadIdentity(thread, scope, phone);
 
     useAutoScrollToEnd(listRef, thread.messages.length);
 

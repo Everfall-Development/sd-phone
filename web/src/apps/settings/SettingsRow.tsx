@@ -1,9 +1,9 @@
 import {
-    Accessibility, Antenna, BatteryFull, Bell, Bluetooth, Calendar,
+    Accessibility, Antenna, Bell, Bluetooth, Calendar,
     ChevronRight, Compass, CreditCard, Fingerprint, Gamepad2, Grid2x2, Hourglass,
     Image as ImageIcon, Key, Languages, LayoutGrid, ListTodo, Lock, Mail,
     MapPin, MessageCircle, Mic, Moon, Newspaper, PawPrint, Phone, Plane, Search,
-    Settings2, ShieldCheck, ShoppingBag, Siren, SlidersHorizontal,
+    Settings2, ShoppingBag, Siren, SlidersHorizontal,
     Sparkles, StickyNote, Sun, User, Video, Volume2, Wifi, Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -15,7 +15,7 @@ import { useTheme } from '@/stores/themeStore';
 const ICONS: Record<IconName, LucideIcon> = {
     Plane, Wifi, Bluetooth, Antenna, Key, Bell, Volume2, Moon, Hourglass,
     Settings2, SlidersHorizontal, Sun, LayoutGrid, Accessibility, Search,
-    Image: ImageIcon, Sparkles, Fingerprint, Siren, BatteryFull, ShieldCheck,
+    Image: ImageIcon, Sparkles, Fingerprint, Siren,
     ShoppingBag, CreditCard, Gamepad2, Lock, Mail, User, Calendar, StickyNote,
     ListTodo, Mic, Phone, MessageCircle, Video, Compass, Newspaper, Languages,
     MapPin, Zap, PawPrint, Grid2x2,
@@ -24,19 +24,15 @@ const ICONS: Record<IconName, LucideIcon> = {
 export function SettingsRow({ row, divider, onPress }: { row: SettingsRowDef; divider: boolean; onPress?: () => void }) {
     const Icon = ICONS[row.icon];
     const hasSubtitle = Boolean(row.subtitle);
+    const isAirplane = row.id === 'airplane';
     const { airplaneMode, setAirplaneMode } = useTheme('airplaneMode', 'setAirplaneMode');
-    return (
-        <button
-            type="button"
-            onClick={row.disabled ? undefined : onPress}
-            disabled={row.disabled}
-            aria-disabled={row.disabled}
-            className={[
-                'relative flex w-full items-center gap-3.5 px-4 text-left',
-                row.disabled ? 'opacity-40' : 'active:bg-black/5 dark:active:bg-white/5',
-                hasSubtitle ? 'py-3' : 'py-2.5',
-            ].join(' ')}
-        >
+    const className = [
+        'relative flex w-full items-center gap-3.5 px-4 text-left',
+        row.disabled ? 'opacity-40' : !isAirplane && 'active:bg-black/5 dark:active:bg-white/5',
+        hasSubtitle ? 'py-3' : 'py-2.5',
+    ].filter(Boolean).join(' ');
+    const content = (
+        <>
             <div
                 className="flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-[9px] shadow-sm"
                 style={{ background: row.iconBg }}
@@ -62,10 +58,13 @@ export function SettingsRow({ row, divider, onPress }: { row: SettingsRowDef; di
                 )}
             </div>
 
-            {row.toggle !== undefined ? (
-                row.id === 'airplane'
-                    ? <Toggle on={airplaneMode} onChange={setAirplaneMode} tabIndex={-1} />
-                    : <Toggle defaultOn={row.toggle} tabIndex={-1} />
+            {isAirplane ? (
+                <Toggle
+                    on={airplaneMode}
+                    onChange={setAirplaneMode}
+                    disabled={row.disabled}
+                    ariaLabel={row.label}
+                />
             ) : (
                 <>
                     {row.status && (
@@ -83,6 +82,22 @@ export function SettingsRow({ row, divider, onPress }: { row: SettingsRowDef; di
                     style={{ height: '0.5px' }}
                 />
             )}
+        </>
+    );
+
+    if (isAirplane) {
+        return <div className={className}>{content}</div>;
+    }
+
+    return (
+        <button
+            type="button"
+            onClick={row.disabled ? undefined : onPress}
+            disabled={row.disabled}
+            aria-disabled={row.disabled}
+            className={className}
+        >
+            {content}
         </button>
     );
 }

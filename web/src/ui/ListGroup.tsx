@@ -65,7 +65,7 @@ export function ListGroup({ children, header, footer }: {
     );
 }
 
-export function ListRow({ label, sub, value, chevron, divider, destructive, selected, large, left, right, onPress }: {
+export function ListRow({ label, sub, value, chevron, divider, destructive, disabled, selected, large, left, right, onPress }: {
     label:        string;
     /** Optional second line under the label (ios-gray) - file rows, previews, etc. */
     sub?:         string;
@@ -73,6 +73,7 @@ export function ListRow({ label, sub, value, chevron, divider, destructive, sele
     chevron?:     boolean;
     divider?:     boolean;
     destructive?: boolean;
+    disabled?:    boolean;
     selected?:    boolean;
     /** Roomier variant: taller row, 18px label, 14px sub - list-browsing apps (Files). */
     large?:       boolean;
@@ -88,8 +89,10 @@ export function ListRow({ label, sub, value, chevron, divider, destructive, sele
     return (
         <button
             type="button"
-            onClick={onPress}
-            className={`relative flex w-full items-center px-4 text-left active:bg-black/5 dark:active:bg-white/5 ${large ? 'py-3.5' : 'py-3'}`}
+            onClick={disabled ? undefined : onPress}
+            disabled={disabled}
+            aria-disabled={disabled}
+            className={`relative flex w-full items-center px-4 text-left ${disabled ? 'opacity-40' : 'active:bg-black/5 dark:active:bg-white/5'} ${large ? 'py-3.5' : 'py-3'}`}
         >
             {left !== undefined && (
                 <span className="mr-3 flex shrink-0 items-center">{left}</span>

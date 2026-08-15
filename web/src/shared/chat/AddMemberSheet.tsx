@@ -4,7 +4,7 @@ import { X } from 'lucide-react';
 import { ContactAvatar } from '@/shared/ContactAvatar';
 import { Sheet } from '@/ui/Sheet';
 import { contactFromNumber } from './messagesApi';
-import { formatPhone } from '@/apps/phone/data';
+import { useMaskedPhone } from '@/stores/themeStore';
 import type { Contact } from './data';
 import { t } from '@/i18n';
 
@@ -27,6 +27,7 @@ export function AddMemberSheet({ groupName, contacts, existing, myNumber, onCanc
     const pendingAdd = useRef(false);
 
     const selectedIds = useMemo(() => new Set(selected.map(keyOf)), [selected]);
+    const phone = useMaskedPhone();
     const excluded = useMemo(() => {
         const s = new Set(existing.map(keyOf));
         if (myNumber) s.add(digitsOf(myNumber));
@@ -130,7 +131,7 @@ export function AddMemberSheet({ groupName, contacts, existing, myNumber, onCanc
                                         >
                                             <ContactAvatar contact={contactFromNumber(rawNumber)} size={56} />
                                             <div className="min-w-0 flex-1">
-                                                <div className="text-[23px]">{formatPhone(rawNumber)}</div>
+                                                <div className="text-[23px]">{phone(rawNumber)}</div>
                                                 <div className="text-[18px] font-medium text-black/60 dark:text-white/60">{t('messages.addThisNumber', 'Add this number')}</div>
                                             </div>
                                         </button>
@@ -145,7 +146,7 @@ export function AddMemberSheet({ groupName, contacts, existing, myNumber, onCanc
                                             <ContactAvatar contact={c} size={56} />
                                             <div className="min-w-0 flex-1">
                                                 <div className="truncate text-[23px]">{c.name}</div>
-                                                {c.phone && <div className="text-[18px] font-medium text-black/60 dark:text-white/60">{formatPhone(c.phone)}</div>}
+                                                {c.phone && <div className="text-[18px] font-medium text-black/60 dark:text-white/60">{phone(c.phone)}</div>}
                                             </div>
                                         </button>
                                     ))}

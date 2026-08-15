@@ -4,7 +4,7 @@ import { ArrowUp, X } from 'lucide-react';
 import { ContactAvatar } from '@/shared/ContactAvatar';
 import { clearSessionState, useSessionState } from '@/hooks/useSessionState';
 import { contactFromNumber } from '@/shared/chat/messagesApi';
-import { formatPhone } from '@/apps/phone/data';
+import { useMaskedPhone } from '@/stores/themeStore';
 import type { Contact } from '@/shared/chat/data';
 import { t } from '@/i18n';
 
@@ -23,6 +23,7 @@ export function NewMessage({ contacts, myNumber, onCancel, onSend }: NewMessageP
     const [body,     setBody]     = useSessionState('messages:newBody', '');
     const [exiting,  setExiting]  = useState(false);
     const toRef = useRef<HTMLInputElement>(null);
+    const phone = useMaskedPhone();
 
     const selectedIds = useMemo(() => new Set(selected.map(c => c.id)), [selected]);
 
@@ -132,7 +133,7 @@ export function NewMessage({ contacts, myNumber, onCancel, onSend }: NewMessageP
                             >
                                 <ContactAvatar contact={contactFromNumber(rawNumber)} size={56} />
                                 <div className="min-w-0 flex-1">
-                                    <div className="text-[23px]">{formatPhone(rawNumber)}</div>
+                                    <div className="text-[23px]">{phone(rawNumber)}</div>
                                     <div className="text-[18px] font-medium text-black/60 dark:text-white/60">{t('messages.sendToThisNumber', 'Send to this number')}</div>
                                 </div>
                             </button>
@@ -147,7 +148,7 @@ export function NewMessage({ contacts, myNumber, onCancel, onSend }: NewMessageP
                                 <ContactAvatar contact={c} size={56} />
                                 <div className="min-w-0 flex-1">
                                     <div className="truncate text-[23px]">{c.name}</div>
-                                    {c.phone && <div className="text-[18px] font-medium text-black/60 dark:text-white/60">{formatPhone(c.phone)}</div>}
+                                    {c.phone && <div className="text-[18px] font-medium text-black/60 dark:text-white/60">{phone(c.phone)}</div>}
                                 </div>
                             </button>
                         ))}

@@ -74,7 +74,7 @@ function buildSettings(): Record<string, unknown> {
         language:     getLocale(),
         localeTag:    getLocaleTag(),
         airplaneMode: s.airplaneMode,
-        streamerMode: false,
+        streamerMode: s.streamerMode,
         doNotDisturb: false,
         time:         { hour24: s.hour24 },
         volume:       { ringtone: s.ringtoneVol, call: s.callVol },

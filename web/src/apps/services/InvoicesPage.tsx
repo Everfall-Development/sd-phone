@@ -10,13 +10,14 @@ import { ContactAvatar, PlaceholderAvatar } from '@/shared/ContactAvatar';
 import { useContacts } from '@/stores/contactsStore';
 import { t } from '@/i18n';
 import { digits } from '@/lib/format';
-import { formatPhone } from '@/lib/phone';
+import { useMaskedPhone } from '@/stores/themeStore';
 import { fmtMoney } from './data';
 import { cancelInvoice, fetchSentInvoices, type SentInvoice } from './servicesApi';
 
 // Business sent-invoices list, mirroring the Wallet's Sent segment: contact-resolved identity,
 // reference codes in the title, status chips and cancel on pending rows.
 export function InvoicesPage({ onClose }: { onClose: () => void }) {
+    const phone = useMaskedPhone();
     const [exiting,    setExiting]    = useState(false);
     const [cancelling, setCancelling] = useState<SentInvoice | null>(null);
     const [busy,       setBusy]       = useState(false);
@@ -90,12 +91,12 @@ export function InvoicesPage({ onClose }: { onClose: () => void }) {
                                     {card ? <ContactAvatar contact={card} size={46} /> : <PlaceholderAvatar size={46} />}
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-baseline gap-1.5">
-                                            <span className="truncate text-[18px] font-semibold text-black dark:text-white">{card ? card.name : formatPhone(inv.toNumber)}</span>
+                                            <span className="truncate text-[18px] font-semibold text-black dark:text-white">{card ? card.name : phone(inv.toNumber)}</span>
                                             {inv.code && <span className="shrink-0 text-[13px] font-semibold tracking-wide text-ios-gray">#{inv.code}</span>}
                                         </div>
                                         {(inv.note || card) && (
                                             <div className="truncate text-[16px] font-medium text-ios-gray">
-                                                {inv.note || formatPhone(inv.toNumber)}
+                                                {inv.note || phone(inv.toNumber)}
                                             </div>
                                         )}
                                     </div>
@@ -127,7 +128,7 @@ export function InvoicesPage({ onClose }: { onClose: () => void }) {
             {cancelling && (
                 <AlertDialog
                     title={t('services.cancelInvoiceTitle', 'Cancel invoice?')}
-                    message={t('services.cancelInvoiceMsg', 'This invoice to {name} will be withdrawn. They will no longer be able to pay it.', { name: contactByNumber.get(digits(cancelling.toNumber))?.name ?? formatPhone(cancelling.toNumber) })}
+                    message={t('services.cancelInvoiceMsg', 'This invoice to {name} will be withdrawn. They will no longer be able to pay it.', { name: contactByNumber.get(digits(cancelling.toNumber))?.name ?? phone(cancelling.toNumber) })}
                     confirmLabel={t('services.cancelInvoice', 'Cancel Invoice')}
                     cancelLabel={t('services.keepInvoice', 'Keep')}
                     destructive

@@ -22,6 +22,9 @@ local COLUMNS = {
         accent            = 'accent VARCHAR(16) NULL',
         shell             = 'shell VARCHAR(16) NULL',
         game_time         = 'game_time TINYINT(1) NULL',
+        caller_id         = 'caller_id TINYINT(1) NULL',
+        streamer_mode     = 'streamer_mode TINYINT(1) NULL',
+        streamer_hide     = 'streamer_hide VARCHAR(255) NULL',
         reopen_app        = 'reopen_app TINYINT(1) NULL',
         setup_done        = 'setup_done TINYINT(1) NULL',
         custom_wallpapers = 'custom_wallpapers TEXT NULL',
@@ -95,6 +98,12 @@ local COLUMNS = {
         device_identity = 'device_identity VARCHAR(64) NULL',
         auto_sync       = 'auto_sync TINYINT(1) NOT NULL DEFAULT 1',
         synced_at       = 'synced_at BIGINT NULL',
+    },
+    -- The run's best lap and that lap's sector splits, so the HUD has something to show a live
+    -- delta against. Rows written before these existed carry NULL and simply have no delta.
+    phone_racing_results = {
+        best_lap_ms = 'best_lap_ms INT NULL',
+        sectors     = 'sectors VARCHAR(64) NULL',
     },
 }
 

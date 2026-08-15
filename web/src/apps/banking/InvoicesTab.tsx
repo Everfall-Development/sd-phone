@@ -14,10 +14,11 @@ import { AlertDialog } from '@/ui/AlertDialog';
 import { EmptyState } from '@/ui/EmptyState';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { t } from '@/i18n';
-import { formatPhone } from '@/lib/phone';
 import type { ReceivedInvoice } from '@/apps/services/servicesApi';
 import { cancelPersonalInvoice, fetchPersonalSent, type PersonalInvoice } from './bankingApi';
 import { formatMoney } from './data';
+import { useMaskedPhone, useStreamerHidden } from '@/stores/themeStore';
+import { HIDDEN_TEXT } from '@/shell/streamerMode';
 import { NewInvoicePage } from './NewInvoicePage';
 import { ReceivedInvoices } from './ReceivedInvoices';
 
@@ -29,6 +30,8 @@ export function InvoicesTab({ received, receivedLoading, onRefetchReceived, onPa
     onRefetchReceived: () => void;
     onPaid:            () => void;
 }) {
+    const hideAmounts = useStreamerHidden('transactions');
+    const phone = useMaskedPhone();
     const [segment,    setSegment]    = useSessionState<Segment>('banking:invoicesSegment', 'received');
     const [composing,  setComposing]  = useState(false);
     const [cancelling, setCancelling] = useState<PersonalInvoice | null>(null);
@@ -119,17 +122,17 @@ export function InvoicesTab({ received, receivedLoading, onRefetchReceived, onPa
                                     {card ? <ContactAvatar contact={card} size={46} /> : <PlaceholderAvatar size={46} />}
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-baseline gap-1.5">
-                                            <span className="truncate text-[18px] font-semibold text-black dark:text-white">{card ? card.name : formatPhone(inv.toNumber)}</span>
+                                            <span className="truncate text-[18px] font-semibold text-black dark:text-white">{card ? card.name : phone(inv.toNumber)}</span>
                                             {inv.code && <span className="shrink-0 text-[13px] font-semibold tracking-wide text-ios-gray">#{inv.code}</span>}
                                         </div>
                                         {(inv.note || card) && (
                                             <div className="truncate text-[16px] font-medium text-ios-gray">
-                                                {inv.note || formatPhone(inv.toNumber)}
+                                                {inv.note || phone(inv.toNumber)}
                                             </div>
                                         )}
                                     </div>
                                     <div className="flex shrink-0 flex-col items-end gap-1.5">
-                                        <span className="text-[18px] font-bold tabular-nums text-black dark:text-white">{formatMoney(inv.amount, { whole: true })}</span>
+                                        <span className="text-[18px] font-bold tabular-nums text-black dark:text-white">{hideAmounts ? HIDDEN_TEXT : formatMoney(inv.amount, { whole: true })}</span>
                                         {inv.status === 'pending' ? (
                                             <button
                                                 type="button"
@@ -156,7 +159,7 @@ export function InvoicesTab({ received, receivedLoading, onRefetchReceived, onPa
             {cancelling && (
                 <AlertDialog
                     title={t('banking.cancelInvoiceTitle', 'Cancel this invoice?')}
-                    message={t('banking.cancelInvoiceMsg', '{name} will no longer be able to pay it.', { name: contactByNumber.get(digits(cancelling.toNumber))?.name ?? formatPhone(cancelling.toNumber) })}
+                    message={t('banking.cancelInvoiceMsg', '{name} will no longer be able to pay it.', { name: contactByNumber.get(digits(cancelling.toNumber))?.name ?? phone(cancelling.toNumber) })}
                     confirmLabel={t('banking.cancelInvoice', 'Cancel Invoice')}
                     cancelLabel={t('banking.keep', 'Keep')}
                     onCancel={() => setCancelling(null)}

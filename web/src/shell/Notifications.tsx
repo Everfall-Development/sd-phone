@@ -4,6 +4,7 @@ import { Bell } from 'lucide-react';
 
 import { AppIconSVG } from './AppIconSVG';
 import { t } from '@/i18n';
+import { useStreamerHidden } from '@/stores/themeStore';
 
 
 export interface NotificationItem {
@@ -60,6 +61,7 @@ function NotificationBanner({ item, onDismiss, onOpen }: {
 }) {
     const [exiting, setExiting] = useState(false);
     const [drag, setDrag]       = useState(0);
+    const hidePreview = useStreamerHidden('previews');
     const startY  = useRef<number | null>(null);
     const dragging = useRef(false);
     const moved    = useRef(false);
@@ -118,7 +120,9 @@ function NotificationBanner({ item, onDismiss, onOpen }: {
                     <span className="shrink-0 text-[13px] text-black/45 dark:text-white/45">{item.time ?? t('shell.now','now')}</span>
                 </div>
                 {item.body && (
-                    <p className="mt-0.5 line-clamp-4 text-[15px] leading-snug text-black/80 dark:text-white/85">{item.body}</p>
+                    <p className="mt-0.5 line-clamp-4 text-[15px] leading-snug text-black/80 dark:text-white/85">
+                        {hidePreview ? t('shell.notificationHidden', 'Notification hidden') : item.body}
+                    </p>
                 )}
             </div>
         </div>

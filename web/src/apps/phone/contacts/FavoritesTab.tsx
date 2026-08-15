@@ -4,7 +4,8 @@ import { Info, Minus, Star } from 'lucide-react';
 import { ContactAvatar } from '@/shared/ContactAvatar';
 import { ContactDetail } from './ContactDetail';
 import { EmptyState } from '@/ui/EmptyState';
-import { formatPhone, type Contact } from '../data';
+import { type Contact } from '../data';
+import { useMaskedPhone } from '@/stores/themeStore';
 import { t } from '@/i18n';
 
 export function FavoritesTab({ favorites, onRemoveFavorite, onRequestCall, onUpdateContact, onDeleteContact, onToggleFavorite }: {
@@ -77,6 +78,7 @@ function FavoriteRow({ contact, editing, onRemove, onInfo, onCall }: {
     onInfo:   () => void;
     onCall:   () => void;
 }) {
+    const phone = useMaskedPhone();
     return (
         <div className="flex items-center py-3.5 pl-3.5 pr-3.5">
             <div className={`flex items-center overflow-hidden transition-all duration-300 ${editing ? 'mr-3 w-[28px] opacity-100' : 'w-0 opacity-0'}`}>
@@ -99,7 +101,7 @@ function FavoriteRow({ contact, editing, onRemove, onInfo, onCall }: {
                 <ContactAvatar contact={contact} size={56} />
                 <div className="min-w-0 flex-1">
                     <div className="truncate text-[20px] text-black dark:text-white">{contact.name}</div>
-                    <div className="truncate text-[17px] text-black/50 dark:text-white/50">{formatPhone(contact.phone)}</div>
+                    <div className="truncate text-[17px] text-black/50 dark:text-white/50">{phone(contact.phone)}</div>
                 </div>
             </button>
 

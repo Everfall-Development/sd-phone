@@ -21,6 +21,21 @@ local voice    = require 'bridge.server.voice'
 ---@type table Actions module; the table returned at end of file.
 local actions = {}
 
+---The caller as the other leg may see them. A withheld caller ID blanks the name as well as the
+---number: the name is resolved against the VIEWER's contacts, so passing it through would still
+---announce a saved caller by name with the number hidden. The session's own caller record keeps
+---the real values, so blocking and the caller's own screen are unaffected.
+---
+---Both fields go out EMPTY rather than as some stand-in text. The phone already reads a missing
+---number as a withheld one (`noCallerId`) and renders its own localised "No Caller ID" with a
+---placeholder avatar and no call-back; a literal name from here would defeat all three.
+---@param s table session from `sessions`
+---@return table party a caller-shaped table safe to show to the callee
+local function callerShownTo(s)
+    if not s.withheld then return s.caller end
+    return { src = s.caller.src, cid = s.caller.cid, name = '', number = '' }
+end
+
 ---Whether a player can be rung at all. A server that gates the phone behind an item should not
 ---ring someone who is not carrying one; a server with no items configured rings everyone.
 ---@param src number player server id
@@ -425,7 +440,8 @@ local function endCall(channel, reason, endedBy)
         logCall(s.caller.cid, s.callee.number, s.callee.name, 'outgoing', duration)
     end
     if s.payphoneSide ~= 'callee' and s.caller.number ~= '' then
-        logCall(s.callee.cid, s.caller.number, s.caller.name, answered and 'incoming' or 'missed', duration)
+        local shown = callerShownTo(s)
+        logCall(s.callee.cid, shown.number, shown.name, answered and 'incoming' or 'missed', duration)
     end
 
     -- Only the missed-call count can have moved, and a full snapshot is seven store reads.
@@ -610,11 +626,14 @@ function actions.dial(source, payload)
     -- picture straight away rather than asking a second time.
     local wantsVideo = payload.video == true
 
+    local withheld = not settings.getCallerId(cid)
+
     sessions[channel] = {
         channel   = channel,
         state     = 'ringing',
         startedAt = nil,
         video     = wantsVideo,
+        withheld  = withheld,
         caller    = { src = source,    cid = cid,       name = player.getName(source),    number = digits(myNumber) },
         callee    = { src = targetSrc, cid = targetCid, name = player.getName(targetSrc), number = dialed },
     }
@@ -626,10 +645,10 @@ function actions.dial(source, payload)
         video   = wantsVideo,
     })
     TriggerClientEvent('sd-phone:client:call:incoming', targetSrc, {
-        channel = channel,
-        name    = contactNameFor(targetCid, sessions[channel].caller.number),
-        number  = sessions[channel].caller.number,
-        video   = wantsVideo,
+        channel  = channel,
+        name     = withheld and '' or contactNameFor(targetCid, sessions[channel].caller.number),
+        number   = withheld and '' or sessions[channel].caller.number,
+        video    = wantsVideo,
     })
 
     -- Server-local lifecycle event: a 1:1 call started ringing.
@@ -647,7 +666,7 @@ end
 ---@return table party
 local function titlePartyFor(s, me)
     if s.caller.src == me.src then return s.callee end
-    return s.caller
+    return callerShownTo(s)
 end
 
 ---Pushes the current conference roster to every live member, so each phone can name who else is
@@ -1051,7 +1070,8 @@ function actions.decline(source, payload)
         local declined = s.pending
         s.pending = nil
         TriggerClientEvent('sd-phone:client:call:ended', source, { channel = channel, reason = 'declined' })
-        logCall(declined.cid, s.caller.number, s.caller.name, 'missed', 0)
+        local shownCaller = callerShownTo(s)
+        logCall(declined.cid, shownCaller.number, shownCaller.name, 'missed', 0)
         badges.pushApp(source, 'phone')
         pushRoster(s)
         return ok()

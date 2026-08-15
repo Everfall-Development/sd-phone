@@ -106,7 +106,7 @@ export function Composer({ me, onClose, onPost }: {
                         maxLength={MAX_POST_LENGTH}
                         placeholder={t('squawk.whatsHappening', "What's on your mind?")}
                         className="min-h-[110px] flex-none resize-none bg-transparent pt-1 text-[17px] leading-snug text-label outline-none placeholder:font-semibold placeholder:text-ios-gray"
-                        style={{ caretColor: BLUE }}
+                        style={{ caretColor: BLUE, outline: 'none', boxShadow: 'none' }}
                     />
 
                     {images.length > 0 && (

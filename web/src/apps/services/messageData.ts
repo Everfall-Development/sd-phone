@@ -19,11 +19,15 @@ export interface AttachmentSelection {
     dropped: number;
 }
 
-export function getThreadIdentity(thread: InboxThread, scope: MessageScope): ThreadIdentity {
-    const title = thread.name.trim() || formatPhone(thread.key);
+export function getThreadIdentity(
+    thread: InboxThread,
+    scope: MessageScope,
+    formatNumber: (number: string) => string = formatPhone,
+): ThreadIdentity {
+    const title = thread.name.trim() || formatNumber(thread.key);
     if (scope !== 'job') return { title };
 
-    const phone = formatPhone(thread.key);
+    const phone = formatNumber(thread.key);
     return phone && phone !== title ? { title, secondary: phone } : { title };
 }
 

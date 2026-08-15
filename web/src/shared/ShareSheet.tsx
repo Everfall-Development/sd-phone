@@ -6,7 +6,7 @@ import { isFiveM } from '@/core/nui';
 import { apiData } from '@/core/api';
 import { t } from '@/i18n';
 import { colorFor, digits } from '@/lib/format';
-import { formatPhone } from '@/lib/phone';
+import { useMaskedPhone } from '@/stores/themeStore';
 import { Sheet } from '@/ui/Sheet';
 import { InitialsAvatar, PlaceholderAvatar } from '@/shared/ContactAvatar';
 import { useContacts } from '@/stores/contactsStore';
@@ -49,12 +49,13 @@ export function ShareSheet({ onClose, onShare, children, top = '55%' }: {
     // A nearby phone presents as the receiver's SAVED CONTACT (name + picture) when their
     // number is in the sender's contacts; an unknown number shows as just the number, like a
     // real phone would - never the character name over their head.
+    const phone = useMaskedPhone();
     function resolve(target: ShareTarget) {
         const d = target.number ? digits(target.number) : '';
         const contact = d ? contacts.find(c => digits(c.phone) === d) : undefined;
         return {
             contact,
-            label: contact?.name ?? (target.number ? formatPhone(target.number) : target.name),
+            label: contact?.name ?? (target.number ? phone(target.number) : target.name),
         };
     }
 

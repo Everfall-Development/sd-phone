@@ -160,6 +160,24 @@ function store.blockNumber(citizenid, number)
     ]], { citizenid, d })
 end
 
+---Every number a player blocks, newest first, so the Blocked Contacts page can list them.
+---Bounded by the same cap the block action enforces. Read-only.
+---@param citizenid string
+---@param cap integer|nil rows to return at most
+---@return { number: string, blockedAt: number }[]
+function store.listBlocked(citizenid, cap)
+    if not citizenid or citizenid == '' then return {} end
+    local rows = MySQL.query.await(
+        'SELECT number, UNIX_TIMESTAMP(created_at) AS blocked_at FROM phone_blocked WHERE citizenid = ? ORDER BY created_at DESC LIMIT ?',
+        { citizenid, math.floor(tonumber(cap) or 100) }
+    ) or {}
+    local out = {}
+    for i = 1, #rows do
+        out[i] = { number = rows[i].number, blockedAt = tonumber(rows[i].blocked_at) or 0 }
+    end
+    return out
+end
+
 ---How many numbers a player currently blocks. Read-only.
 ---@param citizenid string
 ---@return number

@@ -346,4 +346,47 @@ lib.addCommand('wipemyaccounts', {
     })
 end)
 
-return { wipeCid = wipeCid, wipeAccountsFor = wipeAccountsFor }
+---@type table<integer, string[]> What Settings > Reset Phone Fully erases: the content the PHONE
+---itself owns, as { table, citizenid column }.
+---
+---Deliberately narrower than CID_SINGLE above. Left alone: phone_passwords (the reset dialog
+---promises saved logins survive), group memberships, and anything holding value or belonging to
+---another system - bank history, stock holdings and wallet, casino chips, game saves, racing
+---data. Erasing a handset should not reach into the economy.
+local DEVICE_CONTENT = {
+    { 'phone_contacts',              'citizenid' },
+    { 'phone_blocked',               'citizenid' },
+    { 'phone_calls',                 'citizenid' },
+    { 'phone_messages',              'citizenid' },
+    { 'phone_message_reactions',     'citizenid' },
+    { 'phone_message_group_members', 'citizenid' },
+    { 'phone_message_groups',        'owner_cid' },
+    { 'phone_notes',                 'citizenid' },
+    { 'phone_photos',                'citizenid' },
+    { 'phone_photo_albums',          'citizenid' },
+    { 'phone_voice_memos',           'citizenid' },
+    { 'phone_map_markers',           'citizenid' },
+    { 'phone_alarms',                'citizenid' },
+    { 'phone_timer_recents',         'citizenid' },
+    { 'phone_documents',             'citizenid' },
+    { 'phone_document_folders',      'citizenid' },
+    { 'phone_radio',                 'citizenid' },
+    { 'phone_radio_saved',           'citizenid' },
+    { 'phone_custom_ringtones',      'citizenid' },
+}
+
+---Erases one character's phone content for Settings > Reset Phone Fully, leaving their settings
+---row, saved passwords, groups and everything of value untouched. Album items go first: they key
+---on album id rather than citizenid, so deleting the albums first would orphan them.
+---@param cid string framework per-character id
+---@return integer rows total rows deleted
+local function wipeDeviceContent(cid)
+    if not cid or cid == '' then return 0 end
+    local rows = del('DELETE FROM phone_photo_album_items WHERE album_id IN (SELECT id FROM phone_photo_albums WHERE citizenid = ?)', { cid })
+    for _, entry in ipairs(DEVICE_CONTENT) do
+        rows = rows + del(('DELETE FROM %s WHERE %s = ?'):format(entry[1], entry[2]), { cid })
+    end
+    return rows
+end
+
+return { wipeCid = wipeCid, wipeAccountsFor = wipeAccountsFor, wipeDeviceContent = wipeDeviceContent }

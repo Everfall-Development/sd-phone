@@ -2,6 +2,8 @@ import { useRef, useState } from 'react';
 import { ChevronRight, Plus } from 'lucide-react';
 
 import { ContactAvatar } from '@/shared/ContactAvatar';
+import { useMaskedPhone, useStreamerHidden } from '@/stores/themeStore';
+import { HIDDEN_TEXT } from '@/shell/streamerMode';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useDidEnter } from '@/hooks/useDidEnter';
 import { SearchBar } from '@/ui/SearchBar';
@@ -34,13 +36,14 @@ export function ContactsTab({ contacts, myNumber, myName, card, onRequestCall, o
     const [showMyCard, setShowMyCard] = useState(false);
     const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+    const hideNumber = useStreamerHidden('number');
     const cardName = card.name || myName || t('phone.myCard','My Card');
     const myCard: Contact = {
         id:       'me',
         name:     cardName,
         initials: initialsFor(cardName),
         color:    '#8e8e93',
-        phone:    formatPhone(myNumber),
+        phone:    hideNumber ? HIDDEN_TEXT : formatPhone(myNumber),
         email:    card.email,
         address:  card.address,
         avatar:   card.avatar,
@@ -159,6 +162,7 @@ export function ContactsTab({ contacts, myNumber, myName, card, onRequestCall, o
 }
 
 function ContactRow({ contact, divider, onOpen }: { contact: Contact; divider: boolean; onOpen: (c: Contact) => void }) {
+    const phone = useMaskedPhone();
     return (
         <>
             {/* Off-screen rows skip style, layout and avatar decode. The deck re-parents this
@@ -176,7 +180,7 @@ function ContactRow({ contact, divider, onOpen }: { contact: Contact; divider: b
                 <ContactAvatar contact={contact} size={56} />
                 <div className="min-w-0 flex-1">
                     <div className="truncate text-[20px] font-semibold text-black dark:text-white">{contact.name}</div>
-                    <div className="truncate text-[17px] font-medium text-black/60 dark:text-white/60">{formatPhone(contact.phone)}</div>
+                    <div className="truncate text-[17px] font-medium text-black/60 dark:text-white/60">{phone(contact.phone)}</div>
                 </div>
             </button>
             {divider && (

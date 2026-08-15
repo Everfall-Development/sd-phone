@@ -96,4 +96,11 @@ function store.forget(citizenid, id)
     )
 end
 
+---Forgets a character's Bluetooth settings: the radio toggle and every paired device. Part of
+---Reset All Settings - pairings are a setting, not content.
+---@param citizenid string framework per-character id
+function store.resetFor(citizenid)
+    if not citizenid or citizenid == '' then return end
+    MySQL.update.await('DELETE FROM phone_bluetooth WHERE citizenid = ?', { citizenid })
+end
 return store

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { RotateCw } from 'lucide-react';
 
 import { useAsyncData } from '@/hooks/useAsyncData';
-import { useTheme } from '@/stores/themeStore';
+import { useStreamerHidden, useTheme } from '@/stores/themeStore';
+import { HIDDEN_TEXT } from '@/shell/streamerMode';
 import { PriceChart } from './PriceChart';
 import { fetchHolders } from './stocksApi';
 import {
@@ -33,6 +34,10 @@ export function AssetDetail({ asset, onBack, onBuy, onSell, onRefresh, animateIn
 }) {
     const { theme } = useTheme('theme');
     const isDark = theme === 'dark';
+    const hidePosition = useStreamerHidden('investments');
+    function money(n: number, opts?: { showSign?: boolean }): string {
+        return hidePosition ? HIDDEN_TEXT : formatMoney(n, opts);
+    }
 
     const [shown, setShown] = useState(!animateIn);
     const exit = useRef<() => void>(() => {});
@@ -118,12 +123,12 @@ export function AssetDetail({ asset, onBack, onBuy, onSell, onRefresh, animateIn
                 <div className="mb-2 mt-7 px-1 text-[16px] font-semibold uppercase tracking-wider text-ios-gray">{t('stocks.yourPosition', 'Your Position')}</div>
                 {held ? (
                     <div className="overflow-hidden rounded-[14px]" style={{ background: cardBg }}>
-                        <StatRow label={t('stocks.unitsLabel', 'Units')} value={formatUnits(snap.units)} divider />
-                        <StatRow label={t('stocks.marketValue', 'Market Value')} value={formatMoney(value)} divider />
-                        <StatRow label={t('stocks.avgCost', 'Avg Cost')} value={formatMoney(snap.avgCost)} divider />
+                        <StatRow label={t('stocks.unitsLabel', 'Units')} value={hidePosition ? HIDDEN_TEXT : formatUnits(snap.units)} divider />
+                        <StatRow label={t('stocks.marketValue', 'Market Value')} value={money(value)} divider />
+                        <StatRow label={t('stocks.avgCost', 'Avg Cost')} value={money(snap.avgCost)} divider />
                         <StatRow
                             label={t('stocks.totalReturn', 'Total Return')}
-                            value={`${formatMoney(pl, { showSign: true })} (${formatPct(plPct)})`}
+                            value={hidePosition ? HIDDEN_TEXT : `${formatMoney(pl, { showSign: true })} (${formatPct(plPct)})`}
                             valueColor={trendColor(pl)}
                             divider={false}
                         />

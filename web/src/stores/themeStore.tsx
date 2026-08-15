@@ -18,6 +18,8 @@ import { DEFAULT_LOCK_CLOCK, loadLockClockLocal, saveLockClockLocal, type LockCl
 import { DEFAULT_PHONE_TILT, loadPhoneTiltLocal, normalizeTilt, savePhoneTiltLocal, type PhoneTilt } from '@/shell/phoneTilt';
 import { DEFAULT_SHELL_LOOK, isDockStyle, isOpenAnim, loadShellLookLocal, saveShellLookLocal, type DockStyle, type OpenAnim } from '@/shell/shellLook';
 import { DEFAULT_NOTIFICATION, DEFAULT_RINGTONE } from '@/apps/settings/tones';
+import { HIDDEN_TEXT, normalizeStreamerHide, STREAMER_HIDE_ALL, type StreamerHide, type StreamerHideKey } from '@/shell/streamerMode';
+import { formatPhone } from '@/lib/phone';
 import type { CustomTone, ToneKind } from '@/apps/settings/tones';
 import { warmYouTube } from '@/apps/settings/tonePlayer';
 import { clampRecipe, isCustomPaletteId, MAX_CUSTOM_PALETTES, PALETTE_NAME_MAX } from '@/apps/settings/appearance/paletteRamp';
@@ -376,6 +378,12 @@ interface ThemeState {
     setAirplaneMode:   (on: boolean) => void;
     hour24:            boolean;
     setHour24:         (on: boolean) => void;
+    callerId:          boolean;
+    setCallerId:       (on: boolean) => void;
+    streamerMode:      boolean;
+    setStreamerMode:   (on: boolean) => void;
+    streamerHide:      StreamerHide;
+    setStreamerHide:   (key: StreamerHideKey, on: boolean) => void;
     gameTime:          boolean;
     setGameTime:       (on: boolean) => void;
     reopenLastApp:     boolean;
@@ -407,6 +415,7 @@ interface ThemeState {
     resetProfileVisuals: () => void;
     applyWallpaperProfile: (key: string | null) => void;
     hydrate: (attempt?: number) => void;
+    resetToDefaults: (full: boolean) => void;
 }
 
 const initialSecurity = isFiveM ? { passcode: null, faceId: false } : loadSecurityLocal();
@@ -495,6 +504,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     callVol: 60,
     airplaneMode: false,
     hour24: false,
+    callerId: true,
+    streamerMode: false,
+    streamerHide: { ...STREAMER_HIDE_ALL },
     gameTime: isFiveM ? false : loadGameTimeLocal(),
     reopenLastApp: false,
     ringtone: DEFAULT_RINGTONE,
@@ -738,6 +750,19 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         void fetchNui('sd-phone:settings:setAirplane', { on }).catch(() => {});
     },
 
+    setCallerId: (on) => {
+        set({ callerId: on });
+        void fetchNui('sd-phone:settings:setCallerId', { on }).catch(() => {});
+    },
+    setStreamerMode: (on) => {
+        set({ streamerMode: on });
+        void fetchNui('sd-phone:settings:setStreamerMode', { on }).catch(() => {});
+    },
+    setStreamerHide: (key, on) => {
+        const hide = { ...get().streamerHide, [key]: on };
+        set({ streamerHide: hide });
+        void fetchNui('sd-phone:settings:setStreamerHide', { hide }).catch(() => {});
+    },
     setHour24: (on) => {
         set({ hour24: on });
         void fetchNui('sd-phone:settings:setHour24', { on }).catch(() => {});
@@ -810,6 +835,59 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         persistSecurity(pin, finalFace);
     },
 
+    resetToDefaults: (full) => {
+        setDensity('default');
+        setExtraRow(DEFAULT_SHELL_LOOK.dockStyle === 'hidden');
+        const stock = isFiveM ? lockscreenAsset : devDefaultAsset;
+        set({
+            theme: 'light',
+            darkTheme: 'graphite',
+            lightTheme: 'silver',
+            accent: DEFAULT_ACCENT,
+            shell: DEFAULT_SHELL,
+            wallpaperLock: stock,
+            wallpaperHome: stock,
+            blurLock: false,
+            blurHome: false,
+            islandPet: 'none',
+            brightness: 100,
+            phoneScale: device.defaultScale,
+            chatTextScale: 1,
+            motion: 'full',
+            boldText: false,
+            textScale: 1,
+            homeDensity: 'default',
+            appLabels: {},
+            phoneTilt: DEFAULT_PHONE_TILT,
+            dockStyle: DEFAULT_SHELL_LOOK.dockStyle,
+            openAnim: DEFAULT_SHELL_LOOK.openAnim,
+            wallpaperParallax: DEFAULT_SHELL_LOOK.wallpaperParallax,
+            ringtoneVol: 40,
+            callVol: 60,
+            airplaneMode: false,
+            hour24: false,
+            callerId: true,
+            streamerMode: false,
+            streamerHide: { ...STREAMER_HIDE_ALL },
+            gameTime: false,
+            reopenLastApp: false,
+            ringtone: DEFAULT_RINGTONE,
+            notificationTone: isDemo ? 'chime' : DEFAULT_NOTIFICATION,
+            lockClock: DEFAULT_LOCK_CLOCK,
+            ...(full
+                ? {
+                    customWallpapers: [],
+                    customPalettes: [],
+                    customRingtones: [],
+                    customNotificationTones: [],
+                    passcode: null,
+                    faceId: false,
+                    setupDone: null,
+                }
+                : {}),
+        });
+    },
+
     resetProfileVisuals: () => {
         // Profile switch/restore: paint the stock look NOW, so the previous phone's wallpaper
         // and clock never show on this one while the async hydrate is still in flight. The
@@ -854,7 +932,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
             }
         };
         const keyAtRequest = wallpaperProfileKey;
-        void fetchNui<{ data?: { ringtone?: string; notificationTone?: string; customRingtones?: CustomTone[]; customNotificationTones?: CustomTone[]; airplaneMode?: boolean; hour24?: boolean; gameTime?: boolean; reopenApp?: boolean; setupDone?: boolean; lockClock?: Partial<LockClock>; passcode?: string | null; faceId?: boolean; wallpaper?: string; wallpaperHome?: string; blurLock?: boolean; blurHome?: boolean; islandPet?: string; customWallpapers?: string[]; chatTextScale?: number; motion?: number; boldText?: boolean; textScale?: number; homeDensity?: string; appLabels?: Record<string, string>; phoneScale?: number; brightness?: number; phoneAlign?: string; phoneTilt?: { turn?: number; lean?: number }; dockStyle?: string; openAnim?: string; wallpaperParallax?: boolean; ringtoneVol?: number; callVol?: number; theme?: string; darkTheme?: string; lightTheme?: string; accent?: string; shell?: string; shellChoice?: boolean; shellsAllowed?: unknown[]; customPalettes?: unknown; iconTheme?: string; showAppNames?: boolean; customIconThemes?: unknown } }>('sd-phone:settings:get')
+        void fetchNui<{ data?: { ringtone?: string; notificationTone?: string; customRingtones?: CustomTone[]; customNotificationTones?: CustomTone[]; airplaneMode?: boolean; hour24?: boolean; callerId?: boolean; streamerMode?: boolean; streamerHide?: unknown; gameTime?: boolean; reopenApp?: boolean; setupDone?: boolean; lockClock?: Partial<LockClock>; passcode?: string | null; faceId?: boolean; wallpaper?: string; wallpaperHome?: string; blurLock?: boolean; blurHome?: boolean; islandPet?: string; customWallpapers?: string[]; chatTextScale?: number; motion?: number; boldText?: boolean; textScale?: number; homeDensity?: string; appLabels?: Record<string, string>; phoneScale?: number; brightness?: number; phoneAlign?: string; phoneTilt?: { turn?: number; lean?: number }; dockStyle?: string; openAnim?: string; wallpaperParallax?: boolean; ringtoneVol?: number; callVol?: number; theme?: string; darkTheme?: string; lightTheme?: string; accent?: string; shell?: string; shellChoice?: boolean; shellsAllowed?: unknown[]; customPalettes?: unknown; iconTheme?: string; showAppNames?: boolean; customIconThemes?: unknown } }>('sd-phone:settings:get')
             .then(res => {
                 if (!res?.data) { retry(); return; }
                 const d = res.data;
@@ -877,6 +955,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
                 if (d.notificationTone) patch.notificationTone = d.notificationTone;
                 if (typeof d.airplaneMode === 'boolean') patch.airplaneMode = d.airplaneMode;
                 if (typeof d.hour24 === 'boolean') patch.hour24 = d.hour24;
+                if (typeof d.callerId === 'boolean') patch.callerId = d.callerId;
+                if (typeof d.streamerMode === 'boolean') patch.streamerMode = d.streamerMode;
+                patch.streamerHide = normalizeStreamerHide(d.streamerHide);
                 if (typeof d.gameTime === 'boolean') patch.gameTime = d.gameTime;
                 if (typeof d.reopenApp === 'boolean') patch.reopenLastApp = d.reopenApp;
                 // Always assigned (true/false, never left null) - the per-profile answer is
@@ -965,6 +1046,15 @@ export function useTheme(...keys: (keyof ThemeState)[]): unknown {
             return out;
         }),
     );
+}
+
+export function useStreamerHidden(key: StreamerHideKey): boolean {
+    return useThemeStore(s => s.streamerMode && s.streamerHide[key] !== false);
+}
+
+export function useMaskedPhone(): (n: string | null | undefined) => string {
+    const hidden = useStreamerHidden('number');
+    return (n) => (hidden ? HIDDEN_TEXT : formatPhone(n ?? ''));
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

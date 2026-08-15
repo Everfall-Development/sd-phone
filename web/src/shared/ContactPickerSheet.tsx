@@ -6,7 +6,8 @@ import { Sheet } from '@/ui/Sheet';
 import { SearchBar } from '@/ui/SearchBar';
 import { ContactAvatar } from '@/shared/ContactAvatar';
 import { useContacts, useContactsStore } from '@/stores/contactsStore';
-import { groupContacts, matchesQuery, formatPhone, type Contact } from '@/apps/phone/data';
+import { groupContacts, matchesQuery, type Contact } from '@/apps/phone/data';
+import { useMaskedPhone } from '@/stores/themeStore';
 
 export function ContactPickerSheet({ onPick, onClose }: {
     onPick:  (c: Contact) => void;
@@ -81,6 +82,7 @@ function Card({ children }: { children: ReactNode }) {
 }
 
 function Row({ contact, divider, onChoose }: { contact: Contact; divider: boolean; onChoose: (c: Contact) => void }) {
+    const phone = useMaskedPhone();
     return (
         <>
             <button
@@ -91,7 +93,7 @@ function Row({ contact, divider, onChoose }: { contact: Contact; divider: boolea
                 <ContactAvatar contact={contact} size={56} />
                 <div className="min-w-0 flex-1">
                     <div className="truncate text-[21px] font-semibold text-black dark:text-white">{contact.name}</div>
-                    <div className="mt-0.5 truncate text-[18px] font-medium text-black/55 dark:text-white/55">{formatPhone(contact.phone)}</div>
+                    <div className="mt-0.5 truncate text-[18px] font-medium text-black/55 dark:text-white/55">{phone(contact.phone)}</div>
                 </div>
             </button>
             {divider && <div className="pointer-events-none bg-black/10 dark:bg-white/10" style={{ height: '0.5px' }} />}

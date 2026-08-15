@@ -143,4 +143,11 @@ function store.setDeclined(citizenid, id, on)
     )
 end
 
+---Forgets a character's Wi-Fi settings: the radio toggle, every known network and every
+---network they declined. Part of Reset All Settings - saved networks are a setting, not content.
+---@param citizenid string framework per-character id
+function store.resetFor(citizenid)
+    if not citizenid or citizenid == '' then return end
+    MySQL.update.await('DELETE FROM phone_wifi WHERE citizenid = ?', { citizenid })
+end
 return store

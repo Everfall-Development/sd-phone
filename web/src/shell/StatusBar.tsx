@@ -22,7 +22,7 @@ export function StatusBar({ use24h, signal, showWifi, wifiBars = null, battery, 
 
     return (
         <div
-            className="pointer-events-none relative z-40 flex h-[54px] items-center justify-between px-[20px]"
+            className="pointer-events-none relative z-40 flex h-[54px] items-center justify-between px-[20px] transition-colors duration-300 ease-out"
             style={{ color }}
         >
             {!editing && (
@@ -52,7 +52,7 @@ export function StatusBar({ use24h, signal, showWifi, wifiBars = null, battery, 
                 {controlHint && (
                     <span
                         aria-hidden
-                        className="pointer-events-none absolute left-1/2 top-full mt-[3px] block h-[4px] w-[34px] -translate-x-1/2 rounded-full"
+                        className="pointer-events-none absolute left-1/2 top-full mt-[3px] block h-[4px] w-[34px] -translate-x-1/2 rounded-full transition-colors duration-300 ease-out"
                         style={{ backgroundColor: color, opacity: 0.5 }}
                     />
                 )}

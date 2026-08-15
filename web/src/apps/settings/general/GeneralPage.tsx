@@ -1,6 +1,10 @@
+import { useState } from 'react';
+
 import { t } from '@/i18n';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useTheme } from '@/stores/themeStore';
+import { AlertDialog } from '@/ui/AlertDialog';
+import { signOutEverywhere } from '@/shared/signOutAll';
 import { AboutPage }          from './AboutPage';
 import { DateTimePage }        from './DateTimePage';
 import { LanguageRegionPage }  from './LanguageRegionPage';
@@ -15,6 +19,7 @@ type ActiveSub = 'about' | 'software-update' | 'phone-storage' | 'date-time' | '
 export function GeneralPage({ onBack }: { onBack: () => void }) {
     const [sub, setSub] = useSessionState<ActiveSub>('settings:generalSub', null);
     const { reopenLastApp, setReopenLastApp } = useTheme('reopenLastApp', 'setReopenLastApp');
+    const [confirmingSignOut, setConfirmingSignOut] = useState(false);
     const back = () => setSub(null);
 
     const subNode =
@@ -43,9 +48,28 @@ export function GeneralPage({ onBack }: { onBack: () => void }) {
                 <ToggleRow label={t('settings.reopenLastApp', 'Reopen Last App')} on={reopenLastApp} onToggle={() => setReopenLastApp(!reopenLastApp)} />
             </ListGroup>
 
+            <ListGroup footer={t('settings.signOutAllFooter', 'Signs you out of every app account and mailbox on this phone. Your saved passwords are kept, so you can sign back in from Passwords.')}>
+                <ListRow
+                    label={t('settings.signOutAllAccounts', 'Sign Out of All Accounts')}
+                    destructive
+                    onPress={() => setConfirmingSignOut(true)}
+                />
+            </ListGroup>
+
             <ListGroup>
                 <ListRow label={t('settings.resetPhone', 'Reset Phone')} onPress={() => setSub('reset-phone')} chevron={false} />
             </ListGroup>
+
+            {confirmingSignOut && (
+                <AlertDialog
+                    title={t('settings.signOutAllTitle', 'Sign Out of All Accounts?')}
+                    message={t('settings.signOutAllMessage', "You'll be signed out of every app account and mailbox on this phone. Saved passwords are kept.")}
+                    confirmLabel={t('settings.signOutAllConfirm', 'Sign Out')}
+                    destructive
+                    onCancel={() => setConfirmingSignOut(false)}
+                    onConfirm={() => { setConfirmingSignOut(false); void signOutEverywhere(); }}
+                />
+            )}
         </SubPage>
     );
 }

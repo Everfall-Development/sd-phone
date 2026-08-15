@@ -125,6 +125,7 @@ export function BluetoothPage({ onBack }: { onBack: () => void }) {
                             left={loading
                                 ? <Loader2 className="h-[16px] w-[16px] animate-spin text-ios-gray" />
                                 : <Bluetooth className="h-[20px] w-[20px] text-ios-gray" strokeWidth={2} />}
+                            chevron={false}
                             divider
                         />
                     ) : other.map(d => (

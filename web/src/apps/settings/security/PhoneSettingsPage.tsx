@@ -1,19 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Copy, Plus, Trash2 } from 'lucide-react';
 
 import { t } from '@/i18n';
+import { digits } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
 import { useContacts } from '@/stores/contactsStore';
+import { useAsyncData } from '@/hooks/useAsyncData';
 import { useIosPush } from '@/hooks/useIosPush';
+import { blockedListApi, setBlockedApi } from '@/apps/phone/contactsApi';
+import { AlertDialog } from '@/ui/AlertDialog';
 import { ListGroup, ToggleRow } from '@/ui/ListGroup';
+import { PromptDialog } from '@/ui/PromptDialog';
+import { useMaskedPhone, useStreamerHidden, useTheme } from '@/stores/themeStore';
+import { HIDDEN_TEXT } from '@/shell/streamerMode';
 import { SubPage } from '../SettingsSubPage';
 
 
 export function PhoneSettingsPage({ onBack }: { onBack: () => void }) {
     const { myNumber, load } = useContacts('myNumber', 'load');
     useEffect(() => { void load(); }, [load]);
-    const number = myNumber ? formatPhone(myNumber) : '—';
-    const [showCallerId] = useState(true);
+    const hideNumber = useStreamerHidden('number');
+    const number = hideNumber ? HIDDEN_TEXT : (myNumber ? formatPhone(myNumber) : '—');
+    const { callerId, setCallerId } = useTheme('callerId', 'setCallerId');
     const [copied,       setCopied]       = useState(false);
     const [showBlocked,  setShowBlocked]  = useState(false);
 
@@ -51,10 +59,13 @@ export function PhoneSettingsPage({ onBack }: { onBack: () => void }) {
                 </div>
             </ListGroup>
 
-            <ListGroup>
+            <ListGroup footer={callerId
+                ? undefined
+                : t('settings.callerIdOffFooter', 'People you call will see Unknown instead of your number, and cannot call you back from their recents.')}>
                 <ToggleRow
                     label={t('settings.showCallerId', 'Show Caller ID')}
-                    defaultOn={showCallerId}
+                    on={callerId}
+                    onToggle={() => setCallerId(!callerId)}
                     divider
                 />
                 <button
@@ -74,26 +85,42 @@ export function PhoneSettingsPage({ onBack }: { onBack: () => void }) {
 }
 
 
-interface Blocked { id: string; name: string; number: string }
-
-const INITIAL_BLOCKED: Blocked[] = [];
-
 function BlockedContactsPage({ onBack }: { onBack: () => void }) {
     const { goBack, pageStyle } = useIosPush(onBack);
-    const [blocked, setBlocked] = useState<Blocked[]>(INITIAL_BLOCKED);
+    const { contacts } = useContacts('contacts');
+    const phone = useMaskedPhone();
+    const [adding, setAdding] = useState(false);
+    const [unblocking, setUnblocking] = useState<string | null>(null);
 
-    function addNumber() {
-        const raw = window.prompt(t('settings.enterNumberToBlock', 'Enter number or name to block:'));
-        if (raw?.trim()) {
-            setBlocked(prev => [
-                ...prev,
-                { id: `b${Date.now()}`, name: raw.trim(), number: '' },
-            ]);
+    const { data, refetch } = useAsyncData(blockedListApi, []);
+    const blocked = data ?? [];
+
+    const nameByNumber = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const c of contacts) {
+            const key = digits(c.phone ?? '');
+            if (key) map.set(key, c.name);
         }
+        return map;
+    }, [contacts]);
+
+    async function addNumber(value: string): Promise<string | null> {
+        const d = digits(value);
+        if (!d) return t('settings.blockNeedsNumber', 'Enter a phone number.');
+        const done = await setBlockedApi(d, true);
+        if (!done) return t('settings.blockFailed', 'Could not block that number.');
+        setAdding(false);
+        refetch();
+        return null;
     }
 
-    function remove(id: string) {
-        setBlocked(prev => prev.filter(b => b.id !== id));
+    function labelFor(number: string): string {
+        return nameByNumber.get(number) ?? phone(number);
+    }
+
+    function unblock(number: string) {
+        setUnblocking(null);
+        void setBlockedApi(number, false).then(() => refetch());
     }
 
     return (
@@ -125,15 +152,15 @@ function BlockedContactsPage({ onBack }: { onBack: () => void }) {
                     <div className="overflow-hidden rounded-[10px] bg-surface">
                         {blocked.map((b, i) => (
                             <div
-                                key={b.id}
+                                key={b.number}
                                 className="relative flex items-center px-4 py-3"
                             >
-                                <span className="flex-1 text-[17px] font-normal text-black dark:text-white">
-                                    {b.name}
+                                <span className="min-w-0 flex-1 truncate text-[17px] font-normal text-black dark:text-white">
+                                    {labelFor(b.number)}
                                 </span>
                                 <button
                                     type="button"
-                                    onClick={() => remove(b.id)}
+                                    onClick={() => setUnblocking(b.number)}
                                     className="flex h-7 w-7 items-center justify-center rounded-full bg-ios-red/10 active:bg-ios-red/20"
                                 >
                                     <Trash2 className="h-[14px] w-[14px] text-ios-red" strokeWidth={2} />
@@ -149,7 +176,7 @@ function BlockedContactsPage({ onBack }: { onBack: () => void }) {
 
                         <button
                             type="button"
-                            onClick={addNumber}
+                            onClick={() => setAdding(true)}
                             className={`flex w-full items-center gap-2 px-4 py-3 active:bg-black/5 dark:active:bg-white/5 ${blocked.length > 0 ? 'border-t border-ios-gray4 dark:border-control' : ''}`}
                             style={blocked.length > 0 ? { borderTopWidth: '0.5px' } : undefined}
                         >
@@ -162,13 +189,35 @@ function BlockedContactsPage({ onBack }: { onBack: () => void }) {
                         </button>
                     </div>
 
-                    {blocked.length === 0 && (
-                        <p className="text-center text-[14px] text-ios-gray px-4">
-                            {t('settings.blockedContactsFooter', "Blocked contacts can't call, message, or video call you.")}
-                        </p>
-                    )}
+                    <p className="px-4 text-center text-[14px] text-ios-gray">
+                        {t('settings.blockedContactsFooter', "Blocked contacts can't call, message, or video call you.")}
+                    </p>
                 </div>
             </div>
+
+            {adding && (
+                <PromptDialog
+                    title={t('settings.blockNumberTitle', 'Block a Number')}
+                    label={t('settings.enterNumberToBlock', 'Enter a number to block')}
+                    placeholder={t('settings.blockNumberPlaceholder', 'Phone number')}
+                    inputMode="tel"
+                    maxLength={20}
+                    sanitize={v => v.replace(/[^\d\s()+-]/g, '')}
+                    confirmLabel={t('settings.blockConfirm', 'Block')}
+                    onCancel={() => setAdding(false)}
+                    onConfirm={addNumber}
+                />
+            )}
+
+            {unblocking !== null && (
+                <AlertDialog
+                    title={t('phone.unblockContact', 'Unblock Contact')}
+                    message={t('phone.unblockMessage', '{name} will be able to call and message you again.', { name: labelFor(unblocking) })}
+                    confirmLabel={t('phone.unblock', 'Unblock')}
+                    onCancel={() => setUnblocking(null)}
+                    onConfirm={() => unblock(unblocking)}
+                />
+            )}
         </div>
     );
 }

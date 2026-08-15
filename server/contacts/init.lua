@@ -54,6 +54,7 @@ end)
 lib.callback.register('sd-phone:server:contacts:block', function(src, payload) return actions.block(src, payload) end)
 lib.callback.register('sd-phone:server:contacts:unblock', function(src, payload) return actions.unblock(src, payload) end)
 lib.callback.register('sd-phone:server:contacts:isBlocked', function(src, payload) return actions.isBlocked(src, payload) end)
+lib.callback.register('sd-phone:server:contacts:blockedList', function(src) return actions.blockedList(src) end)
 lib.callback.register('sd-phone:server:contacts:saveCard', function(src, payload) return actions.saveCard(src, payload) end)
 
 ---Log a call into a player's recents from another resource (e.g. a calling system). Mirrors the

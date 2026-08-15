@@ -448,6 +448,21 @@ function util.cooldown(cid, key, ms)
     return true
 end
 
+---Milliseconds left before `util.cooldown` would accept the same key again, or 0 when it is
+---already clear. Read-only: it neither opens a bucket nor refreshes one, so a UI may poll it to
+---show a countdown without pushing the cooldown out.
+---@param cid string|nil citizenid (a non-string reads as clear)
+---@param key string limiter name, matching the cooldown call
+---@param ms integer window length the matching cooldown call uses
+---@return integer remaining milliseconds, 0 when clear
+function util.cooldownLeft(cid, key, ms)
+    if type(cid) ~= 'string' or cid == '' then return 0 end
+    local b = buckets[cid .. '\0c\0' .. tostring(key)]
+    if not b then return 0 end
+    local left = (tonumber(ms) or 0) - (GetGameTimer() - b.last)
+    return left > 0 and math.floor(left) or 0
+end
+
 ---Rolling-window budget for one citizenid + key: at most `maxInWindow` accepted calls in any
 ---`windowMs`. Blocked calls are not recorded, so a caller who backs off recovers as the window
 ---drains instead of serving a penalty. A missing cid is never blocked.

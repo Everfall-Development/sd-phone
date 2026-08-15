@@ -49,6 +49,7 @@ export function Birdy({ onClose }: { onClose: () => void }) {
     const [openConvo,   setOpenConvo]   = useState<BirdyConversation | null>(null);
     const [profileOpen,    setProfileOpen]    = useSessionState('birdy:profileOpen', false);
     const [profileTarget,  setProfileTarget]  = useSessionState<string | null>('birdy:profileTarget', null);
+    const [postOverProfile, setPostOverProfile] = useSessionState('birdy:postOverProfile', false);
     const [editingProfile, setEditingProfile] = useState(false);
     const [switching,      setSwitching]      = useState(false);
     const [adding,         setAdding]         = useState(false);
@@ -272,11 +273,22 @@ export function Birdy({ onClose }: { onClose: () => void }) {
         setEditingProfile(false);
     }
 
+    function openPostById(id: string) {
+        setPostOverProfile(profileOpen);
+        setOpenPostId(id);
+    }
+
     function openProfile(handle?: string) {
         const target = typeof handle === 'string' ? handle : undefined;
         setProfile(null);
         setProfileTarget(target ?? null);
         setProfileOpen(true);
+        setPostOverProfile(false);
+    }
+
+    function closeProfile() {
+        setProfileOpen(false);
+        setProfileTarget(null);
     }
 
     function toggleFollow(handle: string) {
@@ -295,32 +307,60 @@ export function Birdy({ onClose }: { onClose: () => void }) {
 
     let content: React.ReactNode;
     if (tab === 'home') {
-        content = <Feed posts={posts} me={me} feed={feed} onFeedChange={switchFeed} onRefresh={refreshNow} onToggleLike={toggleLike} onToggleRepost={toggleRepost} onOpenPost={setOpenPostId} onOpenProfile={openProfile} onOpenAuthor={openProfile} onDeletePost={deletePost} />;
+        content = <Feed posts={posts} me={me} feed={feed} onFeedChange={switchFeed} onRefresh={refreshNow} onToggleLike={toggleLike} onToggleRepost={toggleRepost} onOpenPost={openPostById} onOpenProfile={openProfile} onOpenAuthor={openProfile} />;
     } else if (tab === 'search') {
-        content = <Search me={me} onOpenProfile={openProfile} onOpenPost={setOpenPostId} onToggleLike={toggleLike} onToggleRepost={toggleRepost} />;
+        content = <Search me={me} onOpenProfile={openProfile} onOpenPost={openPostById} onToggleLike={toggleLike} onToggleRepost={toggleRepost} />;
     } else if (tab === 'notifications') {
-        content = <Notifications me={me} onOpenProfile={openProfile} onOpenPost={setOpenPostId} />;
+        content = <Notifications me={me} onOpenProfile={openProfile} onOpenPost={openPostById} />;
     } else {
         content = <MessagesList me={me} conversations={convos} onOpen={setOpenConvoId} onOpenProfile={openProfile} onCompose={openDmWith} />;
     }
 
     const postOverlay = openPostId ? (
-        <PostPush onClose={() => setOpenPostId(null)} animateIn={animateNav}>
-            {close => openPost
-                ? (
-                    <PostDetail
-                        post={openPost}
-                        me={me}
-                        onBack={close}
-                        onToggleLike={() => toggleLike(openPost.id)}
-                        onToggleRepost={() => toggleRepost(openPost.id)}
-                        onToggleReplyLike={rid => toggleLike(rid)}
-                        onOpenAuthor={openProfile}
-                        onReply={(b, imgs) => addReply(openPost.id, b, imgs)}
-                    />
-                )
-                : <LoadingPane onBack={close} />}
-        </PostPush>
+        <Push onClose={() => setOpenPostId(null)} z={postOverProfile ? 30 : 20} animateIn={animateNav}>
+            {close => (
+                <div className="flex h-full flex-col">
+                    <div className="h-[54px] shrink-0" aria-hidden />
+                    <div className="min-h-0 flex-1">
+                        {openPost
+                            ? (
+                                <PostDetail
+                                    post={openPost}
+                                    me={me}
+                                    onBack={close}
+                                    onToggleLike={() => toggleLike(openPost.id)}
+                                    onToggleRepost={() => toggleRepost(openPost.id)}
+                                    onToggleReplyLike={rid => toggleLike(rid)}
+                                    onOpenAuthor={openProfile}
+                                    onReply={(b, imgs) => addReply(openPost.id, b, imgs)}
+                                    onDelete={() => deletePost(openPost.id)}
+                                />
+                            )
+                            : <LoadingPane onBack={close} />}
+                    </div>
+                </div>
+            )}
+        </Push>
+    ) : null;
+
+    const profileOverlay = profileOpen ? (
+        <Push onClose={closeProfile} z={postOverProfile ? 20 : 30} animateIn={animateNav}>
+            {close => (
+                <Profile
+                    profile={profile}
+                    me={me}
+                    handle={profileTarget ?? undefined}
+                    onBack={close}
+                    onEdit={() => setEditingProfile(true)}
+                    onOpenPost={openPostById}
+                    onToggleLike={toggleLike}
+                    onToggleRepost={toggleRepost}
+                    onToggleFollow={toggleFollow}
+                    onMessage={openDmWith}
+                    onOpenAuthor={openProfile}
+                />
+            )}
+        </Push>
     ) : null;
 
     const showComposeFab = tab === 'home' && !profileOpen;
@@ -379,15 +419,16 @@ export function Birdy({ onClose }: { onClose: () => void }) {
 
     return (
         <div className={`absolute inset-0 z-10 flex flex-col text-label ${justAuthed ? 'animate-swipe-in-left' : ''}`} style={{ background: BG }}>
-            <div className="h-[54px] shrink-0" aria-hidden />
-
-            <div key={tab} className="relative z-0 min-h-0 flex-1 overflow-hidden animate-swipe-in-left">
-                {content}
-                {showComposeFab && (
-                    <FabButton onClick={() => setComposing(true)} label={t('squawk.newPost', 'New post')} className="bottom-[9px] right-5 z-10">
-                        <Pen className="h-6 w-6 text-white" strokeWidth={2} />
-                    </FabButton>
-                )}
+            <div className="relative z-0 min-h-0 flex-1 overflow-hidden">
+                <div key={tab} className="absolute inset-0 pt-[54px] animate-swipe-in-left">
+                    {content}
+                    {showComposeFab && (
+                        <FabButton onClick={() => setComposing(true)} label={t('squawk.newPost', 'New post')} className="bottom-[9px] right-5 z-10">
+                            <Pen className="h-6 w-6 text-white" strokeWidth={2} />
+                        </FabButton>
+                    )}
+                </div>
+                {profileOverlay}
                 {postOverlay}
             </div>
 
@@ -433,27 +474,6 @@ export function Birdy({ onClose }: { onClose: () => void }) {
                         <div className="flex flex-1 items-center justify-center text-[14px] text-label/40">{t('squawk.loading', 'Loading…')}</div>
                     </div>
                 )
-            )}
-
-            {/* Not gated on !openPostId, or comment authors are unreachable. */}
-            {profileOpen && !openConvoId && (
-                <SlideOver onClose={() => { setProfileOpen(false); setProfileTarget(null); }} animateIn={animateNav}>
-                    {close => (
-                        <Profile
-                            profile={profile}
-                            me={me}
-                            handle={profileTarget ?? undefined}
-                            onBack={close}
-                            onEdit={() => setEditingProfile(true)}
-                            onOpenPost={setOpenPostId}
-                            onToggleLike={toggleLike}
-                            onToggleRepost={toggleRepost}
-                            onToggleFollow={toggleFollow}
-                            onMessage={openDmWith}
-                            onOpenAuthor={openProfile}
-                        />
-                    )}
-                </SlideOver>
             )}
 
             {composing && <Composer me={me} onClose={() => setComposing(false)} onPost={addPost} />}
@@ -572,31 +592,11 @@ function NavButton({ active, onClick, children, badge = 0 }: { active: boolean; 
     );
 }
 
-function PostPush({ onClose, children, animateIn = true }: { onClose: () => void; children: (close: () => void) => React.ReactNode; animateIn?: boolean }) {
+function Push({ onClose, z, children, animateIn = true }: { onClose: () => void; z: number; children: (close: () => void) => React.ReactNode; animateIn?: boolean }) {
     const { goBack, pageStyle } = useIosPush(onClose, animateIn);
-    return <div className="absolute inset-0 z-20" style={{ ...pageStyle, background: BG }}>{children(goBack)}</div>;
-}
-
-function SlideOver({ onClose, children, animateIn = true }: { onClose: () => void; children: (close: () => void) => React.ReactNode; animateIn?: boolean }) {
-    const [shown, setShown] = useState(!animateIn);
-    useEffect(() => {
-        if (!animateIn) return;
-        const id = requestAnimationFrame(() => setShown(true));
-        return () => cancelAnimationFrame(id);
-    }, [animateIn]);
     return (
-        <div
-            className="absolute inset-0 z-30"
-            inert={!shown}
-            aria-hidden={!shown}
-            style={{
-                transform:  shown ? 'translateX(0)' : 'translateX(100%)',
-                transition: 'transform 0.32s cubic-bezier(0.32,0.72,0,1)',
-                willChange: 'transform',
-            }}
-            onTransitionEnd={e => { if (e.target === e.currentTarget && !shown) onClose(); }}
-        >
-            {children(() => setShown(false))}
+        <div className="absolute inset-0" style={{ ...pageStyle, zIndex: z, background: BG }}>
+            {children(goBack)}
         </div>
     );
 }

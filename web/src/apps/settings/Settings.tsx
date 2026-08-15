@@ -6,12 +6,11 @@ import { DisplayBrightnessPage } from './appearance/DisplayBrightnessPage';
 import { HomeDensityPage } from './appearance/HomeDensityPage';
 import { FaceUnlockPage } from './security/FaceUnlockPage';
 import { IslandPetPage } from './appearance/IslandPetPage';
-import { BatteryPage } from './general/BatteryPage';
 import { AccessibilityPage } from './general/AccessibilityPage';
 import { GeneralPage } from './general/GeneralPage';
 import { NotificationsPage } from './notifications/NotificationsPage';
 import { PhoneSettingsPage } from './security/PhoneSettingsPage';
-import { PrivacySecurityPage } from './security/PrivacySecurityPage';
+import { StreamerModePage } from './security/StreamerModePage';
 import { ProfileCard } from './account/ProfileCard';
 import { SoundHapticsPage } from './sound/SoundHapticsPage';
 import { SearchBar } from '@/ui/SearchBar';
@@ -30,7 +29,7 @@ import { shellFor } from '@/shell/shells';
 import { useTheme } from '@/stores/themeStore';
 import { useBluetoothConfigured } from '@/stores/bluetoothStore';
 
-type SubPage = 'general' | 'accessibility' | 'display' | 'island-pet' | 'wallpaper' | 'app-icons' | 'home-density' | 'notifications' | 'sound-haptics' | 'face-unlock' | 'phone' | 'battery' | 'privacy' | 'sim' | 'wifi' | 'bluetooth' | null;
+type SubPage = 'general' | 'accessibility' | 'display' | 'island-pet' | 'wallpaper' | 'app-icons' | 'home-density' | 'notifications' | 'sound-haptics' | 'face-unlock' | 'phone' | 'streamer' | 'sim' | 'wifi' | 'bluetooth' | null;
 
 export function Settings({ onClose }: { onClose: () => void }) {
     const [subPage, setSubPage] = useSessionState<SubPage>('settings:subPage', null);
@@ -40,7 +39,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
     const bluetoothConfigured = useBluetoothConfigured();
     const wifi = useWifiConnected();
 
-    const { shell } = useTheme('shell');
+    const { shell, streamerMode } = useTheme('shell', 'streamerMode');
     const petHost = shellHostsPet(shellFor(shell, device.id));
 
     // The SIM & Backup row only exists while the server runs unique phones.
@@ -63,6 +62,12 @@ export function Settings({ onClose }: { onClose: () => void }) {
             ...g,
             rows: g.rows.map(r => (r.id === 'wifi'
                 ? { ...r, status: wifi ? wifi.ssid : t('settings.wifiNotConnected', 'Not Connected') }
+                : r)),
+        }))
+        .map(g => ({
+            ...g,
+            rows: g.rows.map(r => (r.id === 'streamer'
+                ? { ...r, status: streamerMode ? t('settings.on', 'On') : t('settings.off', 'Off') }
                 : r)),
         }))
         .filter(g => g.rows.length > 0);
@@ -89,8 +94,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         if (id === 'sound-haptics') setSubPage('sound-haptics');
         if (id === 'face-unlock')   setSubPage('face-unlock');
         if (id === 'phone')         setSubPage('phone');
-        if (id === 'battery')       setSubPage('battery');
-        if (id === 'privacy')       setSubPage('privacy');
+        if (id === 'streamer')      setSubPage('streamer');
         if (id === 'sim')           setSubPage('sim');
         if (id === 'wifi')          setSubPage('wifi');
         if (id === 'bluetooth')     setSubPage('bluetooth');
@@ -108,8 +112,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         : subPage === 'sound-haptics' ? <SoundHapticsPage      onBack={handleBack} />
         : subPage === 'face-unlock'   ? <FaceUnlockPage        onBack={handleBack} />
         : subPage === 'phone'         ? <PhoneSettingsPage     onBack={handleBack} />
-        : subPage === 'battery'       ? <BatteryPage           onBack={handleBack} />
-        : subPage === 'privacy'       ? <PrivacySecurityPage   onBack={handleBack} onOpenFaceUnlock={() => setSubPage('face-unlock')} />
+        : subPage === 'streamer'      ? <StreamerModePage      onBack={handleBack} />
         : subPage === 'sim'           ? <SimBackupPage         onBack={handleBack} />
         : subPage === 'wifi'          ? <WifiPage              onBack={handleBack} />
         : subPage === 'bluetooth'     ? <BluetoothPage         onBack={handleBack} />

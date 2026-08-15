@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { t } from '@/i18n';
 import { fetchNui, isFiveM } from '@/core/nui';
 import { formatPhone } from '@/lib/phone';
+import { useMaskedPhone, useStreamerHidden } from '@/stores/themeStore';
+import { HIDDEN_TEXT } from '@/shell/streamerMode';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { AlertDialog } from '@/ui/AlertDialog';
 import { PromptDialog } from '@/ui/PromptDialog';
@@ -66,11 +68,11 @@ function colorLabel(color: string): string {
     return color.charAt(0).toUpperCase() + color.slice(1);
 }
 
-function profileLabel(p: BackupProfile): string {
+function profileLabel(p: BackupProfile, phone: (n?: string | null) => string): string {
     const name = p.color
         ? t('settings.simColorPhone', '{color} Phone', { color: colorLabel(p.color) })
         : t('settings.simPhoneGeneric', 'Phone');
-    return p.number ? `${name} · ${formatPhone(p.number)}` : name;
+    return p.number ? `${name} · ${phone(p.number)}` : name;
 }
 
 function timeAgo(epochSec: number | undefined): string {
@@ -180,7 +182,9 @@ export function SimBackupPage({ onBack }: { onBack: () => void }) {
         void load();
     }
 
-    const number = info?.number ? formatPhone(info.number) : '—';
+    const hideNumber = useStreamerHidden('number');
+    const phoneFmt = useMaskedPhone();
+    const number = hideNumber ? HIDDEN_TEXT : (info?.number ? formatPhone(info.number) : '—');
     const extraSims = info?.sims.filter(s => !s.active) ?? [];
 
     return (
@@ -217,7 +221,7 @@ export function SimBackupPage({ onBack }: { onBack: () => void }) {
                             <ListRow
                                 key={s.number}
                                 label={colorLabel(s.color)}
-                                value={formatPhone(s.number)}
+                                value={phoneFmt(s.number)}
                                 chevron={false}
                                 divider={i < extraSims.length - 1}
                             />
@@ -263,7 +267,7 @@ export function SimBackupPage({ onBack }: { onBack: () => void }) {
                         {(info?.profiles.filter(p => p.restorable) ?? []).map((p, i, arr) => (
                             <ListRow
                                 key={p.device}
-                                label={profileLabel(p)}
+                                label={profileLabel(p, phoneFmt)}
                                 value={timeAgo(p.syncedAt)}
                                 onPress={() => { setPicking(false); setRestoreDevice(p.device); setPrompt('restore'); }}
                                 divider={i < arr.length}
@@ -282,8 +286,8 @@ export function SimBackupPage({ onBack }: { onBack: () => void }) {
                             <ListRow
                                 key={p.device}
                                 label={p.thisPhone
-                                    ? t('settings.simProfileThisPhone', '{label} (This Phone)', { label: profileLabel(p) })
-                                    : profileLabel(p)}
+                                    ? t('settings.simProfileThisPhone', '{label} (This Phone)', { label: profileLabel(p, phoneFmt) })
+                                    : profileLabel(p, phoneFmt)}
                                 value={timeAgo(p.syncedAt)}
                                 onPress={() => setDeleteTarget(p)}
                                 divider={i < info!.profiles.length - 1}
@@ -307,7 +311,7 @@ export function SimBackupPage({ onBack }: { onBack: () => void }) {
             {deleteTarget && (
                 <AlertDialog
                     title={t('settings.simDeleteBackupTitle', 'Delete Backup?')}
-                    message={t('settings.simDeleteBackupMessage', 'The cloud snapshot for {label} is erased and its slot freed. The phone itself keeps its data. This can\'t be undone.', { label: profileLabel(deleteTarget) })}
+                    message={t('settings.simDeleteBackupMessage', 'The cloud snapshot for {label} is erased and its slot freed. The phone itself keeps its data. This can\'t be undone.', { label: profileLabel(deleteTarget, phoneFmt) })}
                     confirmLabel={t('settings.simDeleteBackupConfirm', 'Delete Backup')}
                     destructive
                     onCancel={() => setDeleteTarget(null)}

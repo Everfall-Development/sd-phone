@@ -10,10 +10,9 @@ export function DateTimePage({ onBack }: { onBack: () => void }) {
 
     return (
         <SubPage title={t('settings.dateTime', 'Date & Time')} onBack={onBack}>
-            <ListGroup footer={t('settings.dateTimeAutoFooter', 'When enabled, your phone automatically sets the time based on your current time zone.')}>
+            <ListGroup>
                 <ToggleRow label={t('settings.dateTime24Hour', '24-Hour Time')} on={hour24} onToggle={() => setHour24(!hour24)} divider />
-                <ToggleRow label={t('settings.dateTimeGameTime', 'Use Game Time')} on={gameTime} onToggle={() => setGameTime(!gameTime)} divider />
-                <ToggleRow label={t('settings.dateTimeSetAutomatically', 'Set Automatically')} defaultOn />
+                <ToggleRow label={t('settings.dateTimeGameTime', 'Use Game Time')} on={gameTime} onToggle={() => setGameTime(!gameTime)} />
             </ListGroup>
 
             <ListGroup>

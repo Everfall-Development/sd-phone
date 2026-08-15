@@ -45,11 +45,11 @@ import type { SetupResult } from '@/shell/SetupFlow';
 import { isKeyboardCaptured } from '@/hooks/useKeyboardCapture';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { isGameClock, useGameClockStore } from '@/stores/gameClockStore';
-import { seedSessionState } from '@/hooks/useSessionState';
+import { clearSessionState, seedSessionState } from '@/hooks/useSessionState';
 import { onOpenMail, onOpenMaps, onOpenMessages, requestOpenMail } from '@/shell/deeplink';
 import { fetchNui, isFiveM } from '@/core/nui';
 import { apiData } from '@/core/api';
-import { usePhoneReset } from '@/core/phoneReset';
+import { usePhoneReset, type PhoneResetScope } from '@/core/phoneReset';
 import { resetAuth } from '@/stores/authStore';
 import { setMailDomain } from '@/core/accountsApi';
 import { setMusicSources } from '@/apps/music/data';
@@ -80,6 +80,10 @@ import type { AlarmDef } from '@/apps/clock/data';
 import { fetchDirectory, fetchInbox } from '@/apps/services/servicesApi';
 import { ryde } from '@/apps/ryde/rydeApi';
 
+
+const RESET_KEEPS_LOCAL = ['sd-phone:setup:', 'sd-phone:auth:', 'sd-phone:music:lib', 'sd-phone:cookie:'];
+
+const APP_CLOSE_MS = 300;
 
 const SETUP_KEY_BASE = 'sd-phone:setup:v1';
 
@@ -169,9 +173,14 @@ const RETAIN_CAP = RECENTS_CAP;
 const ALARM_TEST_ID = '__alarm_test__';
 
 // Anything that swallows a keystroke as text rather than as a shortcut.
+const NON_TEXT_INPUT_TYPES = new Set([
+    'range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'color', 'image',
+]);
+
 function isTextEntry(el: EventTarget | null): boolean {
-    const t = el as HTMLElement | null;
-    return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+    if (!(el instanceof HTMLElement)) return false;
+    if (el instanceof HTMLInputElement) return !NON_TEXT_INPUT_TYPES.has(el.type);
+    return el instanceof HTMLTextAreaElement || el.isContentEditable;
 }
 
 export function App() {
@@ -1402,21 +1411,42 @@ function AppContent() {
     useEffect(() => {
         if (!resetNonce) return;
         const scope = usePhoneReset.getState().scope;
-        const prefixes = scope === 'erase'
-            ? ['sd-phone:']
-            : ['sd-phone:setup:', 'sd-phone:mail:folderOrder', 'sd-phone:mail:activeAccount'];
+        let cancelled = false;
+        void (async () => {
+            const res = await fetchNui<{ success?: boolean }>('sd-phone:settings:factoryReset', { scope })
+                .catch(() => null);
+            if (cancelled || (isFiveM && res?.success !== true)) return;
+            setIsClosing(true);
+            await new Promise(resolve => window.setTimeout(resolve, APP_CLOSE_MS));
+            if (cancelled) return;
+            applyLocalReset(scope);
+        })();
+        return () => { cancelled = true; };
+    }, [resetNonce]);
+
+    function applyLocalReset(scope: PhoneResetScope) {
         const doomed: string[] = [];
         for (let i = 0; i < window.localStorage.length; i++) {
             const k = window.localStorage.key(i);
-            if (k && prefixes.some(p => k.startsWith(p))) doomed.push(k);
+            if (!k || !k.startsWith('sd-phone:')) continue;
+            if (scope === 'settings' && RESET_KEEPS_LOCAL.some(p => k.startsWith(p))) continue;
+            doomed.push(k);
         }
         for (const k of doomed) window.localStorage.removeItem(k);
+        clearSessionState(scope === 'erase' ? '' : 'settings:');
+        useThemeStore.getState().resetToDefaults(scope === 'erase');
+        useThemeStore.getState().hydrate();
+        void useNotifPrefsStore.getState().hydrate();
         if (scope === 'erase') {
             resetAuth();
             clearCustomInstalled();
             useMusicLibrary.getState().reset();
             useLocaleStore.getState().hydrate();
-            void fetchNui('sd-phone:settings:factoryReset');
+            resetContacts();
+            setNotifs([]);
+            setLockNotifs([]);
+            setPeekNotif(null);
+            useBadgeStore.getState().setServer({});
             setInstalledApps(new Set());
             setSavedLayout(null);
         }
@@ -1433,11 +1463,12 @@ function AppContent() {
         setHomeEditing(false);
         setCcOpen(false);
         setFinishingSetup(false);
-        setSetupHello(true);
         setLocked(false);
-        // A factory reset re-arms the wizard; a device that has none stays complete.
-        setSetup({ completed: !device.setup });
-    }, [resetNonce]);
+        if (scope === 'erase') {
+            setSetupHello(true);
+            setSetup({ completed: !device.setup });
+        }
+    }
 
     // The keep-alive deck is rendered ABOVE the shell (in both the closed and open
     // branches, under a stable key) so it is never unmounted by a holster/lock/locale

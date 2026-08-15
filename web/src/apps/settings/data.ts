@@ -4,7 +4,7 @@ export type IconName =
     | 'Plane' | 'Wifi' | 'Bluetooth' | 'Antenna' | 'Key' | 'Bell'
     | 'Volume2' | 'Moon' | 'Hourglass' | 'Settings2' | 'SlidersHorizontal'
     | 'Sun' | 'LayoutGrid' | 'Accessibility' | 'Image' | 'Search'
-    | 'Sparkles' | 'Fingerprint' | 'Siren' | 'BatteryFull' | 'ShieldCheck'
+    | 'Sparkles' | 'Fingerprint' | 'Siren'
     | 'ShoppingBag' | 'CreditCard' | 'Gamepad2' | 'Lock' | 'Mail'
     | 'User' | 'Calendar' | 'StickyNote' | 'ListTodo' | 'Mic'
     | 'Phone' | 'MessageCircle' | 'Video' | 'Compass' | 'Newspaper'
@@ -18,7 +18,6 @@ export interface SettingsRowDef {
     subtitle?: string;
     status?:   string;
     badge?:    number;
-    toggle?:   boolean;
     disabled?: boolean;
 }
 
@@ -38,8 +37,8 @@ export function getSettingsGroups(): SettingsGroup[] {
         {
             id: 'toggles',
             rows: [
-                { id: 'airplane', icon: 'Plane',  iconBg: '#ff9f0a', label: t('settings.airplaneMode', 'Airplane Mode'),  subtitle: t('settings.airplaneModeSub', 'Turn off calls, data and connectivity'), toggle: false },
-                { id: 'streamer', icon: 'Video',  iconBg: '#5e5ce6', label: t('settings.streamerMode', 'Streamer Mode'),  subtitle: t('settings.streamerModeSub', 'Hides balances and card numbers'),         toggle: false },
+                { id: 'airplane', icon: 'Plane',  iconBg: '#ff9f0a', label: t('settings.airplaneMode', 'Airplane Mode'),  subtitle: t('settings.airplaneModeSub', 'Turn off calls, data and connectivity') },
+                { id: 'streamer', icon: 'Video',  iconBg: '#5e5ce6', label: t('settings.streamerMode', 'Streamer Mode'),  subtitle: t('settings.streamerModeSub', 'Hide details on stream') },
                 { id: 'wifi',     icon: 'Wifi',   iconBg: '#0a84ff', label: t('settings.wifi', 'Wi-Fi'),                subtitle: t('settings.wifiSub', 'Join nearby networks') },
                 { id: 'bluetooth', icon: 'Bluetooth', iconBg: '#0a84ff', label: t('settings.bluetooth', 'Bluetooth'),   subtitle: t('settings.bluetoothSub', 'Pair with nearby devices') },
             ],
@@ -62,8 +61,6 @@ export function getSettingsGroups(): SettingsGroup[] {
                 { id: 'app-icons',    icon: 'LayoutGrid',  iconBg: '#5e5ce6', label: t('settings.appIcons', 'App Icons'),              subtitle: t('settings.appIconsSub', 'Icon theme and Home Screen names') },
                 { id: 'home-density', icon: 'Grid2x2',     iconBg: '#ff375f', label: t('settings.homeDensity', 'Home Screen'),         subtitle: t('settings.homeDensitySub', 'How many apps fit and how big they are') },
                 { id: 'face-unlock',  icon: 'Fingerprint', iconBg: '#34c759', label: t('settings.faceScanPasscode', 'Face Scan & Passcode'), subtitle: t('settings.faceScanPasscodeSub', 'Lock and unlock options') },
-                { id: 'battery',      icon: 'BatteryFull', iconBg: '#34c759', label: t('settings.battery', 'Battery'),               subtitle: t('settings.batterySub', 'Manage battery usage') },
-                { id: 'privacy',      icon: 'ShieldCheck', iconBg: '#0a84ff', label: t('settings.privacySecurity', 'Privacy & Security'),    subtitle: t('settings.privacySecuritySub', 'Control app permissions') },
             ],
         },
         {

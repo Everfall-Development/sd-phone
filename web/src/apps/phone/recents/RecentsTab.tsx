@@ -8,7 +8,8 @@ import { SegmentedControl } from '@/ui/SegmentedControl';
 import { AddContact } from '../contacts/AddContact';
 import { CallDetail } from './CallDetail';
 import { ContactDetail } from '../contacts/ContactDetail';
-import { callEntryTitle, formatPhone, isBusinessNumber, isDialableCallEntry, type CallEntry, type Contact } from '../data';
+import { callEntryTitle, isBusinessNumber, isDialableCallEntry, type CallEntry, type Contact } from '../data';
+import { useMaskedPhone } from '@/stores/themeStore';
 import { t } from '@/i18n';
 
 type Filter = 'all' | 'missed';
@@ -117,9 +118,11 @@ function CallRow({ entry, onBody, onInfo }: {
     onBody: (e: CallEntry) => void;
     onInfo: (e: CallEntry) => void;
 }) {
-    const primary = callEntryTitle(entry);
+    const phone = useMaskedPhone();
+    const isPlainNumber = !entry.contact && !entry.name?.trim() && !entry.noCallerId && !isBusinessNumber(entry.number);
+    const primary = isPlainNumber ? phone(entry.number) : callEntryTitle(entry);
     let secondary = t('phone.unknown','Unknown');
-    if (entry.contact) secondary = formatPhone(entry.contact.phone);
+    if (entry.contact) secondary = phone(entry.contact.phone);
     else if (isBusinessNumber(entry.number)) secondary = t('phone.businessCall','Business');
 
     return (
@@ -150,6 +153,7 @@ function CallRow({ entry, onBody, onInfo }: {
 }
 
 function RecentAvatar({ entry }: { entry: CallEntry }) {
+    const phone = useMaskedPhone();
     const size = 56;
     if (entry.contact) {
         return <ContactAvatar contact={entry.contact} size={size} />;
@@ -162,7 +166,7 @@ function RecentAvatar({ entry }: { entry: CallEntry }) {
     }
     return (
         <ContactAvatar
-            contact={{ id: entry.number, name: formatPhone(entry.number), initials: '', color: '#8e8e93' }}
+            contact={{ id: entry.number, name: phone(entry.number), initials: '', color: '#8e8e93' }}
             size={size}
         />
     );

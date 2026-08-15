@@ -86,6 +86,9 @@ function store.ensureSchema()
             open_anim          VARCHAR(12) NULL,
             wallpaper_parallax TINYINT(1)  NULL,
             hour24             TINYINT(1)   NULL,
+            caller_id          TINYINT(1)   NULL,
+            streamer_mode      TINYINT(1)   NULL,
+            streamer_hide      VARCHAR(255) NULL,
             reopen_app         TINYINT(1)   NULL,
             setup_done         TINYINT(1)   NULL,
             theme              VARCHAR(8)   NULL,
@@ -417,6 +420,65 @@ function store.setHomeLayout(citizenid, layout)
         INSERT INTO phone_settings (citizenid, device, home_layout) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE home_layout = VALUES(home_layout)
     ]], { citizenid, 'phone', layout })
+end
+
+---@type string[] Columns a Reset All Settings carries across. Everything NOT listed is a
+---preference and goes back to its default. What survives is the three things a preference reset
+---has no business touching: identity (the number), what you signed up to (setup state, your
+---installed apps, your group, your lock) and content you authored (contact card, uploaded
+---wallpapers, custom palettes and icon themes).
+local RESET_KEEP = {
+    'phone_number', 'setup_done', 'installed_apps', 'active_group_id',
+    'card_name', 'card_avatar', 'card_email', 'card_address',
+    'custom_wallpapers', 'palette_custom', 'icon_custom',
+    'passcode', 'face_id',
+}
+
+---@type string[] An Erase keeps only what the character cannot function without. Losing the
+---number would strand their contacts, call history and anyone who has them saved.
+local ERASE_KEEP = { 'phone_number' }
+
+---Resets one profile's settings row.
+---
+---The row is DELETED and re-created from a KEEP list rather than having each preference nulled
+---by name. Naming the columns to clear would silently miss every column added afterwards - the
+---reset would quietly stop covering new settings, which is exactly how the old one came to do
+---nothing at all. Inverted, a new column resets by default, which is the safe direction.
+---@param citizenid string framework per-character id
+---@param device string|nil device key, defaults to 'phone'
+---@param scope string|nil 'settings' (preferences only) or 'erase' (factory), defaults to erase
+function store.resetSettings(citizenid, device, scope)
+    device = device or 'phone'
+    if not citizenid or citizenid == '' then return end
+    local keep = scope == 'settings' and RESET_KEEP or ERASE_KEEP
+    local row = MySQL.single.await(
+        'SELECT ' .. table.concat(keep, ', ') .. ' FROM phone_settings WHERE citizenid = ? AND device = ?',
+        { citizenid, device })
+    if not row then return end
+
+    local cols, marks, vals = { 'citizenid', 'device' }, { '?', '?' }, { citizenid, device }
+    for _, col in ipairs(keep) do
+        local v = row[col]
+        if v ~= nil then
+            if type(v) == 'boolean' then v = v and 1 or 0 end
+            cols[#cols + 1]  = col
+            marks[#marks + 1] = '?'
+            vals[#vals + 1]  = v
+        end
+    end
+
+    local sets = {}
+    for _, col in ipairs(cols) do sets[#sets + 1] = col .. ' = VALUES(' .. col .. ')' end
+    MySQL.transaction.await({
+        { query = 'DELETE FROM phone_settings WHERE citizenid = ? AND device = ?', values = { citizenid, device } },
+        {
+            query = 'INSERT INTO phone_settings (' .. table.concat(cols, ', ') .. ') VALUES ('
+                .. table.concat(marks, ', ') .. ') ON DUPLICATE KEY UPDATE ' .. table.concat(sets, ', '),
+            values = vals,
+        },
+    })
+
+    store.forgetAirplane(citizenid, device)
 end
 
 ---Reads a player's phone number, or nil if not yet assigned. Read-only.
@@ -1269,6 +1331,25 @@ function store.setAirplane(citizenid, on, device)
     ]], { citizenid, device, on and 1 or 0 })
 end
 
+---Drops a character's cached airplane state, so the next read reloads from the row. Anything
+---that writes airplane_mode WITHOUT going through setAirplane - the settings reset rewrites the
+---whole row - has to call this, or the server keeps answering from the stale cache and calls
+---stay blocked on a phone whose airplane toggle reads off.
+---@param citizenid string framework per-character id
+---@param device string|nil device key, defaults to 'phone'
+function store.forgetAirplane(citizenid, device)
+    if not citizenid or citizenid == '' then return end
+    airplaneCache[airplaneKey(citizenid, device or 'phone')] = nil
+end
+
+---Clears a character's per-app notification preferences, so every app goes back to its default
+---of notifying. These live in their own table, so wiping the settings row does not touch them.
+---@param citizenid string framework per-character id
+function store.resetNotifPrefs(citizenid)
+    if not citizenid or citizenid == '' then return end
+    MySQL.update.await('DELETE FROM phone_notif_prefs WHERE citizenid = ?', { citizenid })
+end
+
 ---The server default 24-hour preference for a player who has never toggled it
 ---(config.Lockscreen.Use24Hour).
 ---@return boolean default
@@ -1310,6 +1391,93 @@ function store.setSetupDone(citizenid, device)
         INSERT INTO phone_settings (citizenid, device, setup_done) VALUES (?, ?, 1)
         ON DUPLICATE KEY UPDATE setup_done = 1
     ]], { citizenid, device })
+end
+
+---Returns true when a player's number may be shown to whoever they call, defaulting to true
+---when the caller_id column is NULL (an unset preference is not a withheld one). Read-only.
+---
+---The IS NULL flag is not decoration: oxmysql maps a TINYINT(1) to a Lua boolean, and a NULL
+---one arrives as `false` rather than nil, so an unset column is indistinguishable from a stored
+---0 unless the query says so. Reading it directly defaulted every phone to withholding.
+---@param citizenid string framework per-character id
+---@return boolean showCallerId
+function store.getCallerId(citizenid)
+    if not citizenid or citizenid == '' then return true end
+    local row = MySQL.single.await(
+        'SELECT caller_id, caller_id IS NULL AS caller_id_unset FROM phone_settings WHERE citizenid = ?',
+        { citizenid })
+    if row and not isTruthy(row.caller_id_unset) then
+        return isTruthy(row.caller_id)
+    end
+    return true
+end
+
+---Persists whether this player's number is shown to whoever they call (upsert).
+---@param citizenid string framework per-character id
+---@param on boolean show my number on outgoing calls
+function store.setCallerId(citizenid, on)
+    if not citizenid or citizenid == '' then return end
+    MySQL.update.await([[
+        INSERT INTO phone_settings (citizenid, caller_id) VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE caller_id = VALUES(caller_id)
+    ]], { citizenid, on == true and 1 or 0 })
+end
+
+---Returns true when a player has Streamer Mode on, defaulting to false. Read-only.
+---@param citizenid string framework per-character id
+---@return boolean streamerMode
+function store.getStreamerMode(citizenid)
+    if not citizenid or citizenid == '' then return false end
+    local row = MySQL.single.await('SELECT streamer_mode FROM phone_settings WHERE citizenid = ?', { citizenid })
+    return row ~= nil and (row.streamer_mode == true or tonumber(row.streamer_mode) == 1)
+end
+
+---@type table<string, true> The categories Streamer Mode can hide. A key absent from a stored
+---config means "hide it": the master switch is opt-out per category, so a config written by an
+---older client keeps hiding anything it did not know about rather than silently exposing it.
+local STREAMER_KEYS = {
+    balance = true, transactions = true, card = true,
+    investments = true, number = true, previews = true,
+}
+
+---Returns a player's per-category Streamer Mode config, or nil when they have never tuned it
+---(which the client reads as "hide everything"). Read-only.
+---@param citizenid string framework per-character id
+---@return table<string, boolean>|nil
+function store.getStreamerHide(citizenid)
+    if not citizenid or citizenid == '' then return nil end
+    local row = MySQL.single.await('SELECT streamer_hide FROM phone_settings WHERE citizenid = ?', { citizenid })
+    if not row or not row.streamer_hide or row.streamer_hide == '' then return nil end
+    local ok, decoded = pcall(json.decode, row.streamer_hide)
+    if not ok or type(decoded) ~= 'table' then return nil end
+    return decoded
+end
+
+---Persists a player's per-category Streamer Mode config, rebuilding the stored JSON from only
+---the known keys so a patched client cannot grow the column without bound.
+---@param citizenid string framework per-character id
+---@param cfg table<string, boolean>
+function store.setStreamerHide(citizenid, cfg)
+    if not citizenid or citizenid == '' or type(cfg) ~= 'table' then return end
+    local clean = {}
+    for key in pairs(STREAMER_KEYS) do
+        clean[key] = cfg[key] ~= false
+    end
+    MySQL.update.await([[
+        INSERT INTO phone_settings (citizenid, streamer_hide) VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE streamer_hide = VALUES(streamer_hide)
+    ]], { citizenid, json.encode(clean) })
+end
+
+---Persists a player's Streamer Mode preference (upsert), coerced to a strict boolean.
+---@param citizenid string framework per-character id
+---@param on boolean hide money figures on screen
+function store.setStreamerMode(citizenid, on)
+    if not citizenid or citizenid == '' then return end
+    MySQL.update.await([[
+        INSERT INTO phone_settings (citizenid, streamer_mode) VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE streamer_mode = VALUES(streamer_mode)
+    ]], { citizenid, on == true and 1 or 0 })
 end
 
 ---Persists a player's 24-hour time preference (upsert), coerced to a strict boolean.
@@ -2166,7 +2334,13 @@ end
 function store.snapshot(citizenid, device)
     device = device or 'phone'
     if not citizenid or citizenid == '' then return {} end
-    local row = MySQL.single.await('SELECT * FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
+    local row = MySQL.single.await([[
+        SELECT *,
+               hour24             IS NULL AS hour24_unset,
+               wallpaper_parallax IS NULL AS parallax_unset,
+               caller_id          IS NULL AS caller_id_unset
+        FROM phone_settings WHERE citizenid = ? AND device = ?
+    ]], { citizenid, device })
 
     -- Uploaded wallpapers and player-designed icon packs are a library, not this device's look, so
     -- they live on the phone's row and both devices read the same one. Which wallpaper and which
@@ -2187,8 +2361,8 @@ function store.snapshot(citizenid, device)
     -- false collapses through the `or` and silently reports the configured default instead of the
     -- player's choice. store.getHour24 above already spells it out this way.
     local hour24
-    if row and row.hour24 ~= nil then
-        hour24 = row.hour24 == true or tonumber(row.hour24) == 1
+    if row and not isTruthy(row.hour24_unset) then
+        hour24 = isTruthy(row.hour24)
     else
         hour24 = defaultHour24()
     end
@@ -2197,7 +2371,7 @@ function store.snapshot(citizenid, device)
     -- default) while a stored 0 has to survive as false. Collapsing both to false would make the
     -- toggle impossible to turn off - the next hydrate would put it straight back.
     local parallax
-    if row and row.wallpaper_parallax ~= nil then parallax = isTruthy(row.wallpaper_parallax) end
+    if row and not isTruthy(row.parallax_unset) then parallax = isTruthy(row.wallpaper_parallax) end
 
     local dark = row and row.dark_theme
     if type(dark) ~= 'string' or not (DARK_THEMES[dark] or isCustomPaletteId(dark)) then dark = 'graphite' end
@@ -2227,6 +2401,9 @@ function store.snapshot(citizenid, device)
         notificationTone = row and row.notification_tone or nil,
         airplaneMode     = airplane,
         hour24           = hour24,
+        callerId         = (row == nil or isTruthy(row.caller_id_unset)) and true or isTruthy(row.caller_id),
+        streamerMode     = row ~= nil and isTruthy(row.streamer_mode) or false,
+        streamerHide     = row and decodeColumn(row.streamer_hide, nil) or nil,
         reopenApp        = row ~= nil and (row.reopen_app == true or tonumber(row.reopen_app) == 1),
         setupDone        = row ~= nil and (row.setup_done == true or tonumber(row.setup_done) == 1),
         theme            = (row and row.theme == 'dark') and 'dark' or 'light',

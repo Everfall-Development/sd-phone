@@ -9,6 +9,8 @@ import { clearSessionState, useSessionState } from '@/hooks/useSessionState';
 import { AlertDialog } from '@/ui/AlertDialog';
 import { AppIconSVG } from '@/shell/AppIconSVG';
 import { formatPhone } from '@/lib/phone';
+import { useStreamerHidden } from '@/stores/themeStore';
+import { HIDDEN_TEXT } from '@/shell/streamerMode';
 
 interface AppAuthField {
     key:         string;
@@ -476,6 +478,7 @@ function AuthForm({ mode, appName, icon, theme, fields, notice, myNumber, myEmai
     onSubmit?: (mode: 'create' | 'login', values: Record<string, string>) => Promise<{ ok: boolean; message?: string; field?: string }>;
 }) {
     const isCreate = mode === 'create';
+    const hideNumber = useStreamerHidden('number');
 
     const [picking, setPicking] = useState<string | null>(null);
     const [pickError, setPickError] = useState<string | null>(null);
@@ -523,7 +526,7 @@ function AuthForm({ mode, appName, icon, theme, fields, notice, myNumber, myEmai
     let fill: { value: string; display: string; sub: string; icon: React.ReactNode; onCycle?: () => void } | null = null;
     if (focusedField && !(values[focusedField.key] ?? '')) {
         if (focusedField.type === 'tel' && myNumber) {
-            fill = { value: myNumber, display: formatPhone(myNumber), sub: t('common.fromYourPhoneNumber', 'From your phone number'), icon: <Phone className="h-[20px] w-[20px]" strokeWidth={2.2} /> };
+            fill = { value: myNumber, display: hideNumber ? HIDDEN_TEXT : formatPhone(myNumber), sub: t('common.fromYourPhoneNumber', 'From your phone number'), icon: <Phone className="h-[20px] w-[20px]" strokeWidth={2.2} /> };
         } else if (focusedField.suffix && chosenEmail) {
             fill = {
                 value: chosenEmail.split('@')[0],
@@ -775,6 +778,7 @@ function ResetForm({ phase, appName, icon, theme, identity, onIdentity, myNumber
     onDone:   () => void;
 }) {
     const [code,     setCode]     = useSessionState(`auth:${appName}:resetCode`, '');
+    const hideNumber = useStreamerHidden('number');
     const [password, setPassword] = useSessionState(`auth:${appName}:resetPassword`, '');
     const [confirm,  setConfirm]  = useSessionState(`auth:${appName}:resetConfirm`, '');
     const [error,    setError]    = useState<string | null>(null);
@@ -930,7 +934,7 @@ function ResetForm({ phase, appName, icon, theme, identity, onIdentity, myNumber
                 icon={codeBar
                     ? <KeyRound className="h-[20px] w-[20px]" strokeWidth={2.2} />
                     : <Phone className="h-[20px] w-[20px]" strokeWidth={2.2} />}
-                main={codeBar ? (suggestion?.code ?? '') : (myNumber ? formatPhone(myNumber) : '')}
+                main={codeBar ? (suggestion?.code ?? '') : (myNumber ? (hideNumber ? HIDDEN_TEXT : formatPhone(myNumber)) : '')}
                 sub={codeBar
                     ? (suggestion?.source === 'mail' ? t('common.fromMail', 'From Mail') : t('common.fromMessages', 'From Messages'))
                     : t('common.fromYourPhoneNumber', 'From your phone number')}

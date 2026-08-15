@@ -1,58 +1,128 @@
-import { useState } from 'react';
+import { useRef, useState, useSyncExternalStore } from 'react';
 
 import { t } from '@/i18n';
+import { apiData } from '@/core/api';
+import { useAsyncData } from '@/hooks/useAsyncData';
 import { AlertDialog } from '@/ui/AlertDialog';
-import { requestPhoneReset } from '@/core/phoneReset';
+import { requestPhoneReset, type PhoneResetScope } from '@/core/phoneReset';
 import { ListGroup, ListRow } from '@/ui/ListGroup';
 import { SubPage } from '../SettingsSubPage';
 
+type Deadlines = Record<PhoneResetScope, number>;
+
+const NONE: Deadlines = { settings: 0, erase: 0 };
+
+let nowSnapshot = Date.now();
+let nowTimer: number | undefined;
+const nowListeners = new Set<() => void>();
+
+function getNowSnapshot(): number {
+    return nowSnapshot;
+}
+
+function tickNow(): void {
+    nowSnapshot = Date.now();
+    for (const listener of nowListeners) listener();
+}
+
+function subscribeNow(listener: () => void): () => void {
+    nowListeners.add(listener);
+    if (nowListeners.size === 1) {
+        nowSnapshot = Date.now();
+        nowTimer = window.setInterval(tickNow, 250);
+    }
+
+    return function unsubscribeNow() {
+        nowListeners.delete(listener);
+        if (nowListeners.size > 0 || nowTimer === undefined) return;
+        window.clearInterval(nowTimer);
+        nowTimer = undefined;
+    };
+}
+
+async function fetchResetDeadlines(): Promise<Deadlines | null> {
+    const data = await apiData<{ settings?: number; erase?: number }>('sd-phone:settings:resetCooldown');
+    if (!data) return null;
+    const now = Date.now();
+    return {
+        settings: data.settings ? now + data.settings : 0,
+        erase: data.erase ? now + data.erase : 0,
+    };
+}
+
 export function ResetPhonePage({ onBack }: { onBack: () => void }) {
-    const [confirm, setConfirm] = useState<'reset' | 'erase' | null>(null);
+    const [confirm, setConfirm] = useState<PhoneResetScope | null>(null);
+    const [localDeadlines, setLocalDeadlines] = useState<Deadlines>(NONE);
+    const armed = useRef(false);
+    const now = useSyncExternalStore(subscribeNow, getNowSnapshot, getNowSnapshot);
+    const { data: serverDeadlines, loading, settled } = useAsyncData(fetchResetDeadlines, []);
+    const deadlines: Deadlines = {
+        settings: Math.max(serverDeadlines?.settings ?? 0, localDeadlines.settings),
+        erase: Math.max(serverDeadlines?.erase ?? 0, localDeadlines.erase),
+    };
+    const unavailable = settled && serverDeadlines === null;
+
+    function leftFor(scope: PhoneResetScope): number {
+        return Math.max(0, Math.ceil((deadlines[scope] - now) / 1000));
+    }
+
+    function run(scope: PhoneResetScope, windowMs: number) {
+        if (armed.current) return;
+        armed.current = true;
+        setConfirm(null);
+        setLocalDeadlines(deadlines => ({ ...deadlines, [scope]: Date.now() + windowMs }));
+        requestPhoneReset(scope);
+    }
+
+    function subFor(scope: PhoneResetScope): string | undefined {
+        if (unavailable) return t('settings.resetUnavailable', 'Unavailable');
+        const secs = leftFor(scope);
+        return secs > 0 ? t('settings.resetAvailableIn', 'Available again in {n}s', { n: secs }) : undefined;
+    }
 
     return (
         <>
             <SubPage title={t('settings.resetPhone', 'Reset Phone')} onBack={onBack}>
-                <ListGroup footer={t('settings.resetAllFooter', 'Resetting all settings clears your setup, theme and folder layout but keeps health data and app history.')}>
+                <ListGroup footer={t('settings.resetAllFooter', 'Resetting puts every setting back to default. It does not sign you out or remove anything you have installed.')}>
                     <ListRow
                         label={t('settings.resetAllSettings', 'Reset All Settings')}
+                        sub={subFor('settings')}
                         destructive
-                        onPress={() => setConfirm('reset')}
-                        divider
+                        disabled={loading || unavailable || leftFor('settings') > 0}
+                        onPress={() => setConfirm('settings')}
                     />
-                    <ListRow label={t('settings.resetNetworkSettings', 'Reset Network Settings')}         destructive divider />
-                    <ListRow label={t('settings.resetKeyboardDictionary', 'Reset Keyboard Dictionary')}      destructive divider />
-                    <ListRow label={t('settings.resetHomeScreenLayout', 'Reset Home Screen Layout')}       destructive divider />
-                    <ListRow label={t('settings.resetLocationPrivacy', 'Reset Location & Privacy')}       destructive />
                 </ListGroup>
 
-                <ListGroup footer={t('settings.eraseAllFooter', 'This will permanently erase all content and settings. This action cannot be undone.')}>
+                <ListGroup footer={t('settings.eraseAllFooter', 'Erases everything on this phone and takes you back through setup. Your saved passwords stay in the Passwords app, so you can sign back into your accounts. This cannot be undone.')}>
                     <ListRow
-                        label={t('settings.eraseAllContent', 'Erase All Content and Settings')}
+                        label={t('settings.eraseAllContent', 'Reset Phone Fully')}
+                        sub={subFor('erase')}
                         destructive
+                        disabled={loading || unavailable || leftFor('erase') > 0}
                         onPress={() => setConfirm('erase')}
                     />
                 </ListGroup>
             </SubPage>
 
-            {confirm === 'reset' && (
+            {confirm === 'settings' && (
                 <AlertDialog
                     title={t('settings.resetAllTitle', 'Reset All Settings?')}
-                    message={t('settings.resetAllMessage', "Your phone setup, theme and layout preferences will reset. You'll be guided through setup again on next open.")}
+                    message={t('settings.resetAllMessage', 'Your theme, wallpaper, Home Screen layout and other preferences go back to default. Your apps, accounts, passcode and contact card are kept.')}
                     confirmLabel={t('settings.resetConfirm', 'Reset')}
                     destructive
                     onCancel={() => setConfirm(null)}
-                    onConfirm={() => { setConfirm(null); requestPhoneReset('settings'); }}
+                    onConfirm={() => run('settings', 2000)}
                 />
             )}
 
             {confirm === 'erase' && (
                 <AlertDialog
-                    title={t('settings.eraseAllTitle', 'Erase All Content and Settings?')}
-                    message={t('settings.eraseAllMessage', 'Your phone will be wiped back to factory defaults. Server-side data (mail accounts, group memberships) is preserved — sign out / leave first if you want a complete reset.')}
-                    confirmLabel={t('settings.eraseConfirm', 'Erase')}
+                    title={t('settings.eraseAllTitle', 'Reset Phone Fully?')}
+                    message={t('settings.eraseAllMessage', 'Your phone is wiped back to factory defaults and you will be taken through setup again. Your saved passwords stay in the Passwords app, so you can sign back into your accounts. Server-side data such as mail accounts and group memberships is preserved.')}
+                    confirmLabel={t('settings.eraseConfirm', 'Reset')}
                     destructive
                     onCancel={() => setConfirm(null)}
-                    onConfirm={() => { setConfirm(null); requestPhoneReset('erase'); }}
+                    onConfirm={() => run('erase', 30000)}
                 />
             )}
         </>

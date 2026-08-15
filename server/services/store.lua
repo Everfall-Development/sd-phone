@@ -114,4 +114,12 @@ function store.setJobMessages(citizenid, job, on)
     invalidate(citizenid, job)
 end
 
+---Forgets a character's per-job preferences (duty, company calls, company messages) across every
+---job, dropping the cached copies with them so the next read reloads the defaults.
+---@param citizenid string framework per-character id
+function store.resetFor(citizenid)
+    if not citizenid or citizenid == '' then return end
+    cache[citizenid] = nil
+    MySQL.update.await('DELETE FROM phone_service_prefs WHERE citizenid = ?', { citizenid })
+end
 return store

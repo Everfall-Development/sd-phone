@@ -443,7 +443,7 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
     const capturingRef = useRef(false);
     const takeScreenshot = useCallback(async () => {
         if (capturingRef.current) return;
-        const el = document.querySelector('[data-phone-screen]') as HTMLElement | null;
+        const el = document.querySelector<HTMLElement>('[data-phone-screen]');
         if (!el) return;
         capturingRef.current = true;
         setFlashing(true);
@@ -455,7 +455,7 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
                 scale: 2,
                 useCORS: true,
                 logging: false,
-                ignoreElements: (n) => (n as HTMLElement).dataset?.screenshotFlash === '1',
+                ignoreElements: (node) => node instanceof HTMLElement && node.dataset.screenshotFlash === '1',
             });
             const image = canvas.toDataURL('image/jpeg', 0.92);
             await fetchNui('sd-phone:camera:capture', { image });
@@ -512,6 +512,8 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
 
     const scale = 0.4 + (phoneScale / 100) * 0.6;
     const tilt  = tiltTransform(phoneTilt, H);
+    const hairlineVars = { '--hairline-w': `${1 / scale}px` };
+    const switcherVars = { '--switcher-scale': String(SWITCHER_SCALE) };
 
     const stageH = Math.round(H);
     const effectiveAlign = peek ? peekAlign(phoneAlign) : phoneAlign;
@@ -547,6 +549,7 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
                         width:  W,
                         height: stageH,
                         zoom: scale,
+                        ...hairlineVars,
                         animation: motionAnimation,
                         transform: !motionAnimation && landscape ? landscapeTransform : undefined,
                         transformOrigin: 'center',
@@ -570,7 +573,7 @@ export function PhoneShell({ children, cameraActive = false, entering = false, l
                             // The switcher's card scale, for index.css's ios-app-expand. The deck
                             // re-parents the opening app's host into this screen, so the value
                             // inherits down to it - and unlike the switcher, this element stays.
-                            ...({ '--switcher-scale': String(SWITCHER_SCALE) } as React.CSSProperties),
+                            ...switcherVars,
                         }}
                     >
                         {!cameraActive && (

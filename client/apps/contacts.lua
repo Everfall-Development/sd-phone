@@ -14,6 +14,7 @@ proxyCallback('sd-phone:contacts:deleteRecent', 'sd-phone:server:contacts:delete
 proxyCallback('sd-phone:contacts:clearRecents', 'sd-phone:server:contacts:clearRecents')
 proxyCallback('sd-phone:contacts:block',        'sd-phone:server:contacts:block')
 proxyCallback('sd-phone:contacts:unblock',      'sd-phone:server:contacts:unblock')
+proxyCallback('sd-phone:contacts:blockedList',  'sd-phone:server:contacts:blockedList')
 proxyCallback('sd-phone:contacts:isBlocked',    'sd-phone:server:contacts:isBlocked')
 proxyCallback('sd-phone:contacts:saveCard',     'sd-phone:server:contacts:saveCard')
 

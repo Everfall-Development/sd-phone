@@ -8,6 +8,8 @@ import { t } from '@/i18n';
 import { payInvoice, type ReceivedInvoice } from '@/apps/services/servicesApi';
 import type { Contact as PhoneContact } from '@/apps/phone/data';
 import { formatMoney } from './data';
+import { useStreamerHidden } from '@/stores/themeStore';
+import { HIDDEN_TEXT } from '@/shell/streamerMode';
 
 // Presentational: the fetch lives in Banking (above the animated tab subtree) so segment
 // switches re-render instantly from props instead of refetching through a loading flash.
@@ -20,6 +22,7 @@ export function ReceivedInvoices({ invoices, loading, onRefetch, onPaid, contact
     onPaid:    () => void;
     contactByNumber: Map<string, PhoneContact>;
 }) {
+    const hideAmounts = useStreamerHidden('transactions');
     const [paying, setPaying] = useState<ReceivedInvoice | null>(null);
     const [busy,   setBusy]   = useState(false);
     const [error,  setError]  = useState<string | null>(null);
@@ -85,7 +88,7 @@ export function ReceivedInvoices({ invoices, loading, onRefetch, onPaid, contact
                                 </div>
                             </div>
                             <div className="flex shrink-0 flex-col items-end gap-1.5">
-                                <span className="text-[18px] font-bold tabular-nums text-black dark:text-white">{formatMoney(inv.amount, { whole: true })}</span>
+                                <span className="text-[18px] font-bold tabular-nums text-black dark:text-white">{hideAmounts ? HIDDEN_TEXT : formatMoney(inv.amount, { whole: true })}</span>
                                 {inv.status === 'pending' ? (
                                     <button
                                         type="button"

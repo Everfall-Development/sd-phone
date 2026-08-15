@@ -13,7 +13,7 @@ import { Avatar } from '../ui';
 
 type FeedKind = 'all' | 'following';
 
-export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, onToggleRepost, onOpenPost, onOpenProfile, onOpenAuthor, onDeletePost }: {
+export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, onToggleRepost, onOpenPost, onOpenProfile, onOpenAuthor }: {
     posts:         BirdyPost[] | null;
     me:            BirdyAuthor;
     feed:          FeedKind;
@@ -24,7 +24,6 @@ export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, o
     onOpenPost:    (id: string) => void;
     onOpenProfile: () => void;
     onOpenAuthor?: (handle: string) => void;
-    onDeletePost?: (id: string) => void;
 }) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const { pull, refreshing, armed } = usePullToRefresh(scrollRef, onRefresh);
@@ -136,7 +135,6 @@ export function Feed({ posts, me, feed, onFeedChange, onRefresh, onToggleLike, o
                                 onToggleRepost={() => onToggleRepost(p.id)}
                                 onOpen={() => onOpenPost(p.id)}
                                 onOpenAuthor={onOpenAuthor}
-                                onDelete={onDeletePost ? () => onDeletePost(p.id) : undefined}
                             />
                         ))
                     )}

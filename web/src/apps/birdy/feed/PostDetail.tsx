@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react';
-import { ArrowLeft, Heart, Image as ImageIcon, MessageCircle, Repeat2, X } from 'lucide-react';
+import { ArrowLeft, Heart, Image as ImageIcon, MessageCircle, Repeat2, Trash2, X } from 'lucide-react';
 
 import { t } from '@/i18n';
+import { AlertDialog } from '@/ui/AlertDialog';
+import { EmptyState } from '@/ui/EmptyState';
 import { MediaPickerSheet } from '@/shared/MediaPickerSheet';
 import { GifPickerSheet } from '@/shared/chat/GifPickerSheet';
 import { absoluteTime, BG, BLUE, LIKE, MAX_POST_LENGTH, META, PILL, REPOST, type BirdyAuthor, type BirdyPost } from '../data';
@@ -10,7 +12,7 @@ import { HeartBurst } from '../polish/HeartBurst';
 import { PostCard } from './PostCard';
 import { Avatar, PostImages, RichText, VerifiedBadge } from '../ui';
 
-export function PostDetail({ post, me, onBack, onToggleLike, onToggleRepost, onToggleReplyLike, onOpenAuthor, onReply }: {
+export function PostDetail({ post, me, onBack, onToggleLike, onToggleRepost, onToggleReplyLike, onOpenAuthor, onReply, onDelete }: {
     post:              BirdyPost;
     me:                BirdyAuthor;
     onBack:            () => void;
@@ -19,10 +21,13 @@ export function PostDetail({ post, me, onBack, onToggleLike, onToggleRepost, onT
     onToggleReplyLike: (replyId: string) => void;
     onOpenAuthor?:     (handle: string) => void;
     onReply?:          (body: string, images: string[]) => void;
+    onDelete?:         () => void;
 }) {
     const [reply, setReply] = useState('');
     const [media, setMedia] = useState<string[]>([]);
     const [picking, setPicking] = useState<'photo' | 'gif' | null>(null);
+    const [confirmDelete, setConfirmDelete] = useState(false);
+    const canDelete = onDelete != null && post.author.handle === me.handle;
     const inputRef = useRef<HTMLInputElement>(null);
     const openAuthor = () => onOpenAuthor?.(post.author.handle);
     const canSend = reply.trim().length > 0 || media.length > 0;
@@ -46,7 +51,19 @@ export function PostDetail({ post, me, onBack, onToggleLike, onToggleRepost, onT
                     <ArrowLeft className="h-6 w-6" strokeWidth={2.4} />
                 </button>
                 <div className="flex-1 text-center text-[17px] font-bold text-label">{t('squawk.postTitle', 'Post')}</div>
-                <div className="w-6" aria-hidden />
+                {canDelete ? (
+                    <button
+                        type="button"
+                        onClick={() => setConfirmDelete(true)}
+                        aria-label={t('squawk.delete', 'Delete')}
+                        className="transition-transform active:scale-90"
+                        style={{ color: META }}
+                    >
+                        <Trash2 className="h-[22px] w-[22px]" strokeWidth={1.9} />
+                    </button>
+                ) : (
+                    <div className="w-6" aria-hidden />
+                )}
             </header>
 
             <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
@@ -90,10 +107,20 @@ export function PostDetail({ post, me, onBack, onToggleLike, onToggleRepost, onT
                     </button>
                 </div>
 
-                {(post.thread?.length ?? 0) > 0 && (
+                {(post.thread?.length ?? 0) > 0 ? (
                     <p className="border-t border-hairline/10 px-4 pt-3 text-[14px] font-semibold uppercase tracking-wide" style={{ color: META }}>
                         {t('squawk.replies', 'Replies')}
                     </p>
+                ) : (
+                    <div className="border-t border-hairline/10 pb-10">
+                        <EmptyState
+                            icon={<MessageCircle className="h-7 w-7" strokeWidth={1.8} />}
+                            circleClassName="bg-hairline/[0.06] text-label/35"
+                            title={t('squawk.noRepliesYet', 'No replies yet')}
+                            subtitle={t('squawk.repliesEmptySubtitle', 'When someone replies to this post, it will show up here.')}
+                            subtitleClassName="text-ios-gray"
+                        />
+                    </div>
                 )}
                 {post.thread?.map(r => (
                     <PostCard
@@ -176,6 +203,17 @@ export function PostDetail({ post, me, onBack, onToggleLike, onToggleRepost, onT
             )}
             {picking === 'gif' && (
                 <GifPickerSheet onSelect={url => addMedia([url])} onClose={() => setPicking(null)} />
+            )}
+
+            {confirmDelete && (
+                <AlertDialog
+                    title={t('squawk.deletePost', 'Delete post?')}
+                    message={t('squawk.deletePostMessage', 'This removes the post and its replies for everyone. This cannot be undone.')}
+                    confirmLabel={t('squawk.delete', 'Delete')}
+                    destructive
+                    onCancel={() => setConfirmDelete(false)}
+                    onConfirm={() => { setConfirmDelete(false); onDelete?.(); }}
+                />
             )}
         </div>
     );

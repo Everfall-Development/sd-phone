@@ -2,6 +2,8 @@ import { getCategories, type Category } from './data';
 import { txTimeLabel, type BankTx } from './bankingApi';
 import { TxAvatar } from './TxAvatar';
 import { t } from '@/i18n';
+import { useStreamerHidden } from '@/stores/themeStore';
+import { HIDDEN_TEXT } from '@/shell/streamerMode';
 
 export function fmtAmount(n: number): string {
     const abs = Math.abs(n);
@@ -17,6 +19,7 @@ function catMeta(cat: string) {
 }
 
 function TxRow({ tx, onSelect }: { tx: BankTx; onSelect?: (tx: BankTx) => void }) {
+    const hideAmount = useStreamerHidden('transactions');
     const meta       = catMeta(tx.category);
     const isIncome   = tx.amount > 0;
     const selectable = !!onSelect && !!tx.peerNumber;
@@ -36,7 +39,7 @@ function TxRow({ tx, onSelect }: { tx: BankTx; onSelect?: (tx: BankTx) => void }
                 </div>
             </div>
             <span className={`shrink-0 text-[19px] font-semibold tabular-nums tracking-tight ${isIncome ? 'text-[#34c759]' : 'text-black dark:text-white'} ${tx.pending ? 'opacity-55' : ''}`}>
-                {fmtAmount(tx.amount)}
+                {hideAmount ? HIDDEN_TEXT : fmtAmount(tx.amount)}
             </span>
         </>
     );

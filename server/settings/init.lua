@@ -107,6 +107,19 @@ local function coalesce(cid, key, fn)
     end
 end
 
+---Drops every queued trailing write for one character, so a reset is not undone a moment later
+---by a value the player changed just before pressing it. The timer still fires; it finds nothing
+---pending and does nothing. Anything that rewrites the whole settings row has to call this first,
+---or the twelve coalesced settings (brightness, phone scale, island pet, app labels, ...) each
+---get up to WRITE_GAP to come back from the dead.
+---@param cid string framework per-character id
+local function dropPendingWrites(cid)
+    local prefix = cid .. '\0'
+    for k, w in pairs(writes) do
+        if k:sub(1, #prefix) == prefix then w.pending = nil end
+    end
+end
+
 -- A pending timer holds its own state by upvalue, so a trailing write still lands for a player
 -- who disconnects mid-gesture; only the idle rows go.
 util.onCleanup(function(_, cid)
@@ -381,6 +394,39 @@ lib.callback.register('sd-phone:server:settings:setHour24', function(source, pay
     return { success = true }
 end)
 
+---Persists whether the caller's number is shown to whoever they dial. Enforced server-side at
+---dial time, so a patched client cannot reveal a number the player chose to withhold - nor hide
+---one, which would otherwise be a way past a callee's block list.
+lib.callback.register('sd-phone:server:settings:setCallerId', function(source, payload)
+    local cid = player.getIdentifier(source)
+    if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'callerId') then return BUSY end
+    payload = type(payload) == 'table' and payload or {}
+    store.setCallerId(cid, payload.on == true)
+    return { success = true }
+end)
+
+---Persists the caller's Streamer Mode preference, coerced to a strict boolean.
+lib.callback.register('sd-phone:server:settings:setStreamerMode', function(source, payload)
+    local cid = player.getIdentifier(source)
+    if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'streamerMode') then return BUSY end
+    payload = type(payload) == 'table' and payload or {}
+    store.setStreamerMode(cid, payload.on == true)
+    return { success = true }
+end)
+
+---Persists which categories Streamer Mode hides. The store rebuilds the row from its own key
+---whitelist, so an unknown key is dropped rather than stored.
+lib.callback.register('sd-phone:server:settings:setStreamerHide', function(source, payload)
+    local cid = player.getIdentifier(source)
+    if not cid then return { success = false, message = 'Player not found' } end
+    if not writeAllowed(cid, 'streamerHide') then return BUSY end
+    payload = type(payload) == 'table' and payload or {}
+    store.setStreamerHide(cid, type(payload.hide) == 'table' and payload.hide or {})
+    return { success = true }
+end)
+
 ---Marks the caller's profile as having completed first-run setup (one-way; the wipe path
 ---deletes the whole settings row, which is what un-sets it).
 lib.callback.register('sd-phone:server:settings:setSetupDone', function(source, payload)
@@ -592,19 +638,60 @@ lib.callback.register('sd-phone:server:settings:tones:remove', function(source, 
     return { success = true }
 end)
 
----Factory reset (Settings > Erase All Content): uninstalls every downloadable app, clears the
----saved home layout, and signs the caller out of all app accounts and mailboxes.
+---@type table<string, { key: string, window: integer }> Cooldown budget per reset scope. The two
+---cost wildly different amounts: an erase runs two unindexed mail scans and a badge recompute, a
+---settings reset is a handful of small deletes. Separate keys, so one never blocks the other.
+local RESET_LIMITS = {
+    settings = { key = 'settings:reset',        window = 2000 },
+    erase    = { key = 'settings:factoryReset', window = 30000 },
+}
+
+---Milliseconds left on each reset's cooldown, so the Reset Phone page can grey the row out and
+---count down instead of letting the player press a button that will be refused. Read-only.
+lib.callback.register('sd-phone:server:settings:resetCooldown', function(source)
+    local cid = player.getIdentifier(source)
+    if not cid then return { success = false, message = 'Player not found' } end
+    local data = {}
+    for scope, limit in pairs(RESET_LIMITS) do
+        data[scope] = util.cooldownLeft(cid, limit.key, limit.window)
+    end
+    return { success = true, data = data }
+end)
+
+---Settings > Reset All Settings (`scope = 'settings'`) and Settings > Erase All Content
+---(`scope = 'erase'`).
+---
+---Reset puts the preferences back to default and leaves the character otherwise intact: still
+---set up, still holding their apps, accounts, lock, contact card and everything on the phone.
+---Erase clears the row down to the phone number, deletes the content the phone owns (contacts,
+---messages, photos and the rest, per server.admin.wipe.wipeDeviceContent) and signs the caller
+---out of every app account and mailbox.
+---
+---Erase HAS to clear setup_done server-side: the client re-arming the wizard locally is undone
+---by the very next settings:get while the stored flag still reads done.
 lib.callback.register('sd-phone:server:settings:factoryReset', function(source, payload)
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
-    -- Two unindexed mail scans plus a badge recompute, and a character erases their phone once
-    -- at most; a repeat inside the window has nothing left to erase anyway.
-    if not util.cooldown(cid, 'settings:factoryReset', 30000) then
-        return { success = false, message = 'Please wait a moment before trying again' }
+    payload = type(payload) == 'table' and payload or {}
+    local eraseAll = payload.scope ~= 'settings'
+    local limit = RESET_LIMITS[eraseAll and 'erase' or 'settings']
+    if not util.cooldown(cid, limit.key, limit.window) then
+        return {
+            success = false,
+            message = 'Please wait a moment before trying again',
+            retryIn = util.cooldownLeft(cid, limit.key, limit.window),
+        }
     end
-    store.setInstalledApps(cid, {}, deviceOf(payload))
-    store.setHomeLayout(cid, '')
-    accounts.signOutEverywhere(cid)
+    dropPendingWrites(cid)
+    store.resetSettings(cid, deviceOf(payload), eraseAll and 'erase' or 'settings')
+    store.resetNotifPrefs(cid)
+    require('server.services.store').resetFor(cid)
+    require('server.wifi.store').resetFor(cid)
+    require('server.bluetooth.store').resetFor(cid)
+    if eraseAll then
+        require('server.admin.wipe').wipeDeviceContent(cid)
+        accounts.signOutEverywhere(cid)
+    end
     badges.push(source)
     return { success = true }
 end)

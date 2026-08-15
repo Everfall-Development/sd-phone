@@ -9,8 +9,9 @@ import { useIosPush } from '@/hooks/useIosPush';
 import { requestOpenMessages } from '@/shell/deeplink';
 import { ContactAvatar, InitialsAvatar, PlaceholderAvatar } from '@/shared/ContactAvatar';
 import { ShareAction, ShareSheet } from '@/shared/ShareSheet';
-import { callEntryTitle, formatPhone, isBusinessNumber, isDialableCallEntry, type CallEntry, type Contact } from '../data';
+import { callEntryTitle, isBusinessNumber, isDialableCallEntry, type CallEntry, type Contact } from '../data';
 import { shareContactApi } from '../contactsApi';
+import { useMaskedPhone } from '@/stores/themeStore';
 import { t } from '@/i18n';
 
 export function CallDetail({ entry, onBack, onAddToContacts, onRequestCall }: {
@@ -21,9 +22,11 @@ export function CallDetail({ entry, onBack, onAddToContacts, onRequestCall }: {
 }) {
     const [sharing, setSharing] = useState(false);
     const [copied, setCopied] = useState(false);
+    const phone = useMaskedPhone();
     const { goBack, pageStyle, animating } = useIosPush(onBack);
 
-    const title = callEntryTitle(entry);
+    const isPlainNumber = !entry.contact && !entry.name?.trim() && !entry.noCallerId && !isBusinessNumber(entry.number);
+    const title = isPlainNumber ? phone(entry.number) : callEntryTitle(entry);
     const hasNamedCaller = Boolean(entry.name?.trim()) || isBusinessNumber(entry.number);
     const hasDialableNumber = isDialableCallEntry(entry);
 
@@ -100,7 +103,7 @@ export function CallDetail({ entry, onBack, onAddToContacts, onRequestCall }: {
                     <>
                         <div className="mb-4 rounded-[10px] bg-surface px-4 py-3">
                             <div className="text-[13px] text-black/50 dark:text-white/50">{t('phone.phoneLabel','phone')}</div>
-                            <div className="text-[19px] text-ios-blue">{formatPhone(entry.number)}</div>
+                            <div className="text-[19px] text-ios-blue">{phone(entry.number)}</div>
                         </div>
                         {!entry.contact && (
                             <button

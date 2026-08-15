@@ -7,7 +7,7 @@ import { useKeypadInput } from '@/hooks/useKeypadInput';
 import { fetchNui, isFiveM } from '@/core/nui';
 import { resolveWallpaper } from './wallpapers';
 import { PARALLAX_SCALE, PARALLAX_SHIFT } from './shellLook';
-import { useTheme } from '@/stores/themeStore';
+import { useStreamerHidden, useTheme } from '@/stores/themeStore';
 import { Clockface } from './lockClock';
 import { LockClockEditor } from './LockClockEditor';
 import { NotifIcon, type NotificationItem } from './Notifications';
@@ -380,6 +380,7 @@ function ancestorZoom(el: HTMLElement | null): number {
 export function LockNotifCard({ item, onOpen, onDismiss }: { item: NotificationItem; onOpen: () => void; onDismiss: () => void }) {
     const [dx, setDx] = useState(0);
     const [exiting, setExiting] = useState(false);
+    const hidePreview = useStreamerHidden('previews');
     const start    = useRef({ x: 0, y: 0 });
     const zoom     = useRef(1);
     const dragging = useRef(false);
@@ -438,7 +439,9 @@ export function LockNotifCard({ item, onOpen, onDismiss }: { item: NotificationI
                     <span className="shrink-0 text-[13.5px] text-black/45">{item.time ?? t('shell.now','now')}</span>
                 </div>
                 {item.body && (
-                    <p className="mt-[3px] line-clamp-4 text-[15.5px] leading-snug text-black/[0.72]">{item.body}</p>
+                    <p className="mt-[3px] line-clamp-4 text-[15.5px] leading-snug text-black/[0.72]">
+                        {hidePreview ? t('shell.notificationHidden', 'Notification hidden') : item.body}
+                    </p>
                 )}
             </div>
         </button>

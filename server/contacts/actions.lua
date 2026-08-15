@@ -483,6 +483,17 @@ function actions.unblock(source, payload)
     return ok({ blocked = false })
 end
 
+---The requesting player's own block list, for the Blocked Contacts page. Read-only, and capped
+---at the same ceiling the block action enforces so the list can never outgrow what they could
+---have added.
+---@param source number
+---@return table
+function actions.blockedList(source)
+    local cid = player.getIdentifier(source)
+    if not cid then return fail('Player not found') end
+    return ok({ blocked = store.listBlocked(cid, MAX_BLOCKED) })
+end
+
 ---Whether a number is currently blocked by the requesting player. Read-only, scoped to their
 ---own block list.
 ---@param source number

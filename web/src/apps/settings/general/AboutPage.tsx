@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { t } from '@/i18n';
 import { formatPhone } from '@/lib/phone';
 import { useContacts } from '@/stores/contactsStore';
+import { useStreamerHidden } from '@/stores/themeStore';
+import { HIDDEN_TEXT } from '@/shell/streamerMode';
 import { GroupCard, ListGroup, ListRow } from '@/ui/ListGroup';
 import { SubPage } from '../SettingsSubPage';
 import { useVersionInfo } from './useVersionInfo';
@@ -13,8 +15,9 @@ export function AboutPage({ onBack }: { onBack: () => void }) {
     useEffect(() => { void load(); }, [load]);
     const [legalOpen, setLegalOpen] = useState(false);
 
+    const hideNumber = useStreamerHidden('number');
     const name   = card.name || myName || t('settings.myPhone', 'My Phone');
-    const number = myNumber ? formatPhone(myNumber) : '—';
+    const number = hideNumber ? HIDDEN_TEXT : (myNumber ? formatPhone(myNumber) : '—');
 
     return (
         <SubPage title={t('settings.about', 'About')} onBack={onBack} sub={legalOpen ? <LegalPage onBack={() => setLegalOpen(false)} /> : null}>

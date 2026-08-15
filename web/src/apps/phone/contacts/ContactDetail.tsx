@@ -13,7 +13,8 @@ import { useAsyncData } from '@/hooks/useAsyncData';
 import { requestOpenMessages } from '@/shell/deeplink';
 import { EditContact } from './EditContact';
 import { isNumberBlockedApi, setBlockedApi, shareContactApi } from '../contactsApi';
-import { formatPhone, type Contact } from '../data';
+import { type Contact } from '../data';
+import { useMaskedPhone } from '@/stores/themeStore';
 
 import { encodeWaypoint } from '@/lib/waypointCode';
 import { sendMessageApi } from '@/shared/chat/messagesApi';
@@ -31,6 +32,7 @@ export function ContactDetail({ contact, onBack, backLabel = t('phone.contacts',
     minimal?:          boolean;
     animateIn?:        boolean;
 }) {
+    const phoneFmt = useMaskedPhone();
     const [shown, setShown] = useState(!animateIn);
     const [current, setCurrent] = useState(contact);
     const [editing, setEditing] = useState(false);
@@ -119,7 +121,7 @@ export function ContactDetail({ contact, onBack, backLabel = t('phone.contacts',
                 <div className="mb-4 flex items-center rounded-[10px] bg-surface px-4 py-3">
                     <div className="min-w-0 flex-1">
                         <div className="text-[13px] text-black/80 dark:text-white/80">{t('phone.phoneLabel','phone')}</div>
-                        <div className="truncate text-[19px] text-ios-blue">{formatPhone(current.phone)}</div>
+                        <div className="truncate text-[19px] text-ios-blue">{phoneFmt(current.phone)}</div>
                     </div>
                     <button
                         type="button"
@@ -158,7 +160,7 @@ export function ContactDetail({ contact, onBack, backLabel = t('phone.contacts',
                         />
                         <Divider />
                         <ActionRow
-                            label={blocked ? t('phone.allowThisNumber','Allow This Number') : t('phone.stopCallsFromNumber','Stop Calls From This Number')}
+                            label={blocked ? t('phone.unblockContact','Unblock Contact') : t('phone.blockContact','Block Contact')}
                             tone="red"
                             onClick={onBlockRow}
                         />
@@ -203,7 +205,7 @@ export function ContactDetail({ contact, onBack, backLabel = t('phone.contacts',
 
             {confirmBlock && (
                 <AlertDialog
-                    title={blocked ? t('phone.allowThisNumber','Allow This Number') : t('phone.stopCallsFromNumber','Stop Calls From This Number')}
+                    title={blocked ? t('phone.unblockContact','Unblock Contact') : t('phone.blockContact','Block Contact')}
                     message={blocked
                         ? t('phone.unblockMessage','{name} will be able to call and message you again.',{ name: current.name })
                         : t('phone.blockMessage','{name} will no longer be able to call or message you.',{ name: current.name })}

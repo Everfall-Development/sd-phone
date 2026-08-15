@@ -93,6 +93,18 @@ export async function isNumberBlockedApi(number: string): Promise<boolean> {
     return !!r?.blocked;
 }
 
+export interface BlockedEntry { number: string; blockedAt: number }
+
+const DEV_BLOCKED: BlockedEntry[] = [
+    { number: '2135550142', blockedAt: Math.floor(Date.now() / 1000) - 7200 },
+];
+
+export async function blockedListApi(): Promise<BlockedEntry[]> {
+    if (!isFiveM) return DEV_BLOCKED.map(b => ({ ...b }));
+    const r = await apiData<{ blocked: BlockedEntry[] }>('sd-phone:contacts:blockedList');
+    return Array.isArray(r?.blocked) ? r.blocked : [];
+}
+
 export async function setBlockedApi(number: string, blocked: boolean): Promise<boolean> {
     if (!isFiveM) return blocked;
     const r = await apiCall<{ blocked: boolean }>(
