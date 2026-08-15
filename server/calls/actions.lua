@@ -21,10 +21,11 @@ local voice    = require 'bridge.server.voice'
 ---@type table Actions module; the table returned at end of file.
 local actions = {}
 
----The caller as the other leg may see them. A withheld caller ID blanks the name as well as the
----number: the name is resolved against the VIEWER's contacts, so passing it through would still
----announce a saved caller by name with the number hidden. The session's own caller record keeps
----the real values, so blocking and the caller's own screen are unaffected.
+---The caller as the other leg may see them. A server-owned group identity is shown in place of the
+---personal caller; otherwise a withheld caller ID blanks the name as well as the number. The name
+---is resolved against the VIEWER's contacts, so passing it through would still announce a saved
+---caller by name with the number hidden. The session's own caller record keeps the real values, so
+---blocking and the caller's own screen are unaffected.
 ---
 ---Both fields go out EMPTY rather than as some stand-in text. The phone already reads a missing
 ---number as a withheld one (`noCallerId`) and renders its own localised "No Caller ID" with a
@@ -32,8 +33,17 @@ local actions = {}
 ---@param s table session from `sessions`
 ---@return table party a caller-shaped table safe to show to the callee
 local function callerShownTo(s)
-    if not s.withheld then return s.caller end
-    return { src = s.caller.src, cid = s.caller.cid, name = '', number = '' }
+    local caller = s.caller
+    if s.callerDisplay then
+        return {
+            src = caller.src,
+            cid = caller.cid,
+            name = s.callerDisplay.name,
+            number = s.callerDisplay.number,
+        }
+    end
+    if not s.withheld then return caller end
+    return { src = caller.src, cid = caller.cid, name = '', number = '' }
 end
 
 ---Whether a player can be rung at all. A server that gates the phone behind an item should not
@@ -90,6 +100,43 @@ local function membersOf(s)
         for _, p in pairs(s.merged) do list[#list + 1] = p end
     end
     return list
+end
+
+---@param s table session from `sessions`
+---@param src number player server id
+---@return table|nil party
+local function partyForSource(s, src)
+    if s.caller.src == src then return s.caller end
+    if s.callee.src == src then return s.callee end
+    return s.merged and s.merged[src]
+end
+
+---@param s table session from `sessions`
+---@param party table session party
+---@param viewerSrc number|nil recipient source, used for an adder-specific invite identity
+---@return table party safe party copy for the original caller or this invite's recipient
+local function shownPartyFor(s, party, viewerSrc)
+    if not party then return nil end
+    if party.src == s.caller.src then return callerShownTo(s) end
+    if viewerSrc and s.merged then
+        local merged = s.merged[viewerSrc]
+        if merged and merged.addedBy == party.src and merged.addedWithheld then
+            return { src = party.src, cid = party.cid, name = '', number = '' }
+        end
+    end
+    return party
+end
+
+---@param s table session from `sessions`
+---@return table party safe identity of the member who placed the pending invite
+local function pendingAdderShownTo(s)
+    local pending = s.pending
+    local adder = partyForSource(s, pending.by) or s.caller
+    if adder.src == s.caller.src then return callerShownTo(s) end
+    if pending.adderWithheld then
+        return { src = adder.src, cid = adder.cid, name = '', number = '' }
+    end
+    return adder
 end
 
 ---True when `src` is one of a session's live parties, merged third parties included.
@@ -202,6 +249,16 @@ local function contactNameFor(citizenid, numberDigits)
         if digits(rows[i].phone) == numberDigits then return rows[i].name end
     end
     return nil
+end
+
+---@param s table session or group ring
+---@param viewerCid string|nil recipient citizenid
+---@return string|nil name safe display name for the original caller
+local function callerNameFor(s, viewerCid)
+    local shown = callerShownTo(s)
+    if shown.number == '' then return '' end
+    if s.callerDisplay then return shown.name end
+    return contactNameFor(viewerCid, shown.number)
 end
 
 ---Moves a player in/out of a call channel through the voice bridge.
@@ -369,7 +426,7 @@ local function eventCall(s)
     return {
         channel = s.channel,
         company = s.company,
-        caller  = eventParty(s.caller),
+        caller  = eventParty(callerShownTo(s)),
         callee  = eventParty(s.callee),
         merged  = merged,
     }
@@ -385,7 +442,7 @@ local function eventRing(ring)
     return {
         channel = ring.channel,
         company = ring.display.name,
-        caller  = eventParty(ring.caller),
+        caller  = eventParty(callerShownTo(ring)),
         targets = targets,
     }
 end
@@ -412,6 +469,7 @@ local function endCall(channel, reason, endedBy)
 
     local answered = s.state == 'active'
     local duration = (answered and s.startedAt) and (os.time() - s.startedAt) or 0
+    local shownCaller = callerShownTo(s)
 
     -- Merged third parties are torn down first and on their own terms: they joined partway
     -- through, so their recents row is timed from when THEY answered rather than the call's own
@@ -423,7 +481,7 @@ local function endCall(channel, reason, endedBy)
             voice.setPhoneSpeaker(msrc, false)
             voice.setPhoneSpeaker(msrc, false)
             TriggerClientEvent('sd-phone:client:call:ended', msrc, { channel = channel, reason = reason })
-            logCall(m.cid, m.addedNumber or s.caller.number, m.addedName or s.caller.name,
+            logCall(m.cid, m.addedNumber or shownCaller.number, m.addedName or shownCaller.name,
                     'incoming', m.joinedAt and (os.time() - m.joinedAt) or 0)
         end
     end
@@ -588,6 +646,7 @@ function actions.dial(source, payload)
                     location    = location,
                     boothNumber = dialed,
                     heard       = heard,
+                    withheld    = not settings.getCallerId(cid),
                     caller      = { src = source, cid = cid, name = player.getName(source), number = digits(myNumber) },
                 }
                 TriggerClientEvent('sd-phone:client:call:outgoing', source, {
@@ -679,9 +738,10 @@ local function pushRoster(s)
         local others = {}
         for _, p in ipairs(members) do
             if p.src ~= me.src and p.src ~= title.src then
+                local shown = shownPartyFor(s, p, me.src)
                 others[#others + 1] = {
-                    name   = contactNameFor(me.cid, p.number) or p.name,
-                    number = p.number,
+                    name   = shown.number ~= '' and (contactNameFor(me.cid, shown.number) or shown.name) or '',
+                    number = shown.number,
                 }
             end
         end
@@ -757,10 +817,26 @@ function actions.addCall(source, payload)
         by     = source,
     }
 
+    local addingParty = partyForSource(s, source) or s.caller
+    if addingParty.src == s.caller.src then
+        s.pending.adderWithheld = s.withheld
+    else
+        s.pending.adderWithheld = not settings.getCallerId(cid)
+    end
+    local shownAddingParty = pendingAdderShownTo(s)
+    local addingName
+    if shownAddingParty.src == s.caller.src then
+        addingName = callerNameFor(s, targetCid)
+    elseif shownAddingParty.number ~= '' then
+        addingName = contactNameFor(targetCid, shownAddingParty.number)
+    else
+        addingName = ''
+    end
+
     TriggerClientEvent('sd-phone:client:call:incoming', targetSrc, {
         channel = channel,
-        name    = contactNameFor(targetCid, myNumber),
-        number  = myNumber,
+        name    = addingName,
+        number  = shownAddingParty.number,
     })
     pushRoster(s)
 
@@ -846,6 +922,7 @@ function actions.answerBoothRing(source, channel)
         state        = 'active',
         startedAt    = os.time(),
         payphoneSide = 'callee',
+        withheld     = ring.withheld,
         caller       = ring.caller,
         callee       = { src = source, cid = cid, name = (config.Payphone and config.Payphone.CallerLabel) or 'Payphone', number = ring.boothNumber },
     }
@@ -856,7 +933,7 @@ function actions.answerBoothRing(source, channel)
 
     TriggerEvent('sd-phone:server:call:started', eventCall(sessions[ring.channel]))
 
-    return ok({ channel = ring.channel, number = ring.boothNumber, callerName = ring.caller.name })
+    return ok({ channel = ring.channel, number = ring.boothNumber, callerName = callerShownTo(ring).name })
 end
 
 ---Rings a set of recipients at once (server-side callers only). Unavailable recipients are
@@ -898,11 +975,17 @@ function actions.callGroup(source, targets, displayName, displayNumber)
     local channel = nextChannel
     nextChannel = nextChannel + 1
     local identity = displayIdentity(displayNumber)
+    -- A non-empty identity is supplied by the server caller (for example a business number), not
+    -- the player's personal SIM. It remains visible as the service identity when personal caller
+    -- ID is withheld; an ordinary group ring with no identity is masked like a direct call.
+    local callerDisplay = identity ~= '' and { name = displayName, number = identity } or nil
     groupRings[channel] = {
         channel = channel,
         caller  = { src = source, cid = cid, name = player.getName(source), number = myNumber },
         targets = ringTargets,
         display = { name = displayName, number = identity },
+        withheld = not settings.getCallerId(cid),
+        callerDisplay = callerDisplay,
     }
 
     TriggerClientEvent('sd-phone:client:call:outgoing', source, {
@@ -911,8 +994,8 @@ function actions.callGroup(source, targets, displayName, displayNumber)
     for tsrc, t in pairs(ringTargets) do
         TriggerClientEvent('sd-phone:client:call:incoming', tsrc, {
             channel = channel,
-            name    = contactNameFor(t.cid, myNumber),
-            number  = myNumber,
+            name    = callerNameFor(groupRings[channel], t.cid),
+            number  = callerShownTo(groupRings[channel]).number,
         })
     end
 
@@ -944,6 +1027,8 @@ function actions.accept(source, payload)
         sessions[channel] = {
             channel = channel, state = 'active', startedAt = os.time(),
             company = ring.display.name,
+            withheld = ring.withheld,
+            callerDisplay = ring.callerDisplay,
             caller  = ring.caller,
             callee  = {
                 src    = t.src, cid = t.cid,
@@ -972,12 +1057,16 @@ function actions.accept(source, payload)
     -- there is no state change to make - they simply come onto the channel everyone else is on.
     if s.pending and s.pending.src == source then
         local joiner = s.pending
+        local shownAddedBy = pendingAdderShownTo(s)
         s.pending = nil
         joiner.joinedAt = os.time()
         -- Who they answered, kept for their recents row: the conference outlives whoever added
         -- them, so reading it back off the session at teardown could name someone who has left.
-        joiner.addedName   = s.caller.name
-        joiner.addedNumber = s.caller.number
+        local addedBy = partyForSource(s, joiner.by) or s.caller
+        joiner.addedName   = shownAddedBy.name
+        joiner.addedNumber = shownAddedBy.number
+        joiner.addedBy     = addedBy.src
+        joiner.addedWithheld = joiner.by ~= s.caller.src and joiner.adderWithheld == true
 
         s.merged = s.merged or {}
         s.merged[source] = joiner
@@ -1068,10 +1157,10 @@ function actions.decline(source, payload)
     -- the invite is cancelled, and the members are told so the "adding..." row clears.
     if s.pending and s.pending.src == source then
         local declined = s.pending
+        local shownAdder = pendingAdderShownTo(s)
         s.pending = nil
         TriggerClientEvent('sd-phone:client:call:ended', source, { channel = channel, reason = 'declined' })
-        local shownCaller = callerShownTo(s)
-        logCall(declined.cid, shownCaller.number, shownCaller.name, 'missed', 0)
+        logCall(declined.cid, shownAdder.number, shownAdder.name, 'missed', 0)
         badges.pushApp(source, 'phone')
         pushRoster(s)
         return ok()
@@ -1100,7 +1189,8 @@ local function leaveConference(s, src, reason)
     setVoice(src, 0)
     dropSpeaker(src)
     TriggerClientEvent('sd-phone:client:call:ended', src, { channel = s.channel, reason = reason })
-    logCall(m.cid, m.addedNumber or s.caller.number, m.addedName or s.caller.name,
+    local shownCaller = callerShownTo(s)
+    logCall(m.cid, m.addedNumber or shownCaller.number, m.addedName or shownCaller.name,
             'incoming', m.joinedAt and (os.time() - m.joinedAt) or 0)
     pushRoster(s)
 
@@ -1180,8 +1270,8 @@ function actions.current(source)
                             number = ring.display.number, name = ring.display.name, elapsed = 0 })
             end
             return ok({ channel = rchannel, phase = 'incoming',
-                        number = ring.caller.number,
-                        name   = contactNameFor(player.getIdentifier(source), ring.caller.number), elapsed = 0 })
+                        number = callerShownTo(ring).number,
+                        name   = callerNameFor(ring, player.getIdentifier(source)), elapsed = 0 })
         end
         return ok(nil)
     end
@@ -1191,12 +1281,20 @@ function actions.current(source)
     -- Being rung into a live conference looks like any other incoming call from here: the adder
     -- is who the phone should name, and the channel is the one already in progress.
     if s.pending and s.pending.src == source then
-        local by = (isMember(s, s.pending.by) and s.pending.by == s.callee.src) and s.callee or s.caller
+        local shownBy = pendingAdderShownTo(s)
+        local pendingName
+        if shownBy.src == s.caller.src then
+            pendingName = callerNameFor(s, cid)
+        elseif shownBy.number ~= '' then
+            pendingName = contactNameFor(cid, shownBy.number)
+        else
+            pendingName = ''
+        end
         return ok({
             channel = channel,
             phase   = 'incoming',
-            number  = by.number,
-            name    = contactNameFor(cid, by.number),
+            number  = shownBy.number,
+            name    = pendingName,
             elapsed = 0,
         })
     end
@@ -1206,6 +1304,7 @@ function actions.current(source)
     -- A merged third party has no opposite leg of their own, so they are titled by whoever's call
     -- they joined - the same party their ring named.
     local peer = merged and s.caller or (meCaller and s.callee or s.caller)
+    local shownPeer = shownPartyFor(s, peer)
     local phase = s.state == 'active' and 'active' or (meCaller and 'outgoing' or 'incoming')
     local elapsed = (s.state == 'active' and s.startedAt) and (os.time() - s.startedAt) or 0
 
@@ -1214,15 +1313,20 @@ function actions.current(source)
     local others = {}
     for _, p in ipairs(membersOf(s)) do
         if p.src ~= source and p.src ~= peer.src then
-            others[#others + 1] = { name = contactNameFor(cid, p.number) or p.name, number = p.number }
+            local shown = shownPartyFor(s, p, source)
+            others[#others + 1] = {
+                name = shown.number ~= '' and (contactNameFor(cid, shown.number) or shown.name) or '',
+                number = shown.number,
+            }
         end
     end
 
     return ok({
         channel = channel,
         phase   = phase,
-        number  = peer.number,
-        name    = contactNameFor(cid, peer.number),
+        number  = shownPeer.number,
+        name    = shownPeer.src == s.caller.src and callerNameFor(s, cid)
+                    or contactNameFor(cid, shownPeer.number),
         elapsed = elapsed,
         video   = s.video == true,
         others  = others,

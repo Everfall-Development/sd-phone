@@ -225,25 +225,46 @@ end
 
 -- Exercise the call session's speaker, business-party identity, accept, hangup, and missing
 -- session paths with the real actions module and only its framework/database edges stubbed.
+local phoneNumbers = {
+    ['cid-1'] = '5550001',
+    ['cid-2'] = '5550002',
+    ['cid-3'] = '5550003',
+    ['cid-4'] = '5550004',
+}
+local callerIds = { ['cid-1'] = false }
+local numberOwners = {}
+for cid, number in pairs(phoneNumbers) do numberOwners[number] = cid end
+local callRows = {}
+local blockedChecks = {}
 package.preload['bridge.server.player'] = function()
     return {
         getIdentifier = function(source) return 'cid-' .. tostring(source) end,
         getName = function(source) return 'Player ' .. tostring(source) end,
+        getAnySourceByIdentifier = function(cid)
+            return tonumber(tostring(cid):match('cid%-(%d+)'))
+        end,
     }
 end
 package.preload['server.settings.store'] = function()
     return {
         isAirplane = function() return false end,
-        ensurePhoneNumber = function() return '5550001' end,
-        getPhoneNumber = function(cid) return cid == 'cid-2' and '5550002' or '5550001' end,
+        ensurePhoneNumber = function(cid) return phoneNumbers[cid] end,
+        getPhoneNumber = function(cid) return phoneNumbers[cid] end,
+        getCitizenByNumber = function(number) return numberOwners[number] end,
+        getCallerId = function(cid) return callerIds[cid] ~= false end,
     }
 end
 package.preload['server.contacts.store'] = function()
     return {
         listContacts = function() return {} end,
-        insertCall = function() end,
+        insertCall = function(_, citizenid, row)
+            callRows[#callRows + 1] = { citizenid = citizenid, row = row }
+        end,
         pruneCalls = function() end,
-        isBlocked = function() return false end,
+        isBlocked = function(citizenid, number)
+            blockedChecks[#blockedChecks + 1] = { citizenid = citizenid, number = number }
+            return false
+        end,
         newId = function() return 'call-row' end,
     }
 end
@@ -293,7 +314,10 @@ local clientEvents = {}
 TriggerClientEvent = function(name, source, payload)
     clientEvents[#clientEvents + 1] = { name = name, source = source, payload = payload }
 end
-TriggerEvent = function() end
+local serverEvents = {}
+TriggerEvent = function(name, payload, source)
+    serverEvents[#serverEvents + 1] = { name = name, payload = payload, source = source }
+end
 CreateThread = function() end
 SetTimeout = function() end
 GetPlayers = function() return {} end
@@ -306,6 +330,23 @@ package.loaded['server.settings.store'] = nil
 package.loaded['server.contacts.store'] = nil
 package.loaded['server.calls.actions'] = nil
 local calls = require 'server.calls.actions'
+
+local function latestClientEvent(name, source, channel)
+    for i = #clientEvents, 1, -1 do
+        local event = clientEvents[i]
+        if event.name == name and event.source == source
+            and (not channel or event.payload.channel == channel) then
+            return event
+        end
+    end
+end
+
+local function latestServerEvent(name)
+    for i = #serverEvents, 1, -1 do
+        if serverEvents[i].name == name then return serverEvents[i] end
+    end
+end
+
 local ring = calls.callGroup(1, { { src = 2, cid = 'cid-2' } }, 'Public Relations', 'business:public_relations')
 assert(ring.success == true)
 assert(dialLimitChecks == 1 and moderationChecks == 1, 'group calls must share dial limits and moderation')
@@ -315,6 +356,13 @@ for _, event in ipairs(clientEvents) do
     if event.name == 'sd-phone:client:call:outgoing' and event.source == 1 then outgoing = event.payload end
 end
 assert(outgoing and outgoing.number == 'business:public_relations')
+local groupIncoming = latestClientEvent('sd-phone:client:call:incoming', 2, channel)
+assert(groupIncoming and groupIncoming.payload.number == 'business:public_relations')
+assert(groupIncoming.payload.name == 'Public Relations')
+assert(calls.current(2).data.number == 'business:public_relations')
+local groupStarted = latestServerEvent('sd-phone:server:call:started')
+assert(groupStarted and groupStarted.payload.caller.number == 'business:public_relations')
+assert(groupStarted.payload.caller.number ~= '5550001')
 assert(calls.current(1).data.number == 'business:public_relations')
 assert(pcall(calls.setSpeaker, 1, true))
 assert(pcall(calls.setSpeaker, 1, false))
@@ -324,6 +372,76 @@ assert(pcall(calls.setSpeaker, 1, true))
 assert(pcall(calls.setSpeaker, 1, false))
 assert(calls.hangup(1, { channel = channel }).success == true)
 assert(calls.current(1).data == nil)
+
+-- Caller-ID off is a recipient-facing privacy boundary. Keep the raw caller in the server session
+-- for blocking/ownership decisions, but never send it through current(), conference events,
+-- recents, group rings without a server-owned display identity, or lifecycle payloads.
+clientEvents = {}
+serverEvents = {}
+callRows = {}
+local anonymousRing = calls.callGroup(1, { { src = 2, cid = 'cid-2' } }, 'Dispatch')
+assert(anonymousRing.success == true)
+local anonymousChannel = anonymousRing.data.channel
+local anonymousIncoming = latestClientEvent('sd-phone:client:call:incoming', 2, anonymousChannel)
+assert(anonymousIncoming and anonymousIncoming.payload.number == '' and anonymousIncoming.payload.name == '')
+assert(calls.current(2).data.number == '' and calls.current(2).data.name == '')
+local anonymousStarted = latestServerEvent('sd-phone:server:call:started')
+assert(anonymousStarted and anonymousStarted.payload.caller.number == '' and anonymousStarted.payload.caller.name == '')
+assert(calls.decline(2, { channel = anonymousChannel }).success == true)
+local anonymousEnded = latestServerEvent('sd-phone:server:call:ended')
+assert(anonymousEnded and anonymousEnded.payload.caller.number == '' and anonymousEnded.payload.caller.name == '')
+
+clientEvents = {}
+serverEvents = {}
+callRows = {}
+blockedChecks = {}
+local direct = calls.dial(1, { number = '5550002' })
+assert(direct.success == true)
+local directChannel = direct.data.channel
+assert(blockedChecks[#blockedChecks].citizenid == 'cid-2' and blockedChecks[#blockedChecks].number == '5550001')
+local directIncoming = latestClientEvent('sd-phone:client:call:incoming', 2, directChannel)
+assert(directIncoming and directIncoming.payload.number == '' and directIncoming.payload.name == '')
+assert(calls.current(2).data.number == '' and calls.current(2).data.name == '')
+assert(calls.current(1).data.number == '5550002')
+local directStarted = latestServerEvent('sd-phone:server:call:started')
+assert(directStarted and directStarted.payload.caller.number == '' and directStarted.payload.caller.name == '')
+assert(directStarted.payload.caller.citizenid == 'cid-1')
+assert(calls.accept(2, { channel = directChannel }).success == true)
+local directAnswered = latestServerEvent('sd-phone:server:call:answered')
+assert(directAnswered and directAnswered.payload.caller.number == '' and directAnswered.payload.caller.name == '')
+
+callerIds['cid-2'] = false
+assert(calls.addCall(2, { number = '5550003' }).success == true)
+local addedIncoming = latestClientEvent('sd-phone:client:call:incoming', 3, directChannel)
+assert(addedIncoming and addedIncoming.payload.number == '' and addedIncoming.payload.name == '')
+local addedCurrent = calls.current(3).data
+assert(addedCurrent.number == '' and addedCurrent.name == '')
+assert(calls.accept(3, { channel = directChannel }).success == true)
+local merged = latestServerEvent('sd-phone:server:call:merged')
+assert(merged and merged.payload.caller.number == '' and merged.payload.caller.name == '')
+for _, event in ipairs(clientEvents) do
+    if event.name == 'sd-phone:client:call:roster' and (event.source == 2 or event.source == 3) then
+        for _, other in ipairs(event.payload.others or {}) do
+            assert(other.number ~= '5550001' and other.name ~= 'Player 1')
+            if event.source == 3 then
+                assert(other.number ~= '5550002' and other.name ~= 'Player 2')
+            end
+        end
+    end
+end
+assert(calls.current(3).data.number == '' and calls.current(3).data.name == '')
+for _, other in ipairs(calls.current(3).data.others or {}) do
+    assert(other.number ~= '5550002' and other.name ~= 'Player 2')
+end
+assert(calls.hangup(1, { channel = directChannel }).success == true)
+local directEnded = latestServerEvent('sd-phone:server:call:ended')
+assert(directEnded and directEnded.payload.caller.number == '' and directEnded.payload.caller.name == '')
+for _, row in ipairs(callRows) do
+    if row.citizenid == 'cid-2' or row.citizenid == 'cid-3' then
+        assert(row.row.number == '' and (row.row.name == '' or row.row.name == nil))
+    end
+end
+
 moderationMuted = true
 local mutedRing = calls.callGroup(1, { { src = 2, cid = 'cid-2' } }, 'Public Relations', 'business:public_relations')
 assert(mutedRing.success == false and mutedRing.message == 'Calls muted')
