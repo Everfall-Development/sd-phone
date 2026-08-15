@@ -44,12 +44,18 @@ import { SetupFlow }   from '@/shell/SetupFlow';
 import type { SetupResult } from '@/shell/SetupFlow';
 import { isKeyboardCaptured } from '@/hooks/useKeyboardCapture';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
+import { t } from '@/i18n';
 import { isGameClock, useGameClockStore } from '@/stores/gameClockStore';
 import { clearSessionState, seedSessionState } from '@/hooks/useSessionState';
 import { onOpenMail, onOpenMaps, onOpenMessages, requestOpenMail } from '@/shell/deeplink';
 import { fetchNui, isFiveM } from '@/core/nui';
 import { apiData } from '@/core/api';
-import { usePhoneReset, type PhoneResetScope } from '@/core/phoneReset';
+import {
+    completePhoneReset,
+    failPhoneReset,
+    usePhoneReset,
+    type PhoneResetScope,
+} from '@/core/phoneReset';
 import { resetAuth } from '@/stores/authStore';
 import { setMailDomain } from '@/core/accountsApi';
 import { setMusicSources } from '@/apps/music/data';
@@ -1412,16 +1418,24 @@ function AppContent() {
         if (!resetNonce) return;
         const scope = usePhoneReset.getState().scope;
         let cancelled = false;
-        void (async () => {
-            const res = await fetchNui<{ success?: boolean }>('sd-phone:settings:factoryReset', { scope })
-                .catch(() => null);
-            if (cancelled || (isFiveM && res?.success !== true)) return;
-            setIsClosing(true);
-            await new Promise(resolve => window.setTimeout(resolve, APP_CLOSE_MS));
-            if (cancelled) return;
-            applyLocalReset(scope);
-        })();
-        return () => { cancelled = true; };
+        let closeTimer: number | undefined;
+        void fetchNui<{ success?: boolean; message?: string }>('sd-phone:settings:factoryReset', { scope })
+            .catch(() => null)
+            .then(res => {
+                if (cancelled) return;
+                if (isFiveM && res?.success !== true) {
+                    failPhoneReset(res?.message ?? t('settings.resetFailed', 'Could not reset this phone'));
+                    return;
+                }
+                setIsClosing(true);
+                closeTimer = window.setTimeout(() => {
+                    if (!cancelled) applyLocalReset(scope);
+                }, APP_CLOSE_MS);
+            });
+        return () => {
+            cancelled = true;
+            if (closeTimer !== undefined) window.clearTimeout(closeTimer);
+        };
     }, [resetNonce]);
 
     function applyLocalReset(scope: PhoneResetScope) {
@@ -1468,6 +1482,7 @@ function AppContent() {
             setSetupHello(true);
             setSetup({ completed: !device.setup });
         }
+        completePhoneReset();
     }
 
     // The keep-alive deck is rendered ABOVE the shell (in both the closed and open

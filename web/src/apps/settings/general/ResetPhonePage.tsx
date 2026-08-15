@@ -1,10 +1,10 @@
-import { useRef, useState, useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 
 import { t } from '@/i18n';
 import { apiData } from '@/core/api';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { AlertDialog } from '@/ui/AlertDialog';
-import { requestPhoneReset, type PhoneResetScope } from '@/core/phoneReset';
+import { requestPhoneReset, usePhoneReset, type PhoneResetScope } from '@/core/phoneReset';
 import { ListGroup, ListRow } from '@/ui/ListGroup';
 import { SubPage } from '../SettingsSubPage';
 
@@ -53,7 +53,8 @@ async function fetchResetDeadlines(): Promise<Deadlines | null> {
 export function ResetPhonePage({ onBack }: { onBack: () => void }) {
     const [confirm, setConfirm] = useState<PhoneResetScope | null>(null);
     const [localDeadlines, setLocalDeadlines] = useState<Deadlines>(NONE);
-    const armed = useRef(false);
+    const resetPending = usePhoneReset(state => state.pending);
+    const resetError = usePhoneReset(state => state.error);
     const now = useSyncExternalStore(subscribeNow, getNowSnapshot, getNowSnapshot);
     const { data: serverDeadlines, loading, settled } = useAsyncData(fetchResetDeadlines, []);
     const deadlines: Deadlines = {
@@ -67,8 +68,7 @@ export function ResetPhonePage({ onBack }: { onBack: () => void }) {
     }
 
     function run(scope: PhoneResetScope, windowMs: number) {
-        if (armed.current) return;
-        armed.current = true;
+        if (resetPending) return;
         setConfirm(null);
         setLocalDeadlines(deadlines => ({ ...deadlines, [scope]: Date.now() + windowMs }));
         requestPhoneReset(scope);
@@ -88,7 +88,7 @@ export function ResetPhonePage({ onBack }: { onBack: () => void }) {
                         label={t('settings.resetAllSettings', 'Reset All Settings')}
                         sub={subFor('settings')}
                         destructive
-                        disabled={loading || unavailable || leftFor('settings') > 0}
+                        disabled={loading || unavailable || resetPending || leftFor('settings') > 0}
                         onPress={() => setConfirm('settings')}
                     />
                 </ListGroup>
@@ -98,10 +98,16 @@ export function ResetPhonePage({ onBack }: { onBack: () => void }) {
                         label={t('settings.eraseAllContent', 'Reset Phone Fully')}
                         sub={subFor('erase')}
                         destructive
-                        disabled={loading || unavailable || leftFor('erase') > 0}
+                        disabled={loading || unavailable || resetPending || leftFor('erase') > 0}
                         onPress={() => setConfirm('erase')}
                     />
                 </ListGroup>
+
+                {resetError && (
+                    <p role="alert" className="px-7 text-[14px] font-medium text-ios-red">
+                        {resetError}
+                    </p>
+                )}
             </SubPage>
 
             {confirm === 'settings' && (
