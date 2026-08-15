@@ -105,8 +105,8 @@ export function Composer({ me, onClose, onPost }: {
                         onFocus={() => setEmojiOpen(false)}
                         maxLength={MAX_POST_LENGTH}
                         placeholder={t('squawk.whatsHappening', "What's on your mind?")}
-                        className="min-h-[110px] flex-none resize-none bg-transparent pt-1 text-[17px] leading-snug text-label outline-none placeholder:font-semibold placeholder:text-ios-gray"
-                        style={{ caretColor: BLUE, outline: 'none', boxShadow: 'none' }}
+                        className="min-h-[110px] flex-none resize-none bg-transparent pt-1 text-[17px] leading-snug text-label outline-none placeholder:font-semibold placeholder:text-ios-gray focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1d9bf0]"
+                        style={{ caretColor: BLUE }}
                     />
 
                     {images.length > 0 && (

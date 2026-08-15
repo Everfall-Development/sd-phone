@@ -104,7 +104,7 @@ export function ResetPhonePage({ onBack }: { onBack: () => void }) {
                 </ListGroup>
 
                 {resetError && (
-                    <p role="alert" className="px-7 text-[14px] font-medium text-ios-red">
+                    <p role="alert" className="px-7 text-[14px] font-medium text-[#a80f1c] dark:text-[#ff6961]">
                         {resetError}
                     </p>
                 )}
