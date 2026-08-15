@@ -670,11 +670,14 @@ end)
 ---Erase HAS to clear setup_done server-side: the client re-arming the wizard locally is undone
 ---by the very next settings:get while the stored flag still reads done.
 lib.callback.register('sd-phone:server:settings:factoryReset', function(source, payload)
+    local scope = type(payload) == 'table' and payload.scope or nil
+    if scope ~= 'settings' and scope ~= 'erase' then
+        return { success = false, message = 'Invalid reset scope' }
+    end
     local cid = player.getIdentifier(source)
     if not cid then return { success = false, message = 'Player not found' } end
-    payload = type(payload) == 'table' and payload or {}
-    local eraseAll = payload.scope ~= 'settings'
-    local limit = RESET_LIMITS[eraseAll and 'erase' or 'settings']
+    local eraseAll = scope == 'erase'
+    local limit = RESET_LIMITS[scope]
     if not util.cooldown(cid, limit.key, limit.window) then
         return {
             success = false,
@@ -682,14 +685,22 @@ lib.callback.register('sd-phone:server:settings:factoryReset', function(source, 
             retryIn = util.cooldownLeft(cid, limit.key, limit.window),
         }
     end
+    local retainedNumber = eraseAll and store.getPhoneNumber(cid) or nil
     dropPendingWrites(cid)
-    store.resetSettings(cid, deviceOf(payload), eraseAll and 'erase' or 'settings')
+    if eraseAll then
+        local wipe = require('server.admin.wipe')
+        local ok, err = pcall(wipe.wipeDeviceContent, cid, retainedNumber)
+        if not ok then
+            print(('[sd-phone:settings] factory reset content wipe failed for %s: %s'):format(cid, tostring(err)))
+            return { success = false, message = 'Could not erase phone content' }
+        end
+    end
+    store.resetSettings(cid, deviceOf(payload), scope)
     store.resetNotifPrefs(cid)
     require('server.services.store').resetFor(cid)
     require('server.wifi.store').resetFor(cid)
     require('server.bluetooth.store').resetFor(cid)
     if eraseAll then
-        require('server.admin.wipe').wipeDeviceContent(cid)
         accounts.signOutEverywhere(cid)
     end
     badges.push(source)

@@ -10,6 +10,20 @@ local function del(sql, params)
     return ok and (tonumber(res) or 0) or 0
 end
 
+---Runs the Settings > Reset Phone Fully deletes atomically and propagates every database error.
+---The legacy admin wipes intentionally keep using `del`, whose best-effort behavior is part of
+---their existing contract; this strict helper is scoped to the new device-content path only.
+---@param queries table[] parameterized DELETE statements
+---@return integer statements number of committed DELETE statements
+local function transactionStrict(queries)
+    local ok, result = pcall(function() return MySQL.transaction.await(queries) end)
+    if not ok then error(('device-content wipe transaction failed: %s'):format(tostring(result)), 0) end
+    if result ~= true then
+        error(('device-content wipe transaction failed: expected true, got %s'):format(tostring(result)), 0)
+    end
+    return #queries
+end
+
 -- Everything a character owns under a single citizenid-shaped column, deleted with WHERE <col> = ?.
 ---@type table<integer, string[]> Per-character tables: { table, citizenid column }.
 local CID_SINGLE = {
@@ -379,14 +393,31 @@ local DEVICE_CONTENT = {
 ---row, saved passwords, groups and everything of value untouched. Album items go first: they key
 ---on album id rather than citizenid, so deleting the albums first would orphan them.
 ---@param cid string framework per-character id
----@return integer rows total rows deleted
-local function wipeDeviceContent(cid)
+---@param phoneNumber string|nil retained phone number whose queued messages must be discarded
+---@return integer statements number of committed DELETE statements
+local function wipeDeviceContent(cid, phoneNumber)
     if not cid or cid == '' then return 0 end
-    local rows = del('DELETE FROM phone_photo_album_items WHERE album_id IN (SELECT id FROM phone_photo_albums WHERE citizenid = ?)', { cid })
-    for _, entry in ipairs(DEVICE_CONTENT) do
-        rows = rows + del(('DELETE FROM %s WHERE %s = ?'):format(entry[1], entry[2]), { cid })
+
+    local queries = {
+        {
+            query = 'DELETE FROM phone_photo_album_items WHERE album_id IN (SELECT id FROM phone_photo_albums WHERE citizenid = ?)',
+            values = { cid },
+        },
+    }
+    if phoneNumber and phoneNumber ~= '' then
+        queries[#queries + 1] = {
+            query = 'DELETE FROM phone_pending_messages WHERE number = ?',
+            values = { phoneNumber },
+        }
     end
-    return rows
+    for _, entry in ipairs(DEVICE_CONTENT) do
+        queries[#queries + 1] = {
+            query = ('DELETE FROM %s WHERE %s = ?'):format(entry[1], entry[2]),
+            values = { cid },
+        }
+    end
+
+    return transactionStrict(queries)
 end
 
 return { wipeCid = wipeCid, wipeAccountsFor = wipeAccountsFor, wipeDeviceContent = wipeDeviceContent }
