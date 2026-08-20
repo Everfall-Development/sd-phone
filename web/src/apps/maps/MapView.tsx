@@ -93,6 +93,10 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     const [scale, setScale] = useState(1);
     const [tx, setTx] = useState(0);
     const [ty, setTy] = useState(0);
+    const viewRef = useRef({ scale: 1, tx: 0, ty: 0 });
+    viewRef.current.scale = scale;
+    viewRef.current.tx = tx;
+    viewRef.current.ty = ty;
     const [vw, setVw] = useState(0);
     const [vh, setVh] = useState(0);
     const [dragging, setDragging] = useState(false);
@@ -119,7 +123,7 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         : 1;
 
     const stepScale = (dir: 1 | -1): number => {
-        const lvl = Math.log2(scale);
+        const lvl = Math.log2(viewRef.current.scale);
         if (dir > 0) {
             const up = Math.floor(lvl + 1e-6) + 1;
             return up <= 0 ? 1 : 2 ** Math.min(maxLevelFor(width, height), up);
@@ -149,23 +153,33 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         const z = ancestorZoom(vp);
         const cx = (clientX / z - rect.left) - vw / 2;
         const cy = (clientY / z - rect.top)  - vh / 2;
-        setScale(prevS => {
-            const s = Math.max(minScale, Math.min(maxScaleFor(width, height), nextScale));
-            const ratio = s / prevS;
-            setTx(prevTx => clampPan(cx - (cx - prevTx) * ratio, ty, s).x);
-            setTy(prevTy => clampPan(tx, cy - (cy - prevTy) * ratio, s).y);
-            return s;
-        });
-    }, [clampPan, tx, ty, vw, vh, minScale, width, height]);
+        const view = viewRef.current;
+        const s = Math.max(minScale, Math.min(maxScaleFor(width, height), nextScale));
+        if (s === view.scale) return;
+        const ratio = s / view.scale;
+        const c = clampPan(cx - (cx - view.tx) * ratio, cy - (cy - view.ty) * ratio, s);
+        viewRef.current = { scale: s, tx: c.x, ty: c.y };
+        setScale(s); setTx(c.x); setTy(c.y);
+    }, [clampPan, vw, vh, minScale, width, height]);
 
     const lastWheelStep = useRef(0);
-    function onWheel(e: React.WheelEvent) {
+
+    const wheelRef = useRef<(e: WheelEvent) => void>(() => {});
+    wheelRef.current = (e: WheelEvent) => {
         e.preventDefault();
         const now = performance.now();
         if (now - lastWheelStep.current < 160) return;
         lastWheelStep.current = now;
         zoomAround(e.clientX, e.clientY, stepScale(e.deltaY < 0 ? 1 : -1));
-    }
+    };
+
+    useEffect(() => {
+        const el = viewportRef.current;
+        if (!el) return;
+        const onWheel = (e: WheelEvent) => wheelRef.current(e);
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => el.removeEventListener('wheel', onWheel);
+    }, []);
     function buttonZoom(dir: 1 | -1) {
         const vp = viewportRef.current;
         if (!vp) return;
@@ -377,7 +391,6 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
             ref={viewportRef}
             className="relative h-full w-full touch-none overflow-hidden"
             style={{ background: style.bg, transition: 'background 400ms ease', cursor: dragging ? 'grabbing' : placing ? 'crosshair' : 'grab' }}
-            onWheel={onWheel}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}

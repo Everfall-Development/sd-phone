@@ -617,8 +617,8 @@ function AuthForm({ mode, appName, icon, theme, fields, notice, myNumber, myEmai
             setFieldErrors(errs);
             setError(null);
             const el = inputs.current[firstBad.key];
-            el?.scrollIntoView({ block: 'center' });
-            el?.focus();
+            el?.scrollIntoView({ block: 'nearest' });
+            el?.focus({ preventScroll: true });
             return;
         }
         setFieldErrors({});
@@ -632,12 +632,12 @@ function AuthForm({ mode, appName, icon, theme, fields, notice, myNumber, myEmai
                 if (key) {
                     setFieldErrors({ [key]: res.message ?? t('common.pleaseCheckField', 'Please check this field') });
                     const el = inputs.current[key];
-                    el?.scrollIntoView({ block: 'center' });
-                    el?.focus();
+                    el?.scrollIntoView({ block: 'nearest' });
+                    el?.focus({ preventScroll: true });
                 } else if (!isCreate) {
                     setFieldErrors(Object.fromEntries(shown.map(f => [f.key, t('common.notValidLogin', 'Not a valid login')])));
                     const pw = shown.find(f => f.type === 'password');
-                    if (pw) inputs.current[pw.key]?.focus();
+                    if (pw) inputs.current[pw.key]?.focus({ preventScroll: true });
                 } else {
                     setError(res.message ?? t('common.somethingWentWrong', 'Something went wrong. Please try again.'));
                 }

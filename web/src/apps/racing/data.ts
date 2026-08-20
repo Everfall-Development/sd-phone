@@ -83,6 +83,7 @@ export interface TrackRecord {
     timeSec:   number;
     vehicle:   string;
     class:     RaceClass;
+    solo?:     boolean;
     at:        number;
 }
 
@@ -206,6 +207,8 @@ export interface HudState {
     racers:             Standing[];
     pos:                number;
     totalRacers:        number;
+    pbSectors?:         number[];
+    pbLapMs?:           number;
 }
 
 export type LineupState = 'ready' | 'vehicle' | 'turn' | 'backup';

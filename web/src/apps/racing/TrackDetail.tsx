@@ -160,7 +160,12 @@ function RecordRow({ record, narrow, onRacer }: { record: TrackRecord; narrow: b
             {record.racer}
         </button>
     );
-    const badge = <Pill tone={CLASS_TONE[record.class] ?? 'blue'}>{record.class}</Pill>;
+    const badge = (
+        <>
+            <Pill tone={CLASS_TONE[record.class] ?? 'blue'}>{record.class}</Pill>
+            {record.solo && <Pill tone="grey">{t('racing.soloRun', 'Solo')}</Pill>}
+        </>
+    );
 
     if (narrow) {
         return (

@@ -18,6 +18,8 @@ import { SignRequestLayer, type SignRequestData } from '@/apps/documents/SignReq
 import { ControlCenter, ControlCenterHotzone } from '@/shell/ControlCenter';
 import { NotificationCenter, NotificationCenterHotzone } from '@/shell/NotificationCenter';
 import { MusicProvider, useMusic } from '@/apps/music/MusicContext';
+import { LockscreenWidgetsProvider } from '@/shell/LockscreenWidgetsContext';
+import '@/apps/mdt/cameraPublisher';
 import { ryDevDataHidden, ryDevToggleData } from '@/apps/ryde/data';
 import { asAppId, isPreviewApp, preloadAllApps, preloadApp, setPreloadPaused, type AppId } from '@/shell/appRegistry';
 import { AppSwitcher } from '@/shell/AppSwitcher';
@@ -136,6 +138,7 @@ function saveSetup(s: SetupSaved): void {
 interface ViewState {
     apps:          AppDef[];
     dock:          string[];
+    firstPageApps: number;
     wallpaperHome: string;
     wallpaperLock: string;
     carrier:       string;
@@ -192,16 +195,18 @@ function isTextEntry(el: EventTarget | null): boolean {
 export function App() {
     return (
         <ThemeProvider>
-            <MusicProvider>
-                <BootReplayButton />
-                {/* Above AppContent, which unmounts the whole shell (and CallLayer with it) while
-                    the phone is closed: the call has to be heard and islanded either way. */}
-                {!demoAdminOnly && device.calls && <CallSession />}
-                {!demoAdminOnly && <AppContent />}
-                {device.admin && <AdminPanel />}
-                {!demoAdminOnly && device.payphone && <PayphoneUI />}
-                {!demoAdminOnly && device.id === 'phone' && <RaceOverlay />}
-            </MusicProvider>
+            <LockscreenWidgetsProvider>
+                <MusicProvider>
+                    <BootReplayButton />
+                    {/* Above AppContent, which unmounts the whole shell (and CallLayer with it) while
+                        the phone is closed: the call has to be heard and islanded either way. */}
+                    {!demoAdminOnly && device.calls && <CallSession />}
+                    {!demoAdminOnly && <AppContent />}
+                    {device.admin && <AdminPanel />}
+                    {!demoAdminOnly && device.payphone && <PayphoneUI />}
+                    {!demoAdminOnly && device.id === 'phone' && <RaceOverlay />}
+                </MusicProvider>
+            </LockscreenWidgetsProvider>
         </ThemeProvider>
     );
 }
@@ -410,6 +415,7 @@ function AppContent() {
             if (prevKey && prevKey !== key) switched = true;
             lastSimNumberRef.current = key;
             if (!prevKey) {
+                useThemeStore.getState().hydrate();
                 // First profile application this NUI session (fresh rejoin): collect banners
                 // parked for this phone by pocket buzzes that arrived before its first open.
                 const parked = lockNotifBankRef.current[key];
@@ -459,6 +465,7 @@ function AppContent() {
         const nextView: ViewState = {
             apps:          data.apps,
             dock:          data.dock,
+            firstPageApps: typeof data.firstPageApps === 'number' ? data.firstPageApps : 12,
             wallpaperHome: data.wallpaper.home,
             wallpaperLock: data.wallpaper.lock,
             carrier:       data.carrier,
@@ -652,6 +659,16 @@ function AppContent() {
     }, []);
 
     const handleSwitcherDismiss  = useCallback(() => setSwitcherClosing(true), []);
+
+    const escapeLadder = useCallback(() => {
+        if (switcherOpen)            { setSwitcherClosing(true); return; }
+        if (currentApp && !isClosing) { handleCloseApp();        return; }
+        void fetchNui('sd-phone:close');
+        setLeaving(true);
+    }, [switcherOpen, currentApp, isClosing, handleCloseApp]);
+
+    useNuiEvent('sd-phone:escape', escapeLadder);
+
     const handleSwitcherReady    = useCallback(() => setSwitcherReady(true), []);
     const handleSwitcherDone     = useCallback(() => {
         if (!switcherClosing) return;
@@ -1335,10 +1352,8 @@ function AppContent() {
             ));
 
             if (e.key === 'Escape') {
-                if (switcherOpen)            { handleSwitcherDismiss(); return; }
-                if (currentApp && !isClosing) { handleCloseApp();        return; }
-                void fetchNui('sd-phone:close');
-                setLeaving(true);
+                escapeLadder();
+                return;
             }
             if ((e.key === 'l' || e.key === 'L') && !locked && !typing) {
                 setLocked(true);
@@ -1351,7 +1366,7 @@ function AppContent() {
         }
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [locked, currentApp, isClosing, switcherOpen, handleCloseApp, handleSwitcherDismiss]);
+    }, [locked, escapeLadder]);
 
     useEffect(() => {
         if (!isFiveM) return;
@@ -1675,12 +1690,14 @@ function AppContent() {
                                 key={`${homeDensity}:${dockStyle}`}
                                 apps={effectiveApps}
                                 dock={view.dock}
+                                firstPageApps={view.firstPageApps}
                                 wallpaper={homeWallpaper}
                                 onLaunchApp={launchApp}
                                 onUninstall={handleUninstallApp}
                                 savedLayout={homeLayout}
                                 onLayoutChange={handleSaveLayout}
                                 onEditingChange={setHomeEditing}
+                                homeActive={currentApp === null}
                                 bloomOnMount={currentApp === null}
                             />
                         </div>

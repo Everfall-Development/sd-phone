@@ -112,6 +112,8 @@ function store.ensureSchema()
             racers      INT          NULL,
             mmr_delta   INT          NULL,
             mmr_after   INT          NULL,
+            best_lap_ms INT          NULL,
+            sectors     VARCHAR(64)  NULL,
             dnf         TINYINT(1)   NOT NULL DEFAULT 0,
             ranked      TINYINT(1)   NOT NULL DEFAULT 0,
             finished_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -646,13 +648,13 @@ end
 
 ---Records one finished race, DNFs included. The caller has already derived the elapsed time and the
 ---rating change; nothing here recomputes them.
----@param result { trackId: integer, citizenid: string, name: string|nil, timeMs: integer|nil, vehicle: string|nil, class: string|nil, position: integer|nil, racers: integer|nil, mmrDelta: integer|nil, mmrAfter: integer|nil, dnf: boolean|nil, ranked: boolean|nil }
+---@param result { trackId: integer, citizenid: string, name: string|nil, timeMs: integer|nil, vehicle: string|nil, class: string|nil, position: integer|nil, racers: integer|nil, mmrDelta: integer|nil, mmrAfter: integer|nil, bestLapMs: integer|nil, sectors: string|nil, dnf: boolean|nil, ranked: boolean|nil }
 function store.saveResult(result)
     MySQL.insert.await([[
         INSERT INTO phone_racing_results
             (track_id, citizenid, name, time_ms, vehicle, class, position, racers,
-             mmr_delta, mmr_after, dnf, ranked)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             mmr_delta, mmr_after, best_lap_ms, sectors, dnf, ranked)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ]], {
         math.floor(tonumber(result.trackId) or 0),
         result.citizenid,
@@ -664,6 +666,8 @@ function store.saveResult(result)
         intOrNil(result.racers),
         intOrNil(result.mmrDelta),
         intOrNil(result.mmrAfter),
+        intOrNil(result.bestLapMs),
+        util.limitedString(result.sectors, 64),
         result.dnf and 1 or 0,
         result.ranked and 1 or 0,
     })
@@ -672,6 +676,32 @@ function store.saveResult(result)
     -- and win totals on the board.
     playCounts = nil
     store.invalidateLeaderboard()
+end
+
+---One racer's best lap on a track, with the sector splits that made it. The HUD counts down its
+---live delta against this, so a racer who has never set a clean lap here gets nil and no delta
+---rather than a comparison against somebody else's driving. Read-only.
+---@param trackId integer|string
+---@param citizenid string framework per-character id
+---@return table|nil best { lapMs, sectors } sectors are cumulative ms from the lap's start
+function store.personalBest(trackId, citizenid)
+    local id = math.floor(tonumber(trackId) or 0)
+    if id <= 0 or not citizenid or citizenid == '' then return nil end
+
+    local row = MySQL.single.await([[
+        SELECT best_lap_ms, sectors FROM phone_racing_results
+        WHERE track_id = ? AND citizenid = ? AND dnf = 0 AND best_lap_ms IS NOT NULL
+        ORDER BY best_lap_ms ASC LIMIT 1
+    ]], { id, citizenid })
+    if not row then return nil end
+
+    local splits = {}
+    for part in tostring(row.sectors or ''):gmatch('[^,]+') do
+        local ms = math.floor(tonumber(part) or 0)
+        if ms > 0 then splits[#splits + 1] = ms end
+    end
+
+    return { lapMs = math.floor(tonumber(row.best_lap_ms) or 0), sectors = splits }
 end
 
 ---Everything the track detail pane shows: how often the track has been run, the time spent on it,
@@ -700,12 +730,15 @@ function store.trackDetail(trackId)
         if slot >= 1 and slot <= 7 then chart[slot] = math.floor(tonumber(days[i].finishes) or 0) end
     end
 
+    -- Ranked on the best LAP, not the run: a track record is one lap of that track, and the run
+    -- holding it may have been one lap or four. Rows written before the column existed fall back to
+    -- their total, which is the same figure on the single-lap runs that make up almost all of them.
     local rows = MySQL.query.await([[
-        SELECT citizenid, name, time_ms, vehicle, class,
+        SELECT citizenid, name, COALESCE(best_lap_ms, time_ms) AS lap_ms, vehicle, class, ranked,
                UNIX_TIMESTAMP(finished_at) AS at
         FROM phone_racing_results
         WHERE track_id = ? AND dnf = 0
-        ORDER BY time_ms ASC, id ASC
+        ORDER BY lap_ms ASC, id ASC
         LIMIT ?
     ]], { id, RECORD_SCAN }) or {}
 
@@ -718,9 +751,10 @@ function store.trackDetail(trackId)
                 rank      = #records + 1,
                 racer     = (r.name and r.name ~= '') and r.name or 'Racer',
                 citizenid = r.citizenid,
-                timeSec   = (tonumber(r.time_ms) or 0) / 1000,
+                timeSec   = (tonumber(r.lap_ms) or 0) / 1000,
                 vehicle   = (r.vehicle and r.vehicle ~= '') and r.vehicle or 'Unknown',
                 class     = (r.class and r.class ~= '') and r.class or 'D',
+                solo      = not util.truthy(r.ranked),
                 at        = math.floor(tonumber(r.at) or 0),
             }
             if #records >= RECORD_ROWS then break end

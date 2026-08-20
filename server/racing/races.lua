@@ -23,6 +23,10 @@ local racegen
 ---@type table<string, table> Live runs keyed by race id. In memory only; a restart ends them.
 local ActiveRuns = {}
 
+---@type table<string, table> Solo timed runs keyed by citizenid. One at a time: opening a second
+---replaces the first, which is what abandoning a run and starting again amounts to.
+local Trials = {}
+
 ---@type string Client event prefix every Racing push goes out under.
 local EV = 'sd-phone:client:racing:'
 
@@ -571,12 +575,131 @@ function races.dropPlayer(src, citizenid)
     local cid = citizenid or (src and player.getIdentifier(src))
     if type(cid) ~= 'string' or cid == '' then return end
 
+    Trials[cid] = nil
+
     for raceId, run in pairs(ActiveRuns) do
         if run.memberSet[cid] and run.finished[cid] == nil then
             applyLoss(run, cid)
             retireIfDone(raceId, run)
         end
     end
+end
+
+---Opens a solo run against the clock. The clock is stamped HERE rather than taken from the client
+---at the end: a trial has no other racers to contradict it, so a client-reported time would be a
+---world record for anyone willing to edit one number.
+---@param src integer player server id
+---@param payload table client-supplied { trackId }
+---@return table envelope
+function races.trialStart(src, payload)
+    local cid = player.getIdentifier(src)
+    if not cid then return util.fail('Player not found') end
+
+    local trackId = math.floor(tonumber(payload.trackId) or 0)
+    if trackId <= 0 then return util.fail('That track is no longer available') end
+
+    local track = store.trackRow(trackId)
+    if not track or util.truthy(track.deleted) or not util.truthy(track.published) then
+        return util.fail('That track is no longer available')
+    end
+
+    Trials[cid] = { trackId = trackId, startedAt = GetGameTimer() }
+    return util.ok({ trackId = trackId })
+end
+
+---Closes a trial and writes it to the record board. Unranked by definition: no rating moves, no
+---payout, no position - the row exists so the time can stand on the track's board beside the
+---times set in traffic.
+---@param src integer player server id
+---@param payload table client-supplied { bestLapMs, sectors, modelHash }
+---@return table envelope on success data = { timeMs, bestLapMs, personalBest, record }
+function races.trialFinish(src, payload)
+    local cid = player.getIdentifier(src)
+    if not cid then return util.fail('Player not found') end
+    if not util.rateLimit(cid, 'racing:finish', FINISH_WINDOW, FINISH_MAX) then
+        return util.fail('Too many runs, wait a moment')
+    end
+
+    local trial = Trials[cid]
+    if not trial then return util.fail('You are not on a timed run') end
+    Trials[cid] = nil
+
+    local elapsedMs = math.max(1, GetGameTimer() - trial.startedAt)
+
+    -- Everything below the elapsed time is client-reported and only ever shown back to the racer
+    -- who sent it, so it is clamped into the run rather than trusted or rejected.
+    local bestLapMs = math.floor(tonumber(payload.bestLapMs) or 0)
+    if bestLapMs <= 0 or bestLapMs > elapsedMs then bestLapMs = elapsedMs end
+
+    local splits, last = {}, 0
+    if type(payload.sectors) == 'table' then
+        for i = 1, #payload.sectors do
+            local ms = math.floor(tonumber(payload.sectors[i]) or 0)
+            if ms > last and ms <= bestLapMs then
+                splits[#splits + 1] = ms
+                last = ms
+            end
+        end
+    end
+
+    local before = store.personalBest(trial.trackId, cid)
+    local key    = hashKey(payload.modelHash)
+
+    store.saveResult({
+        trackId   = trial.trackId,
+        citizenid = cid,
+        name      = (store.profileRow(cid) or {}).name or 'Racer',
+        timeMs    = elapsedMs,
+        vehicle   = (key and MODEL_NAMES[key]) or 'Unknown',
+        class     = actions.classForModel(payload.modelHash),
+        position  = 1,
+        racers    = 1,
+        bestLapMs = bestLapMs,
+        sectors   = #splits > 0 and table.concat(splits, ',') or nil,
+        dnf       = false,
+        ranked    = false,
+    })
+
+    local best = before and before.lapMs or 0
+    return util.ok({
+        timeMs       = elapsedMs,
+        bestLapMs    = bestLapMs,
+        personalBest = best > 0 and best or nil,
+        improved     = best <= 0 or bestLapMs < best,
+    })
+end
+
+---Takes a racer out of a run they were never let into: not in the driver's seat, facing the wrong
+---way, past the line or nowhere near it when the flag dropped.
+---
+---Deliberately NOT dropPlayer. That marks a loss, moves the rating and writes a DNF row, all of
+---which are a verdict on how someone drove. This racer never turned a wheel, so the run simply
+---forgets them: no result, no rating change, nothing in their history. Their buy-in stays in the
+---pot, which is the one thing that cannot be undone here - the pool was fixed from the entry count
+---when the run began, so paying it back while the pool keeps their share would mint the difference.
+---@param cid string citizenid
+---@param raceId string
+---@return boolean withdrawn
+function races.withdraw(cid, raceId)
+    if type(cid) ~= 'string' or cid == '' then return false end
+    local run = ActiveRuns[raceId]
+    if not run or not run.memberSet[cid] or run.finished[cid] ~= nil then return false end
+
+    run.memberSet[cid] = nil
+    run.names[cid]     = nil
+    run.progress[cid]  = nil
+    if run.ratings then run.ratings[cid] = nil end
+    run.racerCount = math.max(0, (tonumber(run.racerCount) or 1) - 1)
+
+    -- The grid may now be empty, or everyone left may already be home.
+    if next(run.memberSet) == nil then
+        ActiveRuns[raceId] = nil
+        return true
+    end
+
+    retireIfDone(raceId, run)
+    if ActiveRuns[raceId] then broadcastStandings(raceId, run) end
+    return true
 end
 
 ---The run a racer is currently driving in, if any.

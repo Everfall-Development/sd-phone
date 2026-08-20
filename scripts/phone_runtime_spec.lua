@@ -139,6 +139,9 @@ lib = { callback = { register = function(name, handler) serverCallbacks[name] = 
 RegisterNetEvent = function() end
 package.preload['bridge.server.job'] = function() return { getName = function() return 'unemployed' end } end
 package.preload['server.util'] = function() return { appEnabled = appcaps.enabled } end
+package.preload['server.gates'] = function()
+    return { hiddenBaseApps = function() return {} end }
+end
 package.loaded['server.appgate'] = nil
 local serverGate = require 'server.appgate'
 local serverResult = serverCallbacks['sd-phone:server:groups:list'](1, {})

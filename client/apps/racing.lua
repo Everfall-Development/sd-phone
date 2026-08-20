@@ -92,6 +92,20 @@ RegisterNUICallback('sd-phone:racing:waypoint', function(payload, cb)
     cb({ success = true })
 end)
 
+---React -> Lua: opens a solo run against the clock on a track. The phone closes behind it, the way
+---joining a race does, because the next thing the racer needs is the road rather than the app.
+---@param payload table { trackId: number }
+RegisterNUICallback('sd-phone:racing:trial', function(payload, cb)
+    local trackId = type(payload) == 'table' and tonumber(payload.trackId) or nil
+    if not trackId then
+        cb({ success = false })
+        return
+    end
+
+    race.beginTrial(trackId, type(payload) == 'table' and tonumber(payload.laps) or nil)
+    cb({ success = true })
+end)
+
 ---React -> Lua: what the player is driving right now, so the race setup screen can show the class
 ---they would enter on. Display only; the server still resolves the class it acts on.
 RegisterNUICallback('sd-phone:racing:vehicle', function(_payload, cb)

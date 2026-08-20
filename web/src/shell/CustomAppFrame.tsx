@@ -25,7 +25,7 @@ import type { Contact } from '@/apps/phone/data';
 
 // The SDK ships with whichever resource serves this page - a companion device may not reach
 // sd-phone's own files.
-const COMPONENTS_URL = `https://cfx-nui-${hostResource}/web/build/components.js`;
+const COMPONENTS_URL = `https://cfx-nui-${hostResource}/web/build/sdphone-sdk.js`;
 
 let frameDebugEnabled: boolean | null = null;
 
@@ -105,7 +105,7 @@ const SWATCHES = [
     '#5856D6', '#AF52DE', '#FF2D55', '#A2845E', '#8E8E93', '#1C1C1E', '#FFFFFF',
 ];
 
-export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }) {
+export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () => void }) {
     const def = useCustomAppsStore(s => s.apps.find(a => a.id === appId));
     const { theme, airplaneMode, hour24, brightness, chatTextScale } = useTheme('theme', 'airplaneMode', 'hour24', 'brightness', 'chatTextScale');
     const active = useDeckActive();
@@ -118,6 +118,7 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
 
     const sdkReadyRef = useRef(false);
     const outboxRef   = useRef<unknown[]>([]);
+    const typingRef   = useRef(false);
 
     const postToApp = useCallback((message: unknown) => {
         if (!sdkReadyRef.current) {
@@ -299,6 +300,7 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
                 createCall(data ?? {});
                 return Promise.resolve(null);
             case 'toggleInput':
+                typingRef.current = !!data;
                 void fetchNui('sd-phone:typing', { typing: !!data });
                 return Promise.resolve(null);
             case 'OpenMedia': {
@@ -423,11 +425,33 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
         };
     }, [fetchPhone, showComponent, uploadMedia, settleEmoji, settleGif]);
 
-    const setApp = useCallback((target: string | { name?: string; data?: unknown }) => {
-        const name = typeof target === 'string' ? target : target?.name;
-        if (!name) return;
-        window.postMessage({ action: 'sd-phone:launchApp', data: { id: name } }, '*');
+    useEffect(() => () => {
+        if (!typingRef.current) return;
+        typingRef.current = false;
+        void fetchNui('sd-phone:typing', { typing: false });
     }, []);
+
+    const closeFromFrame = useCallback(() => {
+        if (typingRef.current) {
+            typingRef.current = false;
+            void fetchNui('sd-phone:typing', { typing: false });
+        }
+        onClose();
+    }, [onClose]);
+
+    const setApp = useCallback((target: string | { name?: string; data?: unknown } | null | undefined) => {
+        if (target === null || target === undefined) {
+            closeFromFrame();
+            return;
+        }
+        const name = typeof target === 'string' ? target : (typeof target === 'object' ? target.name : undefined);
+        if (typeof name !== 'string' || name === '') return;
+        if (name === 'home') {
+            closeFromFrame();
+            return;
+        }
+        window.postMessage({ action: 'sd-phone:launchApp', data: { id: name } }, '*');
+    }, [closeFromFrame]);
 
     const onLoad = useCallback(() => {
         const iframe = iframeRef.current;
@@ -468,16 +492,23 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
             win.formatPhoneNumber = (n: string) => formatPhone(n);
             win.setApp            = setApp;
             win.components        = bridge;
+
+            doc.addEventListener('keydown', (e: KeyboardEvent) => {
+                if (e.key !== 'Escape') return;
+                e.preventDefault();
+                window.postMessage({ action: 'sd-phone:escape' }, '*');
+            });
+
             const rootMarkup = doc.getElementById('root')?.innerHTML.length ?? -1;
             frameDebug(`${d.id}: globals set, #root markup ${rootMarkup} chars, injecting ${COMPONENTS_URL}`);
             const script = doc.createElement('script');
             script.src = COMPONENTS_URL;
             script.onload = () => {
-                frameDebug(`${d.id}: components.js ran, componentsLoaded=${!!win.componentsLoaded}, fetchNui=${typeof win.fetchNui}`);
+                frameDebug(`${d.id}: sdphone-sdk.js ran, componentsLoaded=${!!win.componentsLoaded}, fetchNui=${typeof win.fetchNui}`);
                 markSdkReady();
             };
             script.onerror = () => {
-                frameDebug(`${d.id}: components.js FAILED to load from ${COMPONENTS_URL}`);
+                frameDebug(`${d.id}: sdphone-sdk.js FAILED to load from ${COMPONENTS_URL}`);
                 markSdkReady();
             };
             (doc.body ?? doc.documentElement).appendChild(script);
@@ -516,10 +547,11 @@ export function CustomAppFrame({ appId }: { appId: string; onClose: () => void }
                 return;
             }
             if (msg.type === 'sdphoneSdkReady') markSdkReady();
+            if (msg.type === 'sdphoneCloseApp') closeFromFrame();
         }
         window.addEventListener('message', onFrameMessage);
         return () => window.removeEventListener('message', onFrameMessage);
-    }, [markSdkReady]);
+    }, [markSdkReady, closeFromFrame]);
 
     useNuiEvent('customApps:message', useCallback((data) => {
         if (!data || (data.id !== appId && data.id !== 'any')) return;

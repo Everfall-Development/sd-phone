@@ -1,6 +1,8 @@
 
 import type { GameClock } from '@/stores/gameClockStore';
 import type { BirdyMessage } from '@/apps/birdy/data';
+import type { CrashBust, CrashSettled, CrashSnapshot, CrashTick } from '@/apps/casino/crash/data';
+import type { HoldemHandEnd, HoldemStatePush } from '@/apps/casino/holdem/data';
 import type { DocFile } from '@/apps/documents/data';
 import type { Bulletin, Call, ChatMsg, Unit } from '@/apps/mdt/data';
 import type { DMsg as PhotogramDM, User as PhotogramUser } from '@/apps/photogram/data';
@@ -24,6 +26,7 @@ export interface OpenPayload {
     showDate: boolean;
     dock: string[];
     apps: AppDef[];
+    firstPageApps?: number;
     installedApps?: string[];
     homeLayout?: string;
     mailDomain?: string;
@@ -98,6 +101,20 @@ export interface CustomWidgetDef {
     name:  string;
     ui:    string;
     sizes: ('sm' | 'md' | 'lg')[];
+    /**
+     * Opt-in: lets the widget's iframe receive real pointer events (taps, buttons) instead of
+     * being purely decorative. Off by default so existing third-party widgets that never
+     * expected clicks keep behaving exactly as before.
+     */
+    interactive?: boolean;
+}
+
+export interface CustomLockscreenWidgetDef {
+    id: string;
+    name: string;
+    ui: string;
+    height: number;
+    interactive?: boolean;
 }
 
 export interface CustomAppDef {
@@ -120,6 +137,7 @@ export interface CustomAppDef {
     /** Device ids this app appears on. Absent means every device. */
     devices?:    string[];
     widgets?:    CustomWidgetDef[];
+    lockscreenWidgets?: CustomLockscreenWidgetDef[];
     resource:    string;
 }
 
@@ -256,12 +274,42 @@ interface MusicSharePush {
     tracks?: MusicSharedTrack[];
 }
 
+/**
+ * Pushed by `exports('sd-phone'):setExternalNowPlaying(appId, track)` — lets a third-party
+ * resource (its own audio engine, not sd-phone's built-in Music) drive the Control Center card,
+ * the dynamic-island mini-player, and the native Now Playing widget, the same way the built-in
+ * Music app does. Only one provider is "active" at a time: the most recent `set` wins, and a
+ * `clear` from a stale appId (one that already lost the slot to a newer provider) is ignored.
+ */
+export interface ExternalNowPlayingTrack {
+    title:    string;
+    artist?:  string;
+    thumb?:   string;
+    playing:  boolean;
+    position: number;
+    duration: number;
+    canNext?: boolean;
+    canPrev?: boolean;
+}
+
+/** One registered custom-app widget currently visible in the lock-screen notification stack. */
+export interface ActiveLockscreenWidget {
+    key: string;
+    appId: string;
+    widgetId: string;
+    payload: Record<string, unknown>;
+}
+
 export type NuiMessage =
     | { action: 'sd-phone:open';    data: OpenPayload }
     | { action: 'sd-phone:apps';    data: { installedApps?: string[]; homeLayout?: string | null } }
     | { action: 'sd-phone:simState'; data: SimStatePush }
     | { action: 'sd-phone:frameColor'; data: { color: string } }
     | { action: 'sd-phone:music:receive'; data: MusicSharePush }
+    | { action: 'sd-phone:nowPlaying:set';   data: { appId: string; track: ExternalNowPlayingTrack } }
+    | { action: 'sd-phone:nowPlaying:clear'; data: { appId: string } }
+    | { action: 'sd-phone:lockscreenWidget:show'; data: ActiveLockscreenWidget }
+    | { action: 'sd-phone:lockscreenWidget:hide'; data: { key: string } }
     | { action: 'sd-phone:pages:feed';       data: ClassifiedFeedPush }
     | { action: 'sd-phone:weazelnews:feed';  data: { type: 'changed' } }
     | { action: 'sd-phone:marketplace:feed'; data: ClassifiedFeedPush }
@@ -278,6 +326,7 @@ export type NuiMessage =
     | { action: 'sd-phone:profileReset' }
     | { action: 'sd-phone:client:characterLoaded' }
     | { action: 'sd-phone:launchApp'; data: { id: string; link?: Record<string, unknown> } }
+    | { action: 'sd-phone:escape' }
     | { action: 'sd-phone:battery'; data: number }
     | { action: 'sd-phone:service'; data: { bars: number; level: number; data: boolean } }
     | { action: 'sd-phone:wifi'; data: WifiState }
@@ -288,6 +337,12 @@ export type NuiMessage =
     | { action: 'sd-phone:bank:received'; data: { amount: number; from: string } }
     | { action: 'sd-phone:bank:txAdded' }
     | { action: 'sd-phone:stocks:prices'; data: { assets: { symbol: string; price: number; changePct: number }[] } }
+    | { action: 'sd-phone:crash:tick';     data: CrashTick }
+    | { action: 'sd-phone:crash:bust';     data: CrashBust }
+    | { action: 'sd-phone:crash:settled';  data: CrashSettled }
+    | { action: 'sd-phone:crash:snapshot'; data: CrashSnapshot }
+    | { action: 'sd-phone:holdem:state';   data: HoldemStatePush }
+    | { action: 'sd-phone:holdem:hand';    data: HoldemHandEnd }
     | { action: 'sd-phone:mail:received';         data: unknown }
     | { action: 'sd-phone:camera:key';            data: { key: string } }
     | { action: 'sd-phone:camera:lock';           data: { on: boolean } }
@@ -376,7 +431,8 @@ export type NuiMessage =
     | { action: 'sd-phone:photogram:postRemoved'; data: { postId: string } }
     | { action: 'sd-phone:photogram:followChanged'; data: { target: string; status: 'none' | 'pending' | 'accepted' | 'self' } }
     | { action: 'sd-phone:photogram:liveFrame';   data: { liveId: string; frame: string } }
-    | { action: 'sd-phone:photogram:liveChunk';   data: { liveId: string; chunk: string; init?: boolean; mime?: string } }
+    | { action: 'sd-phone:photogram:liveChunk';   data: { liveId: string; chunk: string; init?: boolean; mime?: string; gen?: number } }
+    | { action: 'sd-phone:photogram:liveTransport'; data: { liveId: string; transport: 'relay' | 'event' } }
     | { action: 'sd-phone:photogram:liveComment'; data: { liveId: string; comment: { id: string; user: PhotogramUser; text: string } } }
     | { action: 'sd-phone:photogram:liveHeart';   data: { liveId: string } }
     | { action: 'sd-phone:photogram:liveViewers'; data: { liveId: string; viewers: number } }
@@ -388,7 +444,8 @@ export type NuiMessage =
     | { action: 'sd-phone:vibez:postRemoved';   data: { postId: string } }
     | { action: 'sd-phone:vibez:followChanged'; data: { target: string; following: boolean } }
     | { action: 'sd-phone:vibez:liveFrame';     data: { liveId: string; frame: string } }
-    | { action: 'sd-phone:vibez:liveChunk';     data: { liveId: string; chunk: string; init?: boolean; mime?: string } }
+    | { action: 'sd-phone:vibez:liveChunk';     data: { liveId: string; chunk: string; init?: boolean; mime?: string; gen?: number } }
+    | { action: 'sd-phone:vibez:liveTransport'; data: { liveId: string; transport: 'relay' | 'event' } }
     | { action: 'sd-phone:vibez:liveComment';   data: { liveId: string; comment: { id: string; user: VibezUser; text: string } } }
     | { action: 'sd-phone:vibez:liveHeart';     data: { liveId: string } }
     | { action: 'sd-phone:vibez:liveViewers';   data: { liveId: string; viewers: number } }
@@ -404,6 +461,7 @@ export type NuiMessage =
     | { action: 'sd-phone:mdt:chat';     data: { message: ChatMsg } }
     | { action: 'sd-phone:mdt:bulletin'; data: { bulletins: Bulletin[] } }
     | { action: 'sd-phone:mdt:warrant';  data: { citizenid: string; wanted: boolean } }
+    | { action: 'sd-phone:mdt:cameraTransport'; data: { citizenid: string; transport: 'relay' | 'event' } }
     | { action: 'sd-phone:racing:racesChanged' }
     | { action: 'sd-phone:racing:standings';  data: { raceId: string; entries: Standing[] } }
     | { action: 'sd-phone:racing:raceResult'; data: RaceResult }

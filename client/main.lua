@@ -11,6 +11,10 @@ local appgate = require 'client.appgate'
 
 -- Apps disabled in configs/apps.lua never reach the NUI, so neither the home screen nor the
 -- App Store can show them. Built once - the catalog is static per boot.
+---@type integer Apps seeded onto page one of a brand-new phone; 0 fills the page. The home screen
+---clamps it to the grid, so an oversized value cannot invent slots.
+local FIRST_PAGE_APPS = math.max(0, math.floor(tonumber(config.Apps.FirstPageApps) or 12))
+
 ---@type table[] Enabled app entries, config order preserved.
 local ENABLED_APPS = {}
 ---@type string[] Dock ids with disabled apps dropped.
@@ -143,6 +147,7 @@ require 'client.apps.banking'
 require 'client.apps.services'
 require 'client.apps.voicememos'
 require 'client.apps.music'
+require 'client.lockscreenwidgets'
 require 'client.apps.share'
 require 'client.apps.notifications'
 require 'client.apps.notes'
@@ -158,10 +163,12 @@ require 'client.apps.vibez'
 require 'client.apps.voice'
 require 'client.apps.streaks'
 require 'client.apps.mdt'
+require 'client.apps.bodycam'
 require 'client.apps.racing'
 require 'client.apps.ryde'
 if appgate.enabled('radio') then require 'client.apps.radio' end
 require 'client.apps.clock'
+require 'client.apps.casino'
 require 'client.apps.cookie'
 if appgate.enabled('stocks') then require 'client.apps.stocks' end
 require 'client.apps.games'
@@ -170,6 +177,7 @@ require 'client.apps.sim'
 require 'client.admin'
 require 'client.payphone'
 require 'client.celltowerblips'
+require 'client.media'
 
 ---@type table Phone visibility state: open/locked flags + cosmetic battery percentage.
 local phoneState = {
@@ -439,6 +447,9 @@ local function OpenPhone()
     end
 
     local visibleAppList, visibleDock = visibleApps()
+    -- Same question for the other catalog: the built-in apps were just filtered server-side, so the
+    -- third-party ones re-ask about their own gates on the same open.
+    customApps.refreshGates()
 
     local ped = cache.ped
 
@@ -489,6 +500,7 @@ local function OpenPhone()
             showDate  = config.Lockscreen.ShowDate,
             dock      = visibleDock,
             apps      = visibleAppList,
+            firstPageApps = FIRST_PAGE_APPS,
             mailDomain = config.Mail.Domain,
             number    = NUMBER_FORMAT,
             music     = MUSIC_SOURCES,
@@ -1015,9 +1027,14 @@ exports('getConnectedDevices', function() return bluetoothClient.devices() end)
 ---
 ---`devices` limits which devices list the app ('phone', 'tablet'); absent means all of them.
 ---`job` limits who sees it, as a name, an array of names, or a name->minimum-grade map.
+---`requires` hides it until the player clears a gate - an item, framework metadata, a job, or your
+---own server export - in the same shape configs/apps.lua documents for built-in apps. The server
+---answers it, so an app the player cannot see never reaches their phone at all. `consume = true`
+---makes it a permanent unlock instead of a live check; award one with
+---exports['sd-phone']:unlockApp(source, appId) from your server side.
 ---
----Both only decide whether an icon is DRAWN. Neither authorises anything: a player can still fire
----your resource's events and callbacks directly, so keep checking the job server-side.
+---All three only decide whether an icon is DRAWN. None of them authorises anything: a player can
+---still fire your resource's events and callbacks directly, so keep checking server-side.
 ---@param data table lb-phone-shaped app definition
 ---@return boolean ok, string? err
 exports('addCustomApp', function(data)

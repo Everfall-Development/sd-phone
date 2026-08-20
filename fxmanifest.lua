@@ -4,7 +4,7 @@ lua54 'yes'
 
 name 'sd-phone'
 author 'Samuel#0008'
-version '0.9.7'
+version '0.9.8'
 description 'Full-featured in-game smartphone: 47 apps covering calls, messages, mail, social feeds, banking, stocks, marketplace, garages, housing, jobs, maps, camera, music and games, plus home screen widgets, icon themes you can design, cell tower and Wi-Fi coverage, payphones, unique phones and SIM cards, an API for third-party apps and widgets, and lb-phone compatibility'
 
 shared_scripts {
@@ -33,8 +33,8 @@ files {
     'client/**.lua',
     'locales/*.json',
     'web/build/index.html',
-    'web/build/components.js',
-    'web/build/components.d.ts',
+    'web/build/sdphone-sdk.js',
+    'web/build/sdphone-sdk.d.ts',
     'web/build/assets/*.js',
     'web/build/assets/*.css',
     'web/build/assets/*.png',
@@ -44,6 +44,7 @@ files {
     'web/build/assets/*.woff2',
     'web/build/assets/*.woff',
     'web/build/assets/*.mp3',
+    'web/build/assets/*.ogg',
 }
 
 provide 'lb-phone'

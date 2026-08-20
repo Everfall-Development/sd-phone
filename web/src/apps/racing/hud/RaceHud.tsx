@@ -293,7 +293,12 @@ function sectorCells(sectors: HudSector[]): HudSector[] {
     return cells;
 }
 
-function SectorBars({ sectors, liveMs }: { sectors: HudSector[]; liveMs: number }) {
+function deltaText(ms: number): string {
+    const sign = ms > 0 ? '+' : '-';
+    return `${sign}${(Math.abs(ms) / 1000).toFixed(2)}`;
+}
+
+function SectorBars({ sectors, liveMs, pb }: { sectors: HudSector[]; liveMs: number; pb?: number[] }) {
     const cells  = sectorCells(sectors);
     const runIdx = cells.findIndex(cell => !cell.done);
 
@@ -320,13 +325,27 @@ function SectorBars({ sectors, liveMs }: { sectors: HudSector[]; liveMs: number 
                         <div className="h-[4px] min-w-0 flex-1 overflow-hidden rounded-full" style={{ background: FAINT }}>
                             <div className="h-full rounded-full" style={{ width: `${width * 100}%`, background: fill }} />
                         </div>
+                        {pb && pb.length > 0 && (
+                            <span
+                                className="w-[42px] text-right"
+                                style={{
+                                    fontFamily: MONO,
+                                    fontSize:   10.5,
+                                    fontWeight: 700,
+                                    color:      cell.done && pb[index] ? (cell.ms - pb[index] <= 0 ? GAIN : LOSS) : FAINT,
+                                    fontVariantNumeric: 'tabular-nums',
+                                }}
+                            >
+                                {cell.done && pb[index] ? deltaText(cell.ms - pb[index]) : ''}
+                            </span>
+                        )}
                         <span
-                            className="w-[52px] text-right"
+                            className="w-[48px] text-right"
                             style={{
                                 fontFamily: MONO,
                                 fontSize:   11,
                                 fontWeight: 700,
-                                color:      cell.done ? GAIN : running ? TEXT : FAINT,
+                                color:      cell.done ? TEXT : running ? TEXT : FAINT,
                                 fontVariantNumeric: 'tabular-nums',
                             }}
                         >
@@ -390,7 +409,7 @@ function AdvancedHud({ bestMs, current, currentMs, total, state }: LayoutProps) 
                 <HeadBlock state={state} current={current} />
             </Panel>
             <Panel width={280}>
-                <SectorBars sectors={state.sectors} liveMs={currentMs} />
+                <SectorBars sectors={state.sectors} liveMs={currentMs} pb={state.pbSectors} />
                 <span className="h-px w-full" style={{ background: 'rgba(255, 255, 255, 0.08)' }} />
                 <Clocks best={bestMs > 0 ? shortTime(bestMs) : t('racing.hudNoTime', '--')} total={total} />
             </Panel>

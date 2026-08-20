@@ -615,6 +615,11 @@ export async function racingWaypoint(x: number, y: number): Promise<void> {
     await apiCall<unknown>('sd-phone:racing:waypoint', { x, y });
 }
 
+export async function racingTrial(trackId: number, laps: number): Promise<void> {
+    if (!isFiveM) return;
+    await apiCall<unknown>('sd-phone:racing:trial', { trackId, laps });
+}
+
 export async function racingVehicle(): Promise<{ model: string; class: RaceClass; onFoot: boolean } | null> {
     if (!isFiveM) return { model: 'Elegy Retro Custom', class: 'B', onFoot: false };
     return apiData<{ model: string; class: RaceClass; onFoot: boolean }>('sd-phone:racing:vehicle');

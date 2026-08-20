@@ -13,6 +13,7 @@ const pill = cva(
                 blue:   'bg-ios-blue/20 text-[#1d4ed8] dark:text-ios-blue',
                 orange: 'bg-ios-orange/20 text-[#b45309] dark:text-ios-orange',
                 red:    'bg-ios-red/20 text-[#c1121f] dark:text-ios-red',
+                grey:   'bg-ios-gray/20 text-[#4b5563] dark:text-ios-gray',
             },
         },
         defaultVariants: { tone: 'green' },

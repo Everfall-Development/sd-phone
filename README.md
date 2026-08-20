@@ -13,7 +13,7 @@ Unlock it, rearrange the home screen, install apps from the App Store, open the 
 
 ---
 
-**An iOS-themed smartphone for FiveM.** that supports QBOX, QBCORE and ESX. 49 server-backed apps, real app accounts, a live game-view camera and online multiplayer games. Ships its own custom phone props: eight phone items in eight colours, each tinting both the on-screen frame and the custom prop model held in hand. A unique phone system as well as sim cards can be enabled!
+**An iOS-themed smartphone for FiveM.** that supports QBOX, QBCORE and ESX, with experimental ox_core support. 49 server-backed apps, real app accounts, a live game-view camera and online multiplayer games. Ships its own custom phone props: eight phone items in eight colours, each tinting both the on-screen frame and the custom prop model held in hand. A unique phone system as well as sim cards can be enabled!
 
 **A drop-in lb-phone replacement.** Scripts and custom apps written against lb-phone's exports and events keep running unmodified, and a first-boot migration carries your players across rather than resetting them: phone numbers and lock passcodes, contacts, blocked numbers, call history, SMS threads including groups and reactions, photos and albums, notes, phone settings, mail accounts with their inboxes, wallet transaction history, voice memos, Kaleido and Quip accounts with their posts, stories, DMs and followers, and the app logins themselves, so players open the phone already signed in.
 
@@ -24,7 +24,7 @@ If sd-phone is useful to you, please ⭐ the repo. Issues and pull requests are 
 [![Discord](https://img.shields.io/discord/842045164951437383?label=Discord&logo=discord&logoColor=white)](https://discord.gg/FzPehMQaBQ)
 [![Documentation](https://img.shields.io/badge/Docs-docs.samueldev.shop-94DD0C)](https://docs.samueldev.shop/resources/phone/)
 
-![Framework](https://img.shields.io/badge/Framework-QBCore%20%7C%20QBox%20%7C%20ESX-3b82f6)
+![Framework](https://img.shields.io/badge/Framework-QBCore%20%7C%20QBox%20%7C%20ESX%20%7C%20ox__core%20(beta)-3b82f6)
 ![Voice](https://img.shields.io/badge/Voice-pma--voice-3b82f6)
 ![Compatibility](https://img.shields.io/badge/lb--phone-drop--in%20compatible-3b82f6)
 
@@ -180,7 +180,7 @@ end)
 
 | Layer | Supported |
 |---|---|
-| Frameworks | QBCore, QBox, ESX (auto-detected) |
+| Frameworks | QBCore, QBox, ESX (auto-detected). ox_core is supported but **experimental** |
 | Inventories | ox_inventory, tgiann-inventory, qb-inventory, qs-inventory(-pro), origen_inventory, codem-inventory, jaksam_inventory, lj-inventory, ps-inventory |
 | Voice | pma-voice |
 | Housing | 9 housing systems for the Homes app |
@@ -200,7 +200,7 @@ Prefer the full walkthrough? [docs.samueldev.shop/resources/phone/installation](
 
 | Resource | What it is for |
 | --- | --- |
-| [ox_lib](https://github.com/CommunityOx/ox_lib) | Shared library |
+| [ox_lib](https://github.com/CommunityOx/ox_lib) | Shared library. **v3.39.0 or newer recommended** |
 | [oxmysql](https://github.com/CommunityOx/oxmysql) | Database access |
 | [sd-phone-props](https://github.com/Samuels-Development/sd-phone-props) | Streams the in-hand phone models |
 
@@ -227,6 +227,8 @@ phone_pink    phone_purple   phone_red     phone_yellow
 ```
 
 Ready-made ox_inventory definitions live in the [installation docs](https://docs.samueldev.shop/resources/phone/installation), and the item icons ship in this repo's `images/` folder.
+
+**On ESX with no separate inventory resource, this step is automatic.** ESX keeps its item catalogue in the `items` database table, and an item missing from it can never be given or used, so the phone would register correctly and still refuse to open. sd-phone adds the missing rows on boot and refreshes ESX's catalogue in place, no restart needed. Turn it off with `SeedEsxItems = false` in `configs/phone.lua` and import `sql/esx_items.sql` yourself instead. Servers running ox_inventory, qs, tgiann or codem are untouched: define the items in that inventory as usual.
 
 Players can also open the phone with a keybind (<kbd>F1</kbd> by default), which still requires owning one of these items.
 

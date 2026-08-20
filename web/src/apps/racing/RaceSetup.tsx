@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ChevronLeft, Flag } from 'lucide-react';
+import { ChevronLeft, Flag, Timer } from 'lucide-react';
 
 import { t } from '@/i18n';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useSessionState } from '@/hooks/useSessionState';
 import { Scroller } from '@/ui/Scroller';
+import { SegmentedControl } from '@/ui/SegmentedControl';
 import { Select, type SelectOption } from '@/ui/Select';
 import { Slider } from '@/ui/Slider';
 import { cardSurface, fieldSm, rowMeta, ruleX, sectionHeader } from '@/ui/surfaces';
 
-import { racingHost, racingVehicle, racingWaypoint } from './racingApi';
+import { racingHost, racingTrial, racingVehicle, racingWaypoint } from './racingApi';
 import { useRacingSession } from './useRacingSession';
-import { racingAccentFill, racingAccentRing, racingStatLabel } from './racingTheme';
+import { racingAccentFill, racingAccentRing, racingSegmented, racingStatLabel } from './racingTheme';
 import {
     CLASS_ORDER, DEFAULT_SETUP, classAtOrBelow, formatMoney,
     type CameraMode, type PhasingMode, type RaceClass, type RaceSetupDraft, type TrackRow,
@@ -99,6 +100,8 @@ export function RaceSetup({ track, onBack }: { track: TrackRow; onBack: () => vo
 
     const { data: vehicle } = useAsyncData(() => racingVehicle(), []);
 
+    const [mode, setMode] = useSessionState<'race' | 'trial'>('racing:setup:mode', 'race');
+    const trial  = mode === 'trial';
     const sprint = track.mode === 'sprint';
     const laps   = sprint ? 1 : clamp(draft.laps, limits.lapsMin, limits.lapsMax);
     const timed  = draft.phasing === 'timed';
@@ -131,6 +134,14 @@ export function RaceSetup({ track, onBack }: { track: TrackRow; onBack: () => vo
 
     const overClass = !!vehicle && !vehicle.onFoot && draft.vehicleClass !== 'all'
         && !classAtOrBelow(vehicle.class, draft.vehicleClass);
+
+    async function startTrial() {
+        if (busy) return;
+        setBusy(true);
+        await racingTrial(track.id, laps);
+        setBusy(false);
+        onBack();
+    }
 
     async function submit() {
         if (busy) return;
@@ -168,40 +179,64 @@ export function RaceSetup({ track, onBack }: { track: TrackRow; onBack: () => vo
                     {t('racing.backToTrack', 'Track')}
                 </button>
                 <h2 className="min-w-0 flex-1 truncate text-[17px] font-bold tracking-tight text-black dark:text-white">
-                    {t('racing.hostOn', 'Host on {track}', { track: track.name })}
+                    {trial
+                        ? t('racing.trialOn', 'Time trial on {track}', { track: track.name })
+                        : t('racing.hostOn', 'Host on {track}', { track: track.name })}
                 </h2>
             </div>
 
             <Scroller className="min-h-0 flex-1 px-6 pb-6 pt-2">
+                <SegmentedControl
+                    className={`mb-4 w-full ${racingSegmented}`}
+                    value={mode}
+                    onChange={setMode}
+                    options={[
+                        { value: 'race',  label: t('racing.modeRace', 'Race') },
+                        { value: 'trial', label: t('racing.modeTrial', 'Time trial') },
+                    ]}
+                />
+
+                {trial && (
+                    <div className={`mb-4 rounded-[16px] bg-black/[0.03] px-5 py-4 dark:bg-white/[0.05] ${rowMeta}`}>
+                        {t('racing.trialExplainer', 'A solo run against the clock. No buy-in, no prize and no rating - the time still stands on this track\'s board. Start it from the driver\'s seat at the start line.')}
+                    </div>
+                )}
+
                 <div className={`rounded-[16px] bg-black/[0.03] px-5 py-4 dark:bg-white/[0.05] ${racingAccentRing}`}>
                     <div className={stacked
                         ? 'grid grid-cols-2 gap-x-6 gap-y-3.5'
                         : 'flex flex-wrap items-center gap-x-8 gap-y-3'}
                     >
-                        <div className="min-w-0">
-                            <div className={racingStatLabel}>{t('racing.gridOpensIn', 'Grid opens in')}</div>
-                            <div className="text-[17px] font-bold tabular-nums text-black dark:text-white">
-                                {secondsLabel(clamp(draft.delay, limits.delayMin, limits.delayMax))}
+                        {!trial && (
+                            <div className="min-w-0">
+                                <div className={racingStatLabel}>{t('racing.gridOpensIn', 'Grid opens in')}</div>
+                                <div className="text-[17px] font-bold tabular-nums text-black dark:text-white">
+                                    {secondsLabel(clamp(draft.delay, limits.delayMin, limits.delayMax))}
+                                </div>
                             </div>
-                        </div>
+                        )}
                         <div className="min-w-0">
                             <div className={racingStatLabel}>{t('racing.checkpointsTotal', 'Checkpoints')}</div>
                             <div className="text-[17px] font-bold tabular-nums text-black dark:text-white">
                                 {track.gates * laps}
                             </div>
                         </div>
-                        <div className="min-w-0">
-                            <div className={racingStatLabel}>{t('racing.buyIn', 'Buy-in')}</div>
-                            <div className="text-[17px] font-bold tabular-nums text-black dark:text-white">
-                                {draft.buyIn > 0 ? formatMoney(draft.buyIn) : t('racing.free', 'Free')}
-                            </div>
-                        </div>
-                        <div className="min-w-0">
-                            <div className={racingStatLabel}>{t('racing.classCeiling', 'Class ceiling')}</div>
-                            <div className="text-[17px] font-bold text-black dark:text-white">
-                                {draft.vehicleClass === 'all' ? t('racing.classAny', 'Any class') : draft.vehicleClass}
-                            </div>
-                        </div>
+                        {!trial && (
+                            <>
+                                <div className="min-w-0">
+                                    <div className={racingStatLabel}>{t('racing.buyIn', 'Buy-in')}</div>
+                                    <div className="text-[17px] font-bold tabular-nums text-black dark:text-white">
+                                        {draft.buyIn > 0 ? formatMoney(draft.buyIn) : t('racing.free', 'Free')}
+                                    </div>
+                                </div>
+                                <div className="min-w-0">
+                                    <div className={racingStatLabel}>{t('racing.classCeiling', 'Class ceiling')}</div>
+                                    <div className="text-[17px] font-bold text-black dark:text-white">
+                                        {draft.vehicleClass === 'all' ? t('racing.classAny', 'Any class') : draft.vehicleClass}
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
                     {vehicle && (
                         <div className={`mt-3 ${rowMeta}`}>
@@ -218,27 +253,33 @@ export function RaceSetup({ track, onBack }: { track: TrackRow; onBack: () => vo
                 </div>
 
                 <div className="mb-2 mt-5 px-1">
-                    <span className={sectionHeader}>{t('racing.raceSettings', 'Race settings')}</span>
+                    <span className={sectionHeader}>
+                        {trial ? t('racing.trialSettings', 'Run settings') : t('racing.raceSettings', 'Race settings')}
+                    </span>
                 </div>
                 <div className={`${cardSurface} overflow-hidden`}>
-                    <Row
-                        label={t('racing.delay', 'Start delay')}
-                        hint={t('racing.delayHint', 'How long racers have to reach the grid.')}
-                        stacked={stacked}
-                    >
-                        <Slider
-                            className={stacked ? 'flex-1' : 'w-[168px]'}
-                            value={clamp(draft.delay, limits.delayMin, limits.delayMax)}
-                            min={limits.delayMin}
-                            max={limits.delayMax}
-                            step={5}
-                            onChange={value => patch({ delay: value })}
-                            ariaLabel={t('racing.delay', 'Start delay')}
-                        />
-                        <Readout>{secondsLabel(clamp(draft.delay, limits.delayMin, limits.delayMax))}</Readout>
-                    </Row>
+                    {!trial && (
+                        <>
+                            <Row
+                                label={t('racing.delay', 'Start delay')}
+                                hint={t('racing.delayHint', 'How long racers have to reach the grid.')}
+                                stacked={stacked}
+                            >
+                                <Slider
+                                    className={stacked ? 'flex-1' : 'w-[168px]'}
+                                    value={clamp(draft.delay, limits.delayMin, limits.delayMax)}
+                                    min={limits.delayMin}
+                                    max={limits.delayMax}
+                                    step={5}
+                                    onChange={value => patch({ delay: value })}
+                                    ariaLabel={t('racing.delay', 'Start delay')}
+                                />
+                                <Readout>{secondsLabel(clamp(draft.delay, limits.delayMin, limits.delayMax))}</Readout>
+                            </Row>
 
-                    <div className={ruleX} />
+                            <div className={ruleX} />
+                        </>
+                    )}
 
                     <Row
                         label={t('racing.laps', 'Laps')}
@@ -260,6 +301,8 @@ export function RaceSetup({ track, onBack }: { track: TrackRow; onBack: () => vo
                         <Readout>{laps}</Readout>
                     </Row>
 
+                    {!trial && (
+                    <>
                     <div className={ruleX} />
 
                     <Row
@@ -348,6 +391,8 @@ export function RaceSetup({ track, onBack }: { track: TrackRow; onBack: () => vo
                             ariaLabel={t('racing.camera', 'Camera')}
                         />
                     </Row>
+                    </>
+                    )}
                 </div>
 
                 {error && (
@@ -365,11 +410,15 @@ export function RaceSetup({ track, onBack }: { track: TrackRow; onBack: () => vo
                     <button
                         type="button"
                         disabled={busy}
-                        onClick={() => void submit()}
+                        onClick={() => void (trial ? startTrial() : submit())}
                         className={`inline-flex shrink-0 items-center gap-2 rounded-full px-6 py-[10px] text-[15px] font-bold transition-opacity duration-150 hover:opacity-85 active:opacity-60 disabled:cursor-default disabled:opacity-40 ${racingAccentFill}`}
                     >
-                        <Flag className="h-[16px] w-[16px]" strokeWidth={2.4} />
-                        {busy ? t('racing.opening', 'Opening') : t('racing.openRace', 'Open the race')}
+                        {trial
+                            ? <Timer className="h-[16px] w-[16px]" strokeWidth={2.4} />
+                            : <Flag className="h-[16px] w-[16px]" strokeWidth={2.4} />}
+                        {trial
+                            ? t('racing.startTrial', 'Start the clock')
+                            : busy ? t('racing.opening', 'Opening') : t('racing.openRace', 'Open the race')}
                     </button>
                 </div>
             </Scroller>

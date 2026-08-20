@@ -439,6 +439,24 @@ function actions.trackRoute(_, payload)
     return ok({ points = out })
 end
 
+---The caller's best lap on a track and the splits that made it, for the HUD's live delta. Answers
+---with an empty table rather than a refusal when they have never set one: a racer on a new track
+---simply has nothing to chase yet.
+---@param source number player server id
+---@param payload table client-supplied { trackId }
+---@return table envelope on success data = { lapMs, sectors }
+function actions.personalBest(source, payload)
+    local trackId = idOf(payload.trackId)
+    if not trackId then return ok({}) end
+
+    local cid = player.getIdentifier(source)
+    if not cid then return ok({}) end
+
+    local best = store.personalBest(trackId, cid)
+    if not best then return ok({}) end
+    return ok({ lapMs = best.lapMs, sectors = best.sectors })
+end
+
 ---One page of the ranked board. The caller's own row rides along separately when it falls outside
 ---the page they are looking at, so the tablet can pin it without paging blindly to find it.
 ---@param src integer player server id

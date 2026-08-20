@@ -46,6 +46,12 @@ local Blips = {}
 ---@type table|nil The board the player is currently stood at.
 local Shown = nil
 
+---@type string|nil Signature of the board payload last sent up. Identity alone cannot decide this:
+---a refresh swaps in a fresh entry table AND re-points Shown at it, so an identity test is false
+---forever after the first send and the grid count, pot and start time freeze at whatever they were
+---when the player walked up.
+local ShownSig = nil
+
 ---@type string|nil Last lineup verdict reported to the server, so only changes go over the wire.
 local Reported = nil
 
@@ -112,7 +118,10 @@ function board.refresh()
             if Boards[i].id == Shown.id then still = Boards[i] break end
         end
         Shown = still
-        if not Shown then SendNUIMessage({ action = 'sd-phone:racing:board:hide' }) end
+        if not Shown then
+            ShownSig = nil
+            SendNUIMessage({ action = 'sd-phone:racing:board:hide' })
+        end
     end
 end
 
@@ -133,32 +142,67 @@ local function nearest(coords)
     return best, bestDist
 end
 
----How ready a joined racer is to be sent off, using the same three tests sd-racing applied: inside
----the lineup area, facing down the track, and not already past the line.
----@param entry table board
+---How ready a racer is to be sent off: in the driver's seat, facing down the track, and not already
+---past the line. The same three tests in the same order sd-racing's BoardReadiness and
+---frp_racing's board.readiness run, so what the board has been showing is exactly what decides
+---whether the flag drops for you.
+---
+---Measured off the VEHICLE, not the ped: a ped keeps its own heading inside a car, so reading the
+---ped told a driver sat square on the grid that they were facing the wrong way. The seat test is
+---likewise seat -1 rather than "in a car at all" - a passenger cannot start a race.
+---@param entry table board, or any table carrying start + heading
 ---@return string verdict one of ready, vehicle, turn, backup
 local function readiness(entry)
     local ped = cache.ped
-    if GetVehiclePedIsIn(ped, false) == 0 then return 'vehicle' end
+    local veh = GetVehiclePedIsIn(ped, false)
+    if veh == 0 or GetPedInVehicleSeat(veh, -1) ~= ped then return 'vehicle' end
 
-    local start = entry.start
+    local start = entry and entry.start
     if not start then return 'ready' end
 
-    local here    = GetEntityCoords(ped)
-    local line    = vec3(start.x + 0.0, start.y + 0.0, (start.z or 0.0) + 0.0)
     local heading = tonumber(entry.heading)
     if not heading then return 'ready' end
 
-    local forward = vec3(-math.sin(math.rad(heading)), math.cos(math.rad(heading)), 0.0)
-    local offset  = here - line
-    local along   = (offset.x * forward.x) + (offset.y * forward.y)
-    if along > LINE_METRES then return 'backup' end
-
-    local mine = GetEntityHeading(ped)
+    local mine = GetEntityHeading(veh)
     local err  = math.abs(((mine - heading + 180.0) % 360.0) - 180.0)
     if err > FACE_DEGREES then return 'turn' end
 
+    local here    = GetEntityCoords(veh)
+    local line    = vec3(start.x + 0.0, start.y + 0.0, (start.z or 0.0) + 0.0)
+    local forward = vec3(-math.sin(math.rad(heading)), math.cos(math.rad(heading)), 0.0)
+    local offset  = here - line
+    if ((offset.x * forward.x) + (offset.y * forward.y)) > LINE_METRES then return 'backup' end
+
     return 'ready'
+end
+
+---The board standing for a race id, so the start line can be resolved away from this file.
+---@param raceId string
+---@return table|nil entry
+function board.entryFor(raceId)
+    for i = 1, #Boards do
+        if Boards[i].id == raceId then return Boards[i] end
+    end
+    return nil
+end
+
+---Why this racer may not be sent off, or nil when they may. Distance is checked here rather than in
+---readiness because the board only ever draws to someone already stood at it, while the flag drops
+---wherever the racer happens to be.
+---@param raceId string
+---@return string|nil why one of vehicle, turn, backup, far
+function board.ineligible(raceId)
+    local entry = board.entryFor(raceId)
+    if not entry or not entry.start then return nil end
+
+    local verdict = readiness(entry)
+    if verdict ~= 'ready' then return verdict end
+
+    local here = GetEntityCoords(cache.ped)
+    local line = vec3(entry.start.x + 0.0, entry.start.y + 0.0, (entry.start.z or 0.0) + 0.0)
+    if #(here - line) > LINEUP_RADIUS then return 'far' end
+
+    return nil
 end
 
 ---Joins or leaves the board the player is stood at. A buy-in is confirmed first so nobody is
@@ -210,7 +254,7 @@ local function drawLoop()
 
             if race.active() or #Boards == 0 then
                 if Shown then
-                    Shown = nil
+                    Shown, ShownSig = nil, nil
                     SendNUIMessage({ action = 'sd-phone:racing:board:hide' })
                 end
             else
@@ -222,8 +266,12 @@ local function drawLoop()
                     local start = entry.start
                     local on, sx, sy = World3dToScreen2d(start.x + 0.0, start.y + 0.0, (start.z or 0.0) + 1.4)
 
-                    if Shown ~= entry then
-                        Shown = entry
+                    local sig = ('%s|%s|%s|%s|%s'):format(
+                        tostring(entry.id), tostring(entry.registered), tostring(entry.maxRacers),
+                        tostring(entry.prizePool), tostring(entry.startsAt))
+
+                    if sig ~= ShownSig then
+                        Shown, ShownSig = entry, sig
                         SendNUIMessage({
                             action = 'sd-phone:racing:board:show',
                             data   = {
@@ -251,7 +299,7 @@ local function drawLoop()
 
                     if IsControlJustPressed(0, KEY_JOIN) then toggle(entry) end
                 elseif Shown then
-                    Shown = nil
+                    Shown, ShownSig = nil, nil
                     SendNUIMessage({ action = 'sd-phone:racing:board:hide' })
                 end
             end
@@ -268,13 +316,16 @@ local function readyLoop()
         while ENABLED do
             Wait(READY_MS)
 
+            -- Judged for the nearest board whether or not the seat is taken yet. Joining does not
+            -- park you correctly, so a hint that only appears once you are on the grid is missing
+            -- for the whole of the shuffle into position it exists to guide.
             local mine = nil
             if not race.active() then
                 local here = GetEntityCoords(cache.ped)
                 for i = 1, #Boards do
                     local entry = Boards[i]
                     local start = entry.start
-                    if entry.joined and start then
+                    if start then
                         local d = #(here - vec3(start.x + 0.0, start.y + 0.0, (start.z or 0.0) + 0.0))
                         if d <= LINEUP_RADIUS then mine = entry break end
                     end
@@ -284,7 +335,9 @@ local function readyLoop()
             local verdict = mine and readiness(mine) or nil
             if verdict ~= Reported then
                 Reported = verdict
-                if mine then
+                -- Only a seated racer's readiness is the server's business; a passer-by lining up
+                -- next to a board they never joined has nothing to report.
+                if mine and mine.joined then
                     TriggerServerEvent('sd-phone:server:racing:ready', mine.id, verdict == 'ready')
                 end
                 SendNUIMessage({

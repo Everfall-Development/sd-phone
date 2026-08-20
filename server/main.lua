@@ -17,6 +17,9 @@ local appgate   = require 'server.appgate'
 -- captures a callback against it (they all resolve identity at call time, but keep it first for
 -- clarity - the wrapper must also be live before the boot-time registrations below).
 require 'server.sim.init'
+-- ESX only, and only without a dedicated inventory resource: puts the phone items in the `items`
+-- table so ESX will honour them. Reads config.Sim, so it sits after the SIM module.
+require 'server.esxitems'
 require 'server.settings.init'
 require 'server.service'
 require 'server.wifi'
@@ -59,7 +62,11 @@ if appgate.enabled('homes') then require 'server.homes.init' end
 require 'server.maps.init'
 require 'server.friends.init'
 require 'server.cherry.init'
+-- Ahead of the three features that stream live video, so the relay's gate is resolved and its
+-- feature registry is there to be registered against before any of them takes a viewer.
+require 'server.media.init'
 require 'server.photogram.init'
+require 'server.webhooks.init'
 require 'server.vibez.init'
 require 'server.voice.init'
 require 'server.streaks.init'
@@ -74,6 +81,11 @@ require 'server.chess.init'
 require 'server.connectfour.init'
 require 'server.games.chips'
 require 'server.games.blackjack'
+require 'server.games.casino.roulette'
+require 'server.games.casino.slots'
+require 'server.games.casino.baccarat'
+require 'server.games.casino.crash.init'
+require 'server.games.casino.holdem.init'
 require 'server.battleship.init'
 require 'server.wordle.init'
 require 'server.admin.wipe'

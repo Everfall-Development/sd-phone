@@ -1,12 +1,12 @@
 
 import type { LucideIcon } from 'lucide-react';
 import {
-    Briefcase, Building2, Car, CircleDot, Coffee, CreditCard, Crown, Drill, Film, Flame, Fuel,
-    Home, MapPin, Pill, Pizza, ReceiptText, Ship, ShoppingBag, ShoppingCart, Spade, Stethoscope,
-    Type, Wrench, Zap,
+    Briefcase, Building2, Car, CircleDot, Coffee, CreditCard, Crown, Dices, Drill, Film, Flame,
+    Fuel, Home, MapPin, Pill, Pizza, ReceiptText, Ship, ShoppingBag, ShoppingCart, Spade,
+    Stethoscope, Type, Wrench, Zap,
 } from 'lucide-react';
 
-import { t } from '@/i18n';
+import { getCatalogVersion, t } from '@/i18n';
 
 type AccountKind = 'checking' | 'savings' | 'credit';
 
@@ -53,7 +53,8 @@ export const ACCOUNTS: Account[] = [
 export type Category =
     | 'food' | 'groceries' | 'shopping' | 'transport' | 'fuel'
     | 'entertainment' | 'services' | 'health' | 'bills' | 'housing'
-    | 'income' | 'transfer' | 'invoice' | 'chess' | 'connectfour' | 'battleship' | 'blackjack' | 'wordle' | 'ryde' | 'streaks';
+    | 'income' | 'transfer' | 'invoice' | 'chess' | 'connectfour' | 'battleship' | 'blackjack'
+    | 'casino' | 'wordle' | 'ryde' | 'streaks';
 
 export interface CategoryMeta {
     label: string;
@@ -61,8 +62,14 @@ export interface CategoryMeta {
     color: string;
 }
 
+let categoryCache: Record<Category, CategoryMeta> | null = null;
+let categoryCacheVersion = -1;
+
 export function getCategories(): Record<Category, CategoryMeta> {
-    return {
+    const version = getCatalogVersion();
+    if (categoryCache && categoryCacheVersion === version) return categoryCache;
+    categoryCacheVersion = version;
+    categoryCache = {
         food:          { label: t('banking.catFood', 'Food & Drink'),  icon: Pizza,        color: '#ff9f0a' },
         groceries:     { label: t('banking.catGroceries', 'Groceries'),     icon: ShoppingCart, color: '#34c759' },
         shopping:      { label: t('banking.catShopping', 'Shopping'),      icon: ShoppingBag,  color: '#ff375f' },
@@ -80,10 +87,12 @@ export function getCategories(): Record<Category, CategoryMeta> {
         connectfour:   { label: t('banking.catConnectFour', 'Connect Four'),  icon: CircleDot,    color: '#1E66D0' },
         battleship:    { label: t('banking.catBattleship', 'Battleship'),    icon: Ship,         color: '#17A0B5' },
         blackjack:     { label: t('banking.catBlackjack', 'Blackjack'),     icon: Spade,        color: '#1C8A4E' },
+        casino:        { label: t('banking.catCasino', 'Casino'),        icon: Dices,        color: '#0F5132' },
         wordle:        { label: t('banking.catWordle', 'Penta'),        icon: Type,         color: '#6AAA64' },
         ryde:          { label: t('banking.catRyde', 'Ryde'),          icon: Car,          color: '#1c1c1e' },
         streaks:       { label: t('banking.catStreaks', 'Streaks'),       icon: Flame,        color: '#FF7A1A' },
     };
+    return categoryCache;
 }
 
 export interface Transaction {

@@ -11,7 +11,6 @@ const REACTIONS = ['❤️', '👍', '👎', '😂'];
 
 const PREVIEW_W  = 230;
 const PREVIEW_H  = 140;
-
 const BACKDROP_Z = 2;
 
 function locationCoords(msg: Message): { x: number; y: number } {
@@ -78,7 +77,6 @@ function LocationMapPreview({ x, y }: { x: number; y: number }) {
 
     return <>{layer(BACKDROP_Z)}{layer(zMax - 1)}{layer(zMax)}</>;
 }
-
 const EMOJI_RE = new RegExp(
     '(\\p{Extended_Pictographic}(?:\\uFE0F|\\u200D\\p{Extended_Pictographic})*|\\p{Regional_Indicator}{2})',
     'gu',

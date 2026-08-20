@@ -1,5 +1,8 @@
 ---@type table Framework detection (bridge.shared.framework): name ('qb'|'esx') + live core handle.
 local framework = require 'bridge.shared.framework'
+---@type table Garage bridge (bridge.server.garages): the active system's column profile, so a
+---vehicle's garage and state are read the same way here as in the Garages app.
+local garages = require 'bridge.server.garages'
 
 ---@type table Records module; the table returned at end of file. Read-only reads of the
 ---FRAMEWORK's own citizen and vehicle tables, so framework-shape knowledge stays in bridge/ and
@@ -7,19 +10,34 @@ local framework = require 'bridge.shared.framework'
 local records = {}
 
 ---@type { table: string, idCol: string } Framework citizen table: QBCore/QBox key characters by
----citizenid in `players`, ESX by identifier in `users`.
-local PEOPLE = framework.name == 'esx'
-    and { table = 'users',   idCol = 'identifier' }
-    or  { table = 'players', idCol = 'citizenid' }
+---citizenid in `players`, ESX by identifier in `users`, ox_core by charId in `characters`.
+---
+---ox_core also HAS a `users` table, but it is the account (one per player, many characters), not
+---the character - reaching ESX's branch here would read the wrong rows entirely.
+local PEOPLE
+if framework.name == 'esx' then
+    PEOPLE = { table = 'users',      idCol = 'identifier' }
+elseif framework.name == 'ox' then
+    PEOPLE = { table = 'characters', idCol = 'charId' }
+else
+    PEOPLE = { table = 'players',    idCol = 'citizenid' }
+end
 
 ---@type { table: string, idCol: string } Framework ownership table, picked the same way
 ---bridge/server/garages.lua picks it.
-local VEHICLES = framework.name == 'esx'
-    and { table = 'owned_vehicles',  idCol = 'owner' }
-    or  { table = 'player_vehicles', idCol = 'citizenid' }
+local VEHICLES
+if framework.name == 'esx' then
+    VEHICLES = { table = 'owned_vehicles',  idCol = 'owner' }
+elseif framework.name == 'ox' then
+    VEHICLES = { table = 'vehicles',        idCol = 'owner' }
+else
+    VEHICLES = { table = 'player_vehicles', idCol = 'citizenid' }
+end
 
----@type string[] Columns a model name may live in, in preference order.
-local MODEL_COLS = { 'vehicle', 'model', 'vehicle_name', 'name' }
+---@type string[] Columns a model name may live in, in preference order. `vehicle` is last on
+---purpose: qb/QBox keep a plain name there, but ESX keeps the whole properties blob under the same
+---name, so a fork carrying a real model column should win over it.
+local MODEL_COLS = { 'model', 'vehicle_name', 'name', 'vehicle' }
 
 ---@type integer Characters below which a term is not a filter at all, so the caller is browsing and
 ---the list comes back unfiltered rather than empty.
@@ -276,25 +294,32 @@ function records.searchCitizens(term, page, pageSize)
     return out, tonumber(total) or 0
 end
 
----Builds the normalised vehicle shape from an ownership row.
+---Builds the normalised vehicle shape from an ownership row. The model is the chosen column when it
+---holds a plain name, else the saved-properties model key, else the row's stored hash - ESX keeps the
+---whole properties blob under `vehicle`, so a value opening with a brace is a row rather than a name
+---and printing it verbatim puts the entire blob in the MDT. Same rule as garages.lua's modelOf.
 ---@param row table raw ownership row
 ---@param modelCol string|nil column carrying the model name
 ---@return table vehicle
 local function vehicleOf(row, modelCol)
     local props = decode(row.vehicle)
     local model = modelCol and str(row[modelCol]) or ''
-    if model == '' then model = str(props.model) end
 
-    local garage = str(row.garage) ~= '' and str(row.garage) or str(row.parking)
-    local state  = row.state
-    if state == nil then state = row.stored end
+    if model:sub(1, 1) == '{' then model = '' end
+    if model == '' then model = str(props.model or props.modelName) end
+    if model == '' then model = str(row.hash) end
+
+    -- Resolved through the garage bridge's column profile rather than a guess at `garage`/`state`:
+    -- which columns hold the garage and its state depends entirely on the garage system running.
+    local garage, stored, impound = garages.locationOf(row)
 
     return {
-        plate  = str(row.plate):upper(),
-        model  = model,
-        owner  = row[VEHICLES.idCol],
-        garage = garage,
-        state  = tonumber(state) or (state == true and 1) or 0,
+        plate   = str(row.plate):upper(),
+        model   = model,
+        owner   = row[VEHICLES.idCol],
+        garage  = garage,
+        state   = stored and 1 or 0,
+        impound = impound,
     }
 end
 

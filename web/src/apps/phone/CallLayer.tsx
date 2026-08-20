@@ -7,7 +7,7 @@ import { resolveWallpaper } from '@/shell/wallpapers';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { fetchNui } from '@/core/nui';
 import { useContacts } from '@/stores/contactsStore';
-import { acceptCall, addToCall, declineCall, hangupCall } from './callsApi';
+import { acceptCall, addToCall, declineCall, getCurrentCall, hangupCall } from './callsApi';
 import { useMaskedPhone } from '@/stores/themeStore';
 import { playDtmf } from './keypad/dtmf';
 import { VideoCall } from './calls/VideoCall';
@@ -79,6 +79,15 @@ export function CallLayer({ wallpaper }: { wallpaper?: string }) {
     useNuiEvent('sd-phone:video:accept',  useCallback(() => { setVideoInitiator(true); setVideoPhase('active'); }, []));
     useNuiEvent('sd-phone:video:stop',    useCallback(() => setVideoPhase('off'), []));
 
+    const reconcile = useCallback(() => {
+        const before = useCallStore.getState().channel;
+        void getCurrentCall().then(cur => {
+            if (useCallStore.getState().channel !== before) return;
+            useCallStore.getState().reconcile(cur);
+        });
+    }, []);
+
+    useNuiEvent('sd-phone:open', reconcile);
     useEffect(() => {
         if (phase !== 'active') return;
         const id = window.setInterval(() => setNow(Date.now()), 1000);

@@ -52,6 +52,9 @@ register('races',        function(src)          return actions.races(src) end)
 register('tracks',       function(src, payload) return actions.tracks(src, payload) end)
 register('track',        function(src, payload) return actions.track(src, payload) end)
 register('trackRoute',   function(src, payload) return actions.trackRoute(src, payload) end)
+register('personalBest', function(src, payload) return actions.personalBest(src, payload) end)
+register('trialStart',   function(src, payload) return races.trialStart(src, payload) end)
+register('trialFinish',  function(src, payload) return races.trialFinish(src, payload) end)
 register('spectate',     function(src, payload) return actions.spectate(src, payload) end)
 register('rankings',     function(src, payload) return actions.rankings(src, payload) end)
 register('racer',        function(src, payload) return actions.racer(src, payload) end)
@@ -79,6 +82,18 @@ register('leave', function(src, payload)
     local cid = player.getIdentifier(src)
     if not cid then return util.fail(LOADING) end
     return racegen.leave(src, cid, payload.raceId)
+end)
+
+---A racer reporting that the flag dropped on them out of position, so they never started. The
+---client decides this because the start line, the seat and the heading are all client-side facts;
+---the worst a spoofed call can do is remove the caller from their own race, which is a thing they
+---can already do by driving away.
+register('notStarted', function(src, payload)
+    local cid = player.getIdentifier(src)
+    if not cid then return util.fail(LOADING) end
+    if type(payload.raceId) ~= 'string' then return util.fail('Unknown race') end
+    races.withdraw(cid, payload.raceId)
+    return util.ok({})
 end)
 
 register('host', function(src, payload)

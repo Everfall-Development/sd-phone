@@ -102,7 +102,7 @@ end
 ---@param nuiAction string NUI action name the React app fetches
 ---@param serverEvent string server callback name to await
 ---@param onAccepted? fun() ran only when the server accepted the write, never on a rejection
----@param transform? fun(response: any): any optional response transform; failures keep the original
+---@param transform? fun(response: any): any optional successful-response transform; failures keep the original
 local function proxy(nuiAction, serverEvent, onAccepted, transform)
     ---@type string|nil '<app>:<action>', nil for anything not shaped like one
     local action = serverEvent:match('^sd%-phone:server:(.+)$')
@@ -134,9 +134,15 @@ local function proxy(nuiAction, serverEvent, onAccepted, transform)
 
         local res = lib.callback.await(serverEvent, false, payload)
         if onAccepted and type(res) == 'table' and res.success == true then onAccepted() end
-        if key and type(res) == 'table' and res.success == true then remember(key, res) end
         local response = res or { success = false, message = 'No response from server' }
-        cb(transformResponse(response, transform))
+        local transformed = response
+        if type(response) == 'table' and response.success == true then
+            transformed = transformResponse(response, transform)
+        end
+        if key and type(transformed) == 'table' and transformed.success == true then
+            remember(key, transformed)
+        end
+        cb(transformed)
     end)
 end
 

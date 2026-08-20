@@ -17,10 +17,17 @@ local garages = {}
 local G = config.Garages or { Enabled = false }
 
 ---@type { table: string, idCol: string } Framework ownership table: QBCore/Qbox key owned
----vehicles by citizenid in `player_vehicles`, ESX by owner identifier in `owned_vehicles`.
-local BASE = framework.name == 'esx'
-    and { table = 'owned_vehicles',  idCol = 'owner' }
-    or  { table = 'player_vehicles', idCol = 'citizenid' }
+---vehicles by citizenid in `player_vehicles`, ESX by owner identifier in `owned_vehicles`, and
+---ox_core by charId in its own `vehicles`. An if-chain, not a ternary: an unrecognised framework
+---must not silently inherit the QBCore table.
+local BASE
+if framework.name == 'esx' then
+    BASE = { table = 'owned_vehicles',  idCol = 'owner' }
+elseif framework.name == 'ox' then
+    BASE = { table = 'vehicles',        idCol = 'owner' }
+else
+    BASE = { table = 'player_vehicles', idCol = 'citizenid' }
+end
 
 -- Profile fields: garage/state columns are tried in order, first present wins; `stored`/`impound`
 -- are the state values meaning parked / impounded; `impoundCol` names a separate truthy flag;
@@ -231,6 +238,30 @@ local function displayStatus(row, spawned)
     local p = normPlate(row.plate)
     if impound or not (p and spawned[p]) then return 'impound' end
     return 'out'
+end
+
+---Where a vehicle row says it is, resolved through the active system's column profile. Exists so
+---the MDT reads garages the same way the Garages app does: it used to look only at `garage`,
+---`parking`, `state` and `stored`, which meant every system keeping them elsewhere (jg and cd_garage
+---in `garage_id`/`in_garage`, op_garages in `vehicleGarage`) showed as "Not on file" there while the
+---Garages app read them correctly.
+---@param row table|nil vehicle DB row
+---@return string garage garage name, '' when unknown or the row is out
+---@return boolean stored parked in a garage
+---@return boolean impound explicitly impound-flagged
+function garages.locationOf(row)
+    if type(row) ~= 'table' then return '', false, false end
+
+    local status, impound = statusOf(row)
+
+    local name = pick(row, PROFILE.garage)
+    name = name ~= nil and trim(tostring(name)) or ''
+
+    -- qs-advancedgarages parks the word OUT in the garage column instead of a garage name, so the
+    -- column holds a state there, not a place. Printing it would read as a garage called "OUT".
+    if PROFILE.outGarage and name:upper() == tostring(PROFILE.outGarage):upper() then name = '' end
+
+    return name, status == 'stored', impound
 end
 
 ---True when ef_vehicles mileage tracking is running. Checked at call time.
@@ -480,13 +511,16 @@ end
 function garages.activeSystem() return ACTIVE end
 
 ---Normalised list of the caller's owned vehicles: stored/out/impound status, condition fields,
----waypoints on stored/impounded rows, and mileage while ef_vehicles runs. Read-only.
+---waypoints on stored/impounded rows, and mileage while ef_vehicles runs. Read-only. Keyed on
+---the framework identifier rather than the acting SIM identity server/sim/init.lua installs over
+---getIdentifier, because ownership belongs to the character and a phone swap must not change whose
+---vehicles come back.
 ---@param source number caller server id
 ---@return table[] vehicles (empty when disabled / no character / table missing)
 function garages.list(source)
     if not G.Enabled then return {} end
 
-    local id = player.getIdentifier(source)
+    local id = player.getRealIdentifier(source)
     if not id then return {} end
 
     local ok, rows = pcall(function()
@@ -562,14 +596,15 @@ local function pickName(row, names)
 end
 
 ---One of the caller's own vehicles by plate, with the same status the app list shows. Ownership
----resolves from the caller's identifier.
+---resolves from the framework identifier, the same one garages.list reads, so a SIM swap cannot
+---turn someone else's plate into a match.
 ---@param source number caller server id
 ---@param plate string
 ---@return table|nil vehicle { row, status, model, props, plate }
 function garages.vehicleFor(source, plate)
     if not G.Enabled then return nil end
 
-    local id   = player.getIdentifier(source)
+    local id   = player.getRealIdentifier(source)
     local want = normPlate(plate)
     if not id or not want or want == '' then return nil end
 

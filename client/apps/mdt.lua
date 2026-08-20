@@ -1,7 +1,10 @@
----@type fun(nuiAction: string, serverEvent: string) NUI->server pass-through registrar (client.nui).
+---@type fun(nuiAction: string, serverEvent: string, onAccepted?: function, transform?: fun(res: table))
+---NUI->server pass-through registrar (client.nui).
 local proxyCallback = require 'client.nui'
 ---@type table Notify bridge (bridge.client.notify): backend-agnostic toast notifications.
 local notify = require 'bridge.client.notify'
+---@type fun(raw: any): VehicleModel Stored model value to hash/spawn/display (client.vehiclename).
+local vehicleModel = require 'client.vehiclename'
 
 ---@type string[] NUI action suffixes proxied 1:1 to sd-phone:server:mdt:<action>. Every MDT
 ---action except the waypoint below is a pass-through; identity, permissions and clamping all live
@@ -11,6 +14,8 @@ local ACTIONS = {
     'dispatch:state', 'dispatch:setStatus', 'dispatch:attach', 'dispatch:detach', 'dispatch:locate',
     'persons:search', 'persons:get', 'persons:notes', 'persons:flags', 'persons:mugshot',
     'vehicles:search', 'vehicles:get', 'vehicles:update',
+    'weapons:search', 'weapons:get', 'weapons:create', 'weapons:update',
+    'cameras:list', 'cameras:watch', 'cameras:unwatch',
     'reports:list', 'reports:get', 'reports:save', 'reports:delete',
     'cases:list', 'cases:get', 'cases:save', 'cases:delete', 'cases:note', 'cases:assign', 'cases:linkReport',
     'warrants:list', 'warrants:get', 'warrants:issue', 'warrants:close', 'warrants:void',
@@ -32,8 +37,38 @@ local ACTIONS = {
     'expunge:list', 'expunge:file', 'expunge:rule',
 }
 
+---@type table<string, boolean> Actions whose answer carries vehicle rows. ESX stores a model hash
+---rather than a name, and only a client native can turn one back into words, so these are completed
+---here on the way through instead of arriving as a number the operator cannot read.
+local VEHICLE_ACTIONS = {
+    ['vehicles:search'] = true,
+    ['vehicles:get']    = true,
+    ['persons:get']     = true,
+    ['patients:get']    = true,
+    ['cameras:list']    = true,
+}
+
+---@type integer How deep the walk looks for vehicle rows. The MDT nests them a couple of levels at
+---most; the cap is what stops a cyclic or unexpectedly deep answer costing the frame.
+local NAME_DEPTH <const> = 6
+
+---Names every vehicle row in a response, wherever the shape puts them. A row is anything carrying
+---both a plate and a model, which is true of every vehicle the MDT returns and of nothing else.
+---@param node any
+---@param depth integer
+local function nameVehicles(node, depth)
+    if type(node) ~= 'table' or depth > NAME_DEPTH then return end
+    if node.plate ~= nil and node.model ~= nil then node.model = vehicleModel(node.model).display end
+    for _, value in pairs(node) do nameVehicles(value, depth + 1) end
+end
+
 for _, action in ipairs(ACTIONS) do
-    proxyCallback('sd-phone:mdt:' .. action, 'sd-phone:server:mdt:' .. action)
+    proxyCallback(
+        'sd-phone:mdt:' .. action,
+        'sd-phone:server:mdt:' .. action,
+        nil,
+        VEHICLE_ACTIONS[action] and function(res) nameVehicles(res, 0) end or nil
+    )
 end
 
 ---React -> Lua: drops a GPS waypoint at coords the server resolved. The only MDT action that is
@@ -82,4 +117,24 @@ end)
 ---@param data table { citizenid, wanted }
 RegisterNetEvent('sd-phone:client:mdt:warrant', function(data)
     SendNUIMessage({ action = 'sd-phone:mdt:warrant', data = data })
+end)
+
+---Server push: one media segment from a unit's camera, addressed to this terminal only.
+---@param data table { citizenid, gen, chunk, init, mime? }
+RegisterNetEvent('sd-phone:client:mdt:cameraChunk', function(data)
+    SendNUIMessage({ action = 'sd-phone:mdt:cameraChunk', data = data })
+end)
+
+---Server push: a camera this terminal was watching has gone off the air.
+---@param data table { citizenid, reason }
+RegisterNetEvent('sd-phone:client:mdt:cameraOff', function(data)
+    SendNUIMessage({ action = 'sd-phone:mdt:cameraOff', data = data })
+end)
+
+---Server push: the transport a unit's camera publishes on changed. The terminal follows the
+---publisher rather than choosing for itself, and it keeps listening on the event path above
+---whichever way this points, so a downgrade costs a rebuilt picture and nothing else.
+---@param data table { citizenid, transport }
+RegisterNetEvent('sd-phone:client:mdt:cameraTransport', function(data)
+    SendNUIMessage({ action = 'sd-phone:mdt:cameraTransport', data = data })
 end)
