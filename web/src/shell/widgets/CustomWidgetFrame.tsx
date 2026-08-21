@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { WidgetSize } from '@/apps/appstore/appsApi';
 import type { CustomAppDef, CustomWidgetDef } from '@/core/types';
 import { t } from '@/i18n';
+import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { useCustomApps } from '@/stores/customAppsStore';
 import { useTheme } from '@/stores/themeStore';
 import { resolveCustomUi, withQuery } from './customUrl';
@@ -29,8 +30,8 @@ export function parseCustomWidgetKind(kind: string): { appId: string; widgetId: 
 function findWidget(apps: CustomAppDef[], kind: string): { app: CustomAppDef; widget: CustomWidgetDef } | null {
     const parsed = parseCustomWidgetKind(kind);
     if (!parsed) return null;
-    const app = apps.find(a => a.id === parsed.appId);
-    const widget = app?.widgets?.find(w => w.id === parsed.widgetId);
+    const app = apps.find((a) => a.id === parsed.appId);
+    const widget = app?.widgets?.find((w) => w.id === parsed.widgetId);
     return app && widget ? { app, widget } : null;
 }
 
@@ -40,10 +41,18 @@ function prettyId(kind: string): string {
     return words ? words.charAt(0).toUpperCase() + words.slice(1) : '';
 }
 
-export function CustomWidgetFrame({ kind, size, width, height, editing, onOpen, onLongPress }: {
-    kind:   string;
-    size:   WidgetSize;
-    width:  number;
+export function CustomWidgetFrame({
+    kind,
+    size,
+    width,
+    height,
+    editing,
+    onOpen,
+    onLongPress,
+}: {
+    kind: string;
+    size: WidgetSize;
+    width: number;
     height: number;
     /** Homescreen is in jiggle/rearrange mode: the widget must stay inert so drag-and-drop works. */
     editing?: boolean;
@@ -65,7 +74,7 @@ export function CustomWidgetFrame({ kind, size, width, height, editing, onOpen, 
     const src = useMemo(() => {
         if (!found) return '';
         return withQuery(resolveCustomUi(found.widget.ui), {
-            app:    found.app.id,
+            app: found.app.id,
             widget: found.widget.id,
             size,
             width,
@@ -73,17 +82,36 @@ export function CustomWidgetFrame({ kind, size, width, height, editing, onOpen, 
         });
     }, [found, size, width, height]);
 
-    useEffect(() => { setReady(false); }, [src]);
+    useEffect(() => {
+        setReady(false);
+    }, [src]);
 
     useEffect(() => {
         if (!ready || !found) return;
-        frameRef.current?.contentWindow?.postMessage({
-            type:   'sd-phone:widget',
-            app:    found.app.id,
-            widget: found.widget.id,
-            size, width, height, theme,
-        }, '*');
+        frameRef.current?.contentWindow?.postMessage(
+            {
+                type: 'sd-phone:widget',
+                app: found.app.id,
+                widget: found.widget.id,
+                size,
+                width,
+                height,
+                theme,
+            },
+            '*',
+        );
     }, [ready, found, size, width, height, theme]);
+
+    useNuiEvent(
+        'customApps:message',
+        useCallback(
+            (data) => {
+                if (!ready || !found || !data || (data.id !== found.app.id && data.id !== 'any')) return;
+                frameRef.current?.contentWindow?.postMessage(data.message, '*');
+            },
+            [found, ready],
+        ),
+    );
 
     // Interactive widgets get real pointer events, so tapping their non-button chrome no longer
     // bubbles out to the homescreen tile (cross-origin iframes never bubble into the parent
