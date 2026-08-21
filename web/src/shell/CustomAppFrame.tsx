@@ -20,7 +20,11 @@ import { Camera } from '@/apps/camera/Camera';
 import { AppIconSVG } from './AppIconSVG';
 import { useDeckActive } from './deckActive';
 import { resolveCustomUi } from './widgets/customUrl';
-import { subscribeCustomAppDeepLink } from './customAppDeepLinks';
+import {
+    deliverReadyDeepLinks,
+    isCustomAppDeepLinkMessage,
+    subscribeCustomAppDeepLink,
+} from './customAppDeepLinks';
 import type { Contact } from '@/apps/phone/data';
 
 // The SDK ships with whichever resource serves this page - a companion device may not reach
@@ -112,15 +116,20 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
 
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const loadedRef = useRef(false);
+    const frameCleanupRef = useRef<(() => void) | null>(null);
     const [ready, setReady] = useState(false);
-    const defRef = useRef(def);
-    defRef.current = def;
 
     const sdkReadyRef = useRef(false);
+    const deepLinkReadyRef = useRef(false);
     const outboxRef   = useRef<unknown[]>([]);
     const typingRef   = useRef(false);
 
     const postToApp = useCallback((message: unknown) => {
+        if (deepLinkReadyRef.current && isCustomAppDeepLinkMessage(message)) {
+            try { iframeRef.current?.contentWindow?.postMessage(message, '*'); } catch { /* cross-origin */ }
+            return;
+        }
+
         if (!sdkReadyRef.current) {
             if (outboxRef.current.length < 64) outboxRef.current.push(message);
             return;
@@ -138,6 +147,16 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
         for (const message of queued) {
             try { win?.postMessage(message, '*'); } catch { /* cross-origin */ }
         }
+    }, []);
+
+    const markDeepLinkReady = useCallback(() => {
+        if (deepLinkReadyRef.current) return;
+
+        deepLinkReadyRef.current = true;
+        const win = iframeRef.current?.contentWindow;
+        outboxRef.current = deliverReadyDeepLinks(outboxRef.current, (message) => {
+            try { win?.postMessage(message, '*'); } catch { /* cross-origin */ }
+        });
     }, []);
 
     const [popup, setPopup]         = useState<PopupData | null>(null);
@@ -206,7 +225,7 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
     }, [postToApp]);
 
     const notify = useCallback((data: Record<string, unknown>) => {
-        const d = defRef.current;
+        const d = useCustomAppsStore.getState().apps.find((app) => app.id === appId);
         if (!d) return;
         const thumb = (data.thumbnail ?? data.avatar ?? data.image) as string | undefined;
         window.postMessage({
@@ -219,7 +238,7 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
                 body:  (data.content ?? data.body ?? data.description) as string | undefined,
             },
         }, '*');
-    }, []);
+    }, [appId]);
 
     const createCall = useCallback((data: Record<string, unknown>) => {
         if (!device.calls) { warnOnce('CreateCall'); return; }
@@ -261,15 +280,12 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
     }, []);
 
     const storageKey = useCallback((key: unknown): string | null => {
-        const id = defRef.current?.id;
-        if (!id || typeof key !== 'string' || key === '') return null;
-        return `sd-phone:customapp:${id}:${key}`;
-    }, []);
+        if (typeof key !== 'string' || key === '') return null;
+        return `sd-phone:customapp:${appId}:${key}`;
+    }, [appId]);
 
     const storageUsage = useCallback((): { bytes: number; keys: number } => {
-        const id = defRef.current?.id;
-        if (!id) return { bytes: 0, keys: 0 };
-        const prefix = `sd-phone:customapp:${id}:`;
+        const prefix = `sd-phone:customapp:${appId}:`;
         let bytes = 0;
         let keys = 0;
         for (let i = 0; i < window.localStorage.length; i++) {
@@ -279,7 +295,7 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
             bytes += k.length + (window.localStorage.getItem(k)?.length ?? 0);
         }
         return { bytes, keys };
-    }, []);
+    }, [appId]);
 
     const fetchPhone = useCallback((event: string, data?: any): Promise<unknown> => {
         switch (event) {
@@ -342,7 +358,7 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
                     const nextKeys = used.keys + (previous === null ? 1 : 0);
 
                     if (nextBytes > STORAGE_MAX_BYTES || nextKeys > STORAGE_MAX_KEYS) {
-                        warnQuota(defRef.current?.id ?? appId);
+                        warnQuota(appId);
                         return Promise.resolve(false);
                     }
 
@@ -361,8 +377,8 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
 
     useEffect(() => {
         if (!loadedRef.current) return;
-        postToApp({ type: active ? 'appOpen' : 'appClose', data: { id: defRef.current?.id } });
-    }, [active, ready, postToApp]);
+        postToApp({ type: active ? 'appOpen' : 'appClose', data: { id: appId } });
+    }, [active, appId, ready, postToApp]);
 
     const bridge = useMemo(() => {
         const withCallbackIds = (data: PopupData | undefined) => {
@@ -455,11 +471,14 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
 
     const onLoad = useCallback(() => {
         const iframe = iframeRef.current;
-        const d = defRef.current;
+        const d = useCustomAppsStore.getState().apps.find((app) => app.id === appId);
         if (!iframe || !d) return;
+
+        frameCleanupRef.current?.();
+        frameCleanupRef.current = null;
         loadedRef.current = true;
         sdkReadyRef.current = false;
-        outboxRef.current = [];
+        deepLinkReadyRef.current = false;
         frameDebugEnabled = null;
         try {
             const win = iframe.contentWindow as (Window & Record<string, unknown>) | null;
@@ -492,12 +511,15 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
             win.formatPhoneNumber = (n: string) => formatPhone(n);
             win.setApp            = setApp;
             win.components        = bridge;
+            if (Reflect.get(win, 'sdPhoneDeepLinkReady') === true) markDeepLinkReady();
 
-            doc.addEventListener('keydown', (e: KeyboardEvent) => {
+            function handleFrameKeyDown(e: KeyboardEvent) {
                 if (e.key !== 'Escape') return;
                 e.preventDefault();
                 window.postMessage({ action: 'sd-phone:escape' }, '*');
-            });
+            }
+
+            doc.addEventListener('keydown', handleFrameKeyDown);
 
             const rootMarkup = doc.getElementById('root')?.innerHTML.length ?? -1;
             frameDebug(`${d.id}: globals set, #root markup ${rootMarkup} chars, injecting ${COMPONENTS_URL}`);
@@ -512,20 +534,29 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
                 markSdkReady();
             };
             (doc.body ?? doc.documentElement).appendChild(script);
-            window.setTimeout(markSdkReady, 4000);
-            window.setTimeout(() => {
+            const sdkFallbackTimer = window.setTimeout(markSdkReady, 4000);
+            const debugTimer = window.setTimeout(() => {
                 try {
                     const body = iframe.contentDocument?.body;
                     const root = iframe.contentDocument?.getElementById('root');
                     frameDebug(`${d.id}: after 3s body ${body?.innerHTML.length ?? -1} chars, #root ${root?.innerHTML.length ?? -1} chars, visible=${body ? getComputedStyle(body).visibility : 'n/a'}`);
                 } catch { /* cross-origin */ }
             }, 3000);
+
+            frameCleanupRef.current = () => {
+                doc.removeEventListener('keydown', handleFrameKeyDown);
+                window.clearTimeout(sdkFallbackTimer);
+                window.clearTimeout(debugTimer);
+                script.onload = null;
+                script.onerror = null;
+                script.remove();
+            };
         } catch (err) {
             frameDebug(`${d.id}: injection threw ${err instanceof Error ? err.message : String(err)}`);
             console.warn('[sd-phone] custom-app iframe injection failed (expected outside FiveM)', err);
         }
         setReady(true);
-    }, [theme, bridge, setApp, markSdkReady]);
+    }, [appId, theme, bridge, setApp, markDeepLinkReady, markSdkReady]);
 
     useEffect(() => {
         if (!loadedRef.current) return;
@@ -546,12 +577,13 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
                 frameDebug(msg.message);
                 return;
             }
+            if (msg.type === 'sdphoneDeepLinkReady') markDeepLinkReady();
             if (msg.type === 'sdphoneSdkReady') markSdkReady();
             if (msg.type === 'sdphoneCloseApp') closeFromFrame();
         }
         window.addEventListener('message', onFrameMessage);
         return () => window.removeEventListener('message', onFrameMessage);
-    }, [markSdkReady, closeFromFrame]);
+    }, [markDeepLinkReady, markSdkReady, closeFromFrame]);
 
     useNuiEvent('customApps:message', useCallback((data) => {
         if (!data || (data.id !== appId && data.id !== 'any')) return;
@@ -573,6 +605,8 @@ export function CustomAppFrame({ appId, onClose }: { appId: string; onClose: () 
         }
     }, [active, appId]);
     useEffect(() => () => {
+        frameCleanupRef.current?.();
+        frameCleanupRef.current = null;
         if (activeRef.current) {
             activeRef.current = false;
             void fetchNui('customApps/lifecycle', { id: appId, action: 'close' });
