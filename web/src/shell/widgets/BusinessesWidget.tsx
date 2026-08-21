@@ -1,47 +1,17 @@
 import { BriefcaseBusiness } from 'lucide-react';
 
 import type { WidgetSize, WidgetTheme } from '@/apps/appstore/appsApi';
-import type { Company } from '@/apps/services/data';
-import type { Inbox, InboxThread } from '@/apps/services/servicesApi';
+import type { InboxThread } from '@/apps/services/servicesApi';
+import { ServiceAvatar } from '@/apps/services/ServiceAvatar';
 import { t } from '@/i18n';
 import { useWidgetData } from '@/stores/widgetDataStore';
+import {
+    nearbyOpenBusinesses,
+    prioritizedBusinessThreads,
+    type NearbyBusiness,
+} from './businessesWidgetData';
 import { WidgetTile, palette } from './WidgetTile';
 import type { Palette } from './WidgetTile';
-
-export interface NearbyBusiness extends Company {
-    distance: number | null;
-}
-
-function distanceFrom(here: { x: number; y: number } | null, company: Company): number | null {
-    if (!here || !company.coords) return null;
-    return Math.hypot(company.coords.x - here.x, company.coords.y - here.y);
-}
-
-export function nearbyOpenBusinesses(
-    companies: Company[],
-    here: { x: number; y: number } | null,
-): NearbyBusiness[] {
-    const open = companies.filter(company => company.status === 'open');
-    const publicBusinesses = open.filter(company => !company.emergency);
-    const candidates = publicBusinesses.length > 0 ? publicBusinesses : open;
-
-    return candidates
-        .map(company => ({ ...company, distance: distanceFrom(here, company) }))
-        .sort((left, right) => {
-            if (left.distance === null && right.distance === null) return left.name.localeCompare(right.name);
-            if (left.distance === null) return 1;
-            if (right.distance === null) return -1;
-            return left.distance - right.distance;
-        });
-}
-
-export function prioritizedBusinessThreads(inbox: Inbox | null): InboxThread[] {
-    if (!inbox?.hasJob) return [];
-    return [...inbox.job].sort((left, right) => {
-        if (left.unread !== right.unread) return right.unread - left.unread;
-        return right.ts - left.ts;
-    });
-}
 
 function distanceLabel(distance: number | null): string {
     if (distance === null) return '';
@@ -107,7 +77,7 @@ function NearbySummary({ companies, p, size }: { companies: NearbyBusiness[]; p:
                     className="flex min-w-0 items-center gap-2 py-1.5"
                     style={index > 0 ? { borderTop: `1px solid ${p.rule}` } : undefined}
                 >
-                    <span className="shrink-0 text-[15px] leading-none" aria-hidden>{company.emoji}</span>
+                    <ServiceAvatar emoji={company.emoji} iconUrl={company.iconUrl} size={18} />
                     <div className="min-w-0 flex-1">
                         <div className="truncate text-[12px] font-semibold" style={{ color: p.fg }}>{company.name}</div>
                         {size !== 'sm' && <div className="truncate text-[10px]" style={{ color: p.faint }}>{company.category}</div>}

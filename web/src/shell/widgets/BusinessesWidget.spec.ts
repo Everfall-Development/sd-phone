@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Company } from '@/apps/services/data';
 import type { Inbox } from '@/apps/services/servicesApi';
-import { nearbyOpenBusinesses, prioritizedBusinessThreads } from './BusinessesWidget';
+import { nearbyOpenBusinesses, prioritizedBusinessThreads } from './businessesWidgetData';
 
 const companies: Company[] = [
     { id: 'police', name: 'Police', location: 'Emergency', category: 'Emergency', color: '#00f', emoji: 'P', canCall: true, canMessage: true, emergency: true, status: 'open', coords: { x: 5, y: 0, z: 0 } },
@@ -16,8 +16,8 @@ describe('Businesses widget projections', () => {
         expect(nearbyOpenBusinesses(companies, { x: 0, y: 0 }).map(company => company.id)).toEqual(['near', 'far']);
     });
 
-    it('falls back to emergency listings when no public business is open', () => {
-        expect(nearbyOpenBusinesses([companies[0]], { x: 0, y: 0 }).map(company => company.id)).toEqual(['police']);
+    it('never treats emergency services as businesses', () => {
+        expect(nearbyOpenBusinesses([companies[0]], { x: 0, y: 0 })).toEqual([]);
     });
 
     it('keeps every candidate until after nearest sorting', () => {
