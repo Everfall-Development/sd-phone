@@ -63,7 +63,7 @@ return {
         { id = 'documents', label = 'Files', icon = 'documents', route = '/documents', accent = '#3478F6', base = true, enabled = true },
         { id = 'groups', label = 'Groups', icon = 'groups', route = '/groups', accent = '#6C63FF', base = false, enabled = false },
         { id = 'birdy', label = 'Quip', icon = 'birdy', route = '/birdy', accent = '#2699f2', base = true, enabled = true },
-        { id = 'services', label = 'Businesses', icon = 'services', route = '/services', accent = '#16B8A6', base = true, enabled = true },
+        { id = 'services', label = 'Businesses', icon = 'services', route = '/services', accent = '#16B8A6', provider = 'Everfall', base = true, enabled = true },
         { id = 'pages', label = 'Pages', icon = 'pages', route = '/pages', accent = '#FBC02D', base = false, enabled = false },
         { id = 'review', label = 'Review', icon = 'review', route = '/review', accent = '#E03131', base = false, enabled = false },
         { id = 'marketplace', label = 'Marketplace', icon = 'marketplace', route = '/marketplace', accent = '#0a84ff', base = false, enabled = true },

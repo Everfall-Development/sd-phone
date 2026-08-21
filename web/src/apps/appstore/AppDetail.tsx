@@ -41,7 +41,7 @@ export function AppDetail({ app, desc, installed, downloadProgress, onBack, onIn
 
     const custom = getCustomApp(app.id);
     const sizeValue = custom?.size ? t('appstore.appSize', '{size} MB', { size: (custom.size / 1000).toFixed(1) }) : appSize(app.id);
-    const providerValue = custom?.developer || t('appstore.sdPhone', 'SD Phone');
+    const providerValue = custom?.developer || app.provider || t('appstore.sdPhone', 'SD Phone');
 
     return (
         <div

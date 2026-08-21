@@ -91,6 +91,7 @@ export interface AppDef {
     icon: string;
     route: string;
     accent: string;
+    provider?: string;
     base?: boolean;
     /** Wi-Fi network id (configs/wifi.lua) the phone must be joined to before this app downloads. */
     wifi?: string;

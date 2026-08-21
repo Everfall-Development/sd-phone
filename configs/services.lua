@@ -9,10 +9,17 @@ return {
         -- belong in the phone directory. Industrial processing sites may expose map blips for
         -- gameplay navigation, but they are not companies customers should call or message.
         AlwaysIncludeTypes = { 'mechanic' },
-        ExcludeTypes = { 'industrial' },
+        ExcludeTypes = { 'industrial', 'public_service' },
+        ExcludeJobPrefixes = { 'factories_' },
     },
 
     DirectoryOverrides = {
+        police = { visible = false },
+        ambulance = { visible = false },
+        realestate = {
+            label = 'Dynasty 8 Real Estate',
+            iconUrl = './dynasty8-logo.png',
+        },
         -- ['job_name'] = {
         --     visible = true, -- false excludes it; either value overrides the type/blip policy
         --     label = 'Display name',
@@ -23,10 +30,6 @@ return {
         --     canMessage = true,
         -- },
     },
-
-    -- Emergency services are deliberately included beside the live
-    -- ef_businesses directory even though they are not business locations.
-    EmergencyCompanies = { 'police', 'ambulance' },
 
     -- Customer message images are loaded by every staff member who opens the thread. Keep the
     -- default to the server-owned Fivemanage upload host so a player cannot make recipients load
@@ -82,30 +85,6 @@ return {
     -- society bank is available; the no-society fallback already pays the sending
     -- employee in full, so no commission is split there.
     Companies = {
-        {
-            job = 'police',
-            label = 'Police',
-            location = 'Mission Row',
-            color = '#0A84FF',
-            emoji = '🚓',
-            canCall = true,
-            callNumber = '911',
-            bossGrade = 3,
-            coords = { x = 425.1, y = -979.5, z = 30.7 },
-            emergency = true,
-        },
-        {
-            job = 'ambulance',
-            label = 'Ambulance',
-            location = 'Pillbox',
-            color = '#C0392B',
-            emoji = '🚑',
-            canCall = true,
-            callNumber = '912',
-            bossGrade = 3,
-            coords = { x = 307.7, y = -1433.4, z = 29.9 },
-            emergency = true,
-        },
         {
             job = 'mechanic',
             label = 'Mechanic',

@@ -29,8 +29,7 @@ export interface Employee {
 }
 
 export const COMPANIES: Company[] = [
-    { id: 'police', name: 'Police', location: 'Mission Row', category: 'Emergency', color: '#0A84FF', emoji: '🚓', canCall: true, canMessage: true, emergency: true, status: 'open', onDuty: true, coords: { x: 425.1, y: -979.5, z: 30.7 } },
-    { id: 'ambulance', name: 'Ambulance', location: 'Pillbox Hill', category: 'Emergency', color: '#C0392B', emoji: '🚑', canCall: true, canMessage: true, emergency: true, status: 'open', onDuty: true, coords: { x: 307.7, y: -1433.4, z: 29.9 } },
+    { id: 'realestate', name: 'Dynasty 8 Real Estate', location: 'Downtown Los Santos', category: 'Business', color: '#FFCC4D', emoji: '🏠', iconUrl: './dynasty8-logo.png', canCall: true, canMessage: true, emergency: false, status: 'open', onDuty: true, coords: { x: 67.19, y: -260.47, z: 48.37 } },
     { id: 'mechanic', name: 'Hayes Auto', location: 'Strawberry Avenue', category: 'Automotive', color: '#59636E', emoji: '🔧', canCall: true, canMessage: true, emergency: false, status: 'closed', onDuty: false, coords: { x: -347.3, y: -133.8, z: 39.0 } },
     { id: 'taxi', name: 'Downtown Cab Co.', location: 'Tangerine Street', category: 'Transport', color: '#27AE60', emoji: '🚕', canCall: true, canMessage: true, emergency: false, status: 'open', onDuty: true, coords: { x: 895.7, y: -179.3, z: 74.7 } },
 ];
@@ -58,8 +57,8 @@ export function filterBusinesses(
             return `${company.name} ${company.category} ${company.location}`.toLocaleLowerCase().includes(search);
         })
         .sort((left, right) => {
-            if (left.status !== right.status) return left.status === 'open' ? -1 : 1;
             if (left.emergency !== right.emergency) return left.emergency ? -1 : 1;
+            if (left.status !== right.status) return left.status === 'open' ? -1 : 1;
             const byName = left.name.localeCompare(right.name);
             return byName !== 0 ? byName : left.id.localeCompare(right.id);
         });

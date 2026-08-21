@@ -36,11 +36,39 @@ export type ServiceResult = Envelope<MutResult>;
 
 const DEV_DIRECTORY: Directory = { companies: COMPANIES };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isCompany(value: unknown): value is Company {
+    if (!isRecord(value)) return false;
+    if (typeof value.id !== 'string' || value.id === '') return false;
+    if (typeof value.name !== 'string' || value.name === '') return false;
+    if (typeof value.location !== 'string') return false;
+    if (typeof value.category !== 'string' || value.category === '') return false;
+    if (typeof value.color !== 'string' || typeof value.emoji !== 'string') return false;
+    if (typeof value.canCall !== 'boolean' || typeof value.canMessage !== 'boolean') return false;
+    if (typeof value.emergency !== 'boolean') return false;
+    if (value.status !== 'open' && value.status !== 'closed') return false;
+    if (value.iconUrl !== undefined && typeof value.iconUrl !== 'string') return false;
+    if (value.onDuty !== undefined && typeof value.onDuty !== 'boolean') return false;
+    if (value.coords !== undefined) {
+        if (!isRecord(value.coords) || typeof value.coords.x !== 'number' || typeof value.coords.y !== 'number') return false;
+        if (value.coords.z !== undefined && typeof value.coords.z !== 'number') return false;
+    }
+    return true;
+}
+
+export function isDirectoryPayload(value: unknown): value is Directory {
+    if (!isRecord(value) || !Array.isArray(value.companies)) return false;
+    return value.companies.every(isCompany);
+}
+
 export async function fetchDirectory(): Promise<Directory> {
     if (!isFiveM) return DEV_DIRECTORY;
     try {
         const response = await fetchNui<Envelope<Directory>>('sd-phone:services:directory');
-        if (response?.success && response.data) return response.data;
+        if (response?.success && isDirectoryPayload(response.data)) return response.data;
         return { companies: [], unavailable: response?.message ?? t('services.unavailable', 'Businesses are unavailable right now.') };
     } catch {
         return { companies: [], unavailable: t('services.unavailable', 'Businesses are unavailable right now.') };
@@ -96,6 +124,7 @@ export interface InboxThread {
     name:     string;
     color:    string;
     emoji:    string;
+    iconUrl?: string;
     preview:  string;
     ts:       number;
     unread:   number;
@@ -111,29 +140,57 @@ export interface Inbox {
 const DEV_INBOX: Inbox = {
     personal: [
         {
-            key: 'police', name: 'Police', color: '#F2C94C', emoji: '🚓',
-            preview: 'On our way.', ts: Date.now() - 60_000, unread: 1,
+            key: 'mechanic', name: 'Hayes Auto', color: '#59636E', emoji: '🔧',
+            preview: 'Bring it by when you can.', ts: Date.now() - 60_000, unread: 1,
             messages: [
-                { id: 'd1', from: 'me',   body: 'Can someone get out to me?', ts: Date.now() - 120_000 },
-                { id: 'd2', from: 'them', name: 'Officer Marcus', body: 'On our way.', ts: Date.now() - 60_000 },
+                { id: 'd1', from: 'me', body: 'Can you take a look at my car?', ts: Date.now() - 120_000 },
+                { id: 'd2', from: 'them', name: 'Hayes Auto', body: 'Bring it by when you can.', ts: Date.now() - 60_000 },
             ],
         },
     ],
     job: [
         {
-            key: '5551234', name: 'John Doe', color: '#F2C94C', emoji: '🚓',
-            preview: 'Can someone get out to me?', ts: Date.now() - 120_000, unread: 2,
-            messages: [{ id: 'd1', from: 'them', name: 'John Doe', body: 'Can someone get out to me?', ts: Date.now() - 120_000 }],
+            key: '5551234', name: 'John Doe', color: '#59636E', emoji: '🔧',
+            preview: 'Can you take a look at my car?', ts: Date.now() - 120_000, unread: 2,
+            messages: [{ id: 'd1', from: 'them', name: 'John Doe', body: 'Can you take a look at my car?', ts: Date.now() - 120_000 }],
         },
     ],
     hasJob: true,
 };
 
+function isInboxMessage(value: unknown): value is InboxMessage {
+    if (!isRecord(value)) return false;
+    return typeof value.id === 'string'
+        && (value.from === 'me' || value.from === 'them')
+        && typeof value.body === 'string'
+        && typeof value.ts === 'number';
+}
+
+function isInboxThread(value: unknown): value is InboxThread {
+    if (!isRecord(value) || !Array.isArray(value.messages)) return false;
+    return typeof value.key === 'string'
+        && typeof value.name === 'string'
+        && typeof value.color === 'string'
+        && typeof value.emoji === 'string'
+        && (value.iconUrl === undefined || typeof value.iconUrl === 'string')
+        && typeof value.preview === 'string'
+        && typeof value.ts === 'number'
+        && typeof value.unread === 'number'
+        && value.messages.every(isInboxMessage);
+}
+
+export function isInboxPayload(value: unknown): value is Inbox {
+    if (!isRecord(value) || !Array.isArray(value.personal) || !Array.isArray(value.job)) return false;
+    return typeof value.hasJob === 'boolean'
+        && value.personal.every(isInboxThread)
+        && value.job.every(isInboxThread);
+}
+
 export async function fetchInbox(): Promise<Inbox> {
     if (!isFiveM) return DEV_INBOX;
     try {
         const response = await fetchNui<Envelope<Inbox>>('sd-phone:services:inbox');
-        if (response?.success && response.data) return response.data;
+        if (response?.success && isInboxPayload(response.data)) return response.data;
         return {
             personal: [],
             job: [],
@@ -165,9 +222,10 @@ export async function messageCompany(job: string, drafts: ServiceDraft | Service
     )) ?? { success: false, message: t('services.noResponse', 'No response from server') };
 }
 
-export async function markThreadRead(scope: 'personal' | 'job', key: string): Promise<void> {
-    if (!isFiveM) return;
-    await fetchNui('sd-phone:services:markRead', { scope, key });
+export async function markThreadRead(scope: 'personal' | 'job', key: string): Promise<ServiceResult> {
+    if (!isFiveM) return { success: true };
+    return (await fetchNui<ServiceResult>('sd-phone:services:markRead', { scope, key }))
+        ?? { success: false, message: t('services.noResponse', 'No response from server') };
 }
 
 export async function replyCompany(citizen: string, drafts: ServiceDraft | ServiceDraft[]): Promise<ServiceMessageResult> {

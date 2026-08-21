@@ -30,22 +30,8 @@ end
 
 local alwaysIncludeTypes = stringSet(visibility.AlwaysIncludeTypes)
 local excludedTypes = stringSet(visibility.ExcludeTypes)
-
-local emergencyJobs = {}
-local emergencyCompanyList = type(servicesConfig.EmergencyCompanies) == 'table'
-    and servicesConfig.EmergencyCompanies or {}
-for _, name in ipairs(emergencyCompanyList) do
-    if type(name) == 'string' and name ~= '' then emergencyJobs[name] = true end
-end
-
-local configuredEmergency = {}
-local configuredCompanyList = type(servicesConfig.Companies) == 'table'
-    and servicesConfig.Companies or {}
-for _, entry in ipairs(configuredCompanyList) do
-    if type(entry) == 'table' and (emergencyJobs[entry.job] or entry.emergency == true) then
-        configuredEmergency[#configuredEmergency + 1] = entry
-    end
-end
+local excludedJobPrefixes = type(visibility.ExcludeJobPrefixes) == 'table'
+    and visibility.ExcludeJobPrefixes or {}
 
 local categoryStyles = {
     general = { label = 'Business', color = '#64748B', emoji = '🏪' },
@@ -77,6 +63,22 @@ local messageImageHosts = type(servicesConfig.MessageImageHosts) == 'table'
     and servicesConfig.MessageImageHosts or {}
 
 local businesses = {}
+
+---@param source number
+---@return boolean
+local function hasPhone(source)
+    local succeeded, color = pcall(function()
+        return exports['sd-phone']:hasPhone(source)
+    end)
+    return succeeded and type(color) == 'string' and color ~= ''
+end
+
+---@param source number
+---@return table|nil
+local function requirePhone(source)
+    if hasPhone(source) then return nil end
+    return fail('You need a phone to use Businesses')
+end
 
 ---@param ... any
 ---@return string|nil
@@ -130,39 +132,15 @@ local function onDutyJobs()
     return result
 end
 
----@param entry table
----@param duty table<string, boolean>
----@return table|nil
-local function emergencyEntry(entry, duty)
-    local businessId = tostring(entry.job or '')
-    if businessId == '' then return nil end
-
-    local configured = overrides[businessId]
-    local override = type(configured) == 'table' and configured or {}
-    if override.hidden == true then return nil end
-
-    return {
-        id = businessId,
-        name = firstNonEmpty(override.label, entry.label, job.getLabel(businessId), businessId),
-        category = 'Emergency',
-        location = firstNonEmpty(override.location, entry.location, 'Emergency Services'),
-        color = firstNonEmpty(override.color, entry.color, '#C0392B'),
-        emoji = firstNonEmpty(override.emoji, entry.emoji, '🚨'),
-        iconUrl = firstNonEmpty(override.iconUrl, entry.iconUrl),
-        status = duty[businessId] and 'open' or 'closed',
-        onDuty = duty[businessId] == true,
-        canCall = override.canCall ~= false and entry.canCall ~= false,
-        canMessage = override.canMessage ~= false and entry.canMessage ~= false,
-        emergency = true,
-        coords = normalizeCoords(override.coords or entry.coords),
-    }
-end
-
 ---@param businessId string
 ---@param business table
 ---@param duty table<string, boolean>
 ---@return table|nil
 local function directoryEntry(businessId, business, duty)
+    for _, prefix in ipairs(excludedJobPrefixes) do
+        if type(prefix) == 'string' and prefix ~= '' and lib.string.startsWith(businessId, prefix) then return nil end
+    end
+
     if business.Enabled == false then return nil end
     local blip = business.Blip
     if type(blip) ~= 'table' then return nil end
@@ -183,11 +161,19 @@ local function directoryEntry(businessId, business, duty)
     local storefront = business.Storefront or {}
     local advertisement = storefront.Advertisement or {}
 
+    local location = firstNonEmpty(
+        override.location,
+        business.Location,
+        business.Address,
+        blip.Location,
+        style.label
+    )
+
     return {
         id = businessId,
         name = name,
         category = style.label,
-        location = firstNonEmpty(override.location, style.label),
+        location = location or style.label,
         color = firstNonEmpty(override.color, style.color),
         emoji = firstNonEmpty(override.emoji, style.emoji),
         iconUrl = firstNonEmpty(override.iconUrl, advertisement.Icon, storefront.ImageUrl),
@@ -196,7 +182,7 @@ local function directoryEntry(businessId, business, duty)
         canCall = override.canCall ~= false,
         canMessage = override.canMessage ~= false,
         emergency = false,
-        coords = normalizeCoords(override.coords or blip.Coords),
+        coords = normalizeCoords(override.coords or blip.Coords or business.Coords),
     }
 end
 
@@ -208,23 +194,18 @@ local function liveDirectory()
     end
 
     local succeeded, sourceBusinesses = pcall(function()
-        return exports.ef_businesses:GetBusinesses(true)
+        return exports.ef_businesses:GetBusinesses()
     end)
     if not succeeded or type(sourceBusinesses) ~= 'table' then
+        if not succeeded and lib.print and lib.print.error then
+            lib.print.error(('[sd-phone] Businesses directory provider failed: %s'):format(tostring(sourceBusinesses)))
+        end
         return nil, 'Businesses are unavailable right now.'
     end
 
     local duty = onDutyJobs()
     local entries = {}
     local byJob = {}
-
-    for _, entry in ipairs(configuredEmergency) do
-        local normalized = emergencyEntry(entry, duty)
-        if normalized and not byJob[normalized.id] then
-            entries[#entries + 1] = normalized
-            byJob[normalized.id] = normalized
-        end
-    end
 
     for businessId, business in pairs(sourceBusinesses) do
         if type(businessId) == 'string' and type(business) == 'table' and not byJob[businessId] then
@@ -256,6 +237,8 @@ end
 ---@param source number
 ---@return table
 function businesses.directory(source)
+    local phoneError = requirePhone(source)
+    if phoneError then return phoneError end
     local citizenId = player.getIdentifier(source)
     if not citizenId then return fail('Player not found') end
     if not util.rateLimit(citizenId, 'businesses:directory', MSG_WINDOW, DIRECTORY_MAX) then
@@ -297,17 +280,17 @@ local function parseDraft(payload)
         return 'image', '📷 Photo', json.encode({ mediaUrl = url })
     end
     if kind == 'location' then
-        local waypoint = trim(payload.wpCode):sub(1, 256)
-        if waypoint == '' then return nil, 'No location' end
+        local waypoint = util.limitedString(payload.wpCode, 256)
+        if not waypoint or not lib.string.startsWith(waypoint, 'SDW1:') then return nil, 'Invalid location' end
         local meta = { wpCode = waypoint }
-        local subtitle = trim(payload.wpSub):sub(1, 128)
-        if subtitle ~= '' then meta.wpSub = subtitle end
+        local subtitle = util.limitedString(payload.wpSub, 128)
+        if subtitle then meta.wpSub = subtitle end
         return 'location', '📍 Location', json.encode(meta)
     end
 
-    local body = trim(payload.body)
-    if body == '' then return nil, 'Empty message' end
-    return 'text', body:sub(1, 300), nil
+    local body = util.limitedString(payload.body, 300)
+    if not body then return nil, 'Empty message' end
+    return 'text', body, nil
 end
 
 ---@param payload table
@@ -406,6 +389,7 @@ local function buildInbox(source, byJob)
                 name = entry and entry.name or job.getLabel(thread.job) or thread.job,
                 color = entry and entry.color or '#64748B',
                 emoji = entry and entry.emoji or '💬',
+                iconUrl = entry and entry.iconUrl or nil,
                 preview = thread.last_body or '',
                 ts = (tonumber(thread.created_at) or 0) * 1000,
                 unread = unread[thread.job] or 0,
@@ -428,6 +412,7 @@ local function buildInbox(source, byJob)
                 name = (thread.citizen_name and thread.citizen_name ~= '') and thread.citizen_name or thread.citizen_number,
                 color = staffEntry.color,
                 emoji = staffEntry.emoji,
+                iconUrl = staffEntry.iconUrl,
                 preview = thread.last_body or '',
                 ts = (tonumber(thread.created_at) or 0) * 1000,
                 unread = unread[thread.citizen_number] or 0,
@@ -447,6 +432,8 @@ end
 ---@param source number
 ---@return table
 function businesses.inbox(source)
+    local phoneError = requirePhone(source)
+    if phoneError then return phoneError end
     local citizenId = player.getIdentifier(source)
     if not citizenId then return fail('Player not found') end
     if not util.rateLimit(citizenId, 'businesses:inbox', MSG_WINDOW, INBOX_MAX) then
@@ -501,6 +488,7 @@ local function notifyStaff(jobName, title, body, thread)
                 appId = 'services',
                 title = title,
                 body = body,
+                link = { services = { scope = 'job', thread = thread } },
                 time = 'now',
                 quietInApp = true,
             })
@@ -516,6 +504,8 @@ end
 ---@param payload table
 ---@return table
 function businesses.message(source, payload)
+    local phoneError = requirePhone(source)
+    if phoneError then return phoneError end
     payload = type(payload) == 'table' and payload or {}
     local _, byJobOrError = liveDirectory()
     if type(byJobOrError) ~= 'table' then return fail(byJobOrError) end
@@ -572,6 +562,8 @@ end
 ---@param payload table
 ---@return table
 function businesses.reply(source, payload)
+    local phoneError = requirePhone(source)
+    if phoneError then return phoneError end
     payload = type(payload) == 'table' and payload or {}
     local citizenId = player.getIdentifier(source)
     if not citizenId then return fail('Player not found') end
@@ -581,6 +573,7 @@ function businesses.reply(source, payload)
     if type(byJobOrError) ~= 'table' then return fail(byJobOrError) end
     local entry = activeJob and byJobOrError[activeJob]
     if not entry then return fail("You're not in a listed business") end
+    if entry.canMessage == false then return fail("You can't message this business") end
     local drafts, draftError = parseDrafts(payload)
     if not drafts then return fail(draftError) end
     if not util.cooldown(citizenId, 'businesses:reply', 1000)
@@ -619,6 +612,7 @@ function businesses.reply(source, payload)
             appId = 'services',
             title = entry.name,
             body = notificationBody(drafts),
+            link = { services = { scope = 'personal', thread = activeJob } },
             time = 'now',
             quietInApp = true,
         })
@@ -639,6 +633,8 @@ end
 ---@param payload table
 ---@return table
 function businesses.markRead(source, payload)
+    local phoneError = requirePhone(source)
+    if phoneError then return phoneError end
     payload = type(payload) == 'table' and payload or {}
     local citizenId = player.getIdentifier(source)
     if not citizenId then return fail('Player not found') end
@@ -648,6 +644,10 @@ function businesses.markRead(source, payload)
 
     local key = tostring(payload.key or '')
     if key == '' then return fail('Missing thread') end
+    if payload.scope ~= 'job' and payload.scope ~= 'personal' then
+        return fail('Missing thread')
+    end
+
     if payload.scope == 'job' then
         local activeJob = job.getName(source)
         local _, byJob = liveDirectory()
