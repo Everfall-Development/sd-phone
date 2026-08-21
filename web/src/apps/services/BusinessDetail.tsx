@@ -47,7 +47,6 @@ export function BusinessDetail({ company, pending, onBack, onCall, onMessage, on
             <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar px-4 pb-10">
                 <div className="flex flex-col items-center px-5 pb-7 pt-3 text-center">
                     <ServiceAvatar
-                        color={company.color}
                         emoji={company.emoji}
                         iconUrl={company.iconUrl}
                         size={96}

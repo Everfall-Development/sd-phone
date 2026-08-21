@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { useSessionState } from '@/hooks/useSessionState';
+import { clearBusinessesTarget, useBusinessesNonce, useBusinessesTarget } from '@/shell/deeplink';
 import { CompaniesTab } from './CompaniesTab';
 import { ServiceMessagesTab } from './ServiceMessagesTab';
 import { ServicesTabBar, type ServicesTab } from './ServicesTabBar';
@@ -14,10 +15,18 @@ type Scope = 'personal' | 'job';
 
 export function Services({ onClose: _onClose }: { onClose: () => void }) {
     const [tab, setTab] = useSessionState<ServicesTab>('services:tab', 'directory');
-    const activeTab: ServicesTab = tab === 'inbox' ? 'inbox' : 'directory';
-    const { data: directory, settled: directoryLoaded, refetch: refreshDirectory } = useAsyncData(fetchDirectory, []);
+    const businessesTarget = useBusinessesTarget();
+    const businessesNonce = useBusinessesNonce();
+    const activeTab: ServicesTab = businessesTarget !== null || tab === 'inbox' ? 'inbox' : 'directory';
+    const {
+        data: directory,
+        loading: directoryLoading,
+        settled: directoryLoaded,
+        refetch: refreshDirectory,
+    } = useAsyncData(fetchDirectory, []);
     const {
         data: inboxData,
+        loading: inboxLoading,
         settled: inboxLoaded,
         refetch: refreshInbox,
     } = useAsyncData(fetchInbox, []);
@@ -56,12 +65,21 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
                 ? { ...source, job: clearUnread(source.job) }
                 : { ...source, personal: clearUnread(source.personal) };
         });
-        void markThreadRead(scope, key);
+        void markThreadRead(scope, key).then(result => {
+            if (result.success) return;
+            setInboxOverride(null);
+            refreshInbox();
+        });
     }
 
     function retryInbox() {
         setInboxOverride(null);
         refreshInbox();
+    }
+
+    function changeTab(next: ServicesTab) {
+        clearBusinessesTarget();
+        setTab(next);
     }
 
     return (
@@ -74,6 +92,7 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
                         <CompaniesTab
                             companies={directory?.companies ?? []}
                             loaded={directoryLoaded}
+                            loading={directoryLoading}
                             unavailable={directory?.unavailable}
                             onRetry={refreshDirectory}
                             onMessaged={openInbox}
@@ -82,10 +101,14 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
                         <ServiceMessagesTab
                             inbox={inbox}
                             loaded={inboxLoaded}
+                            loading={inboxLoading}
                             unavailable={inbox.unavailable}
                             onRetry={retryInbox}
                             onInboxChange={setInboxOverride}
                             onMarkRead={markRead}
+                            target={businessesTarget}
+                            targetNonce={businessesNonce}
+                            onTargetDismiss={clearBusinessesTarget}
                         />
                     )}
                 </div>
@@ -93,7 +116,7 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
 
             <ServicesTabBar
                 tab={activeTab}
-                onChange={setTab}
+                onChange={changeTab}
                 inboxBadge={
                     inbox.personal.reduce((total, thread) => total + thread.unread, 0)
                     + inbox.job.reduce((total, thread) => total + thread.unread, 0)

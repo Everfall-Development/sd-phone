@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, MessageSquare, RotateCcw, Search } from 'lucide-react';
 
-import { fetchNui } from '@/core/nui';
+import { fetchNui, isFiveM } from '@/core/nui';
 import { formatClockTime, formatListDate } from '@/lib/time';
 import { requestOpenMaps } from '@/shell/deeplink';
+import type { BusinessesTarget } from '@/shell/deeplink';
 import { t } from '@/i18n';
 import { useIosPush } from '@/hooks/useIosPush';
 import { useReanimateOnChange } from '@/hooks/useReanimateOnChange';
@@ -40,33 +41,42 @@ function clock(ts: number): string {
 
 function openMessageInMaps(message: InboxMessage) {
     const waypoint = message.wpCode ? decodeWaypoint(message.wpCode) : null;
-    requestOpenMaps(waypoint ? {
+    if (!waypoint) return;
+    requestOpenMaps({
         label: waypoint.label,
         x: waypoint.x,
         y: waypoint.y,
         icon: waypoint.icon,
         color: waypoint.color,
-    } : null);
+    });
 }
 
 function setMessageWaypoint(message: InboxMessage) {
     const waypoint = message.wpCode ? decodeWaypoint(message.wpCode) : null;
-    void fetchNui('sd-phone:maps:waypoint', waypoint ? { x: waypoint.x, y: waypoint.y } : {});
+    if (!waypoint) return;
+    void fetchNui('sd-phone:maps:waypoint', { x: waypoint.x, y: waypoint.y });
 }
 
-export function ServiceMessagesTab({ inbox, loaded, unavailable, onRetry, onInboxChange, onMarkRead }: {
+export function ServiceMessagesTab({ inbox, loaded, loading, unavailable, onRetry, onInboxChange, onMarkRead, target, targetNonce, onTargetDismiss }: {
     inbox: Inbox;
     loaded: boolean;
+    loading: boolean;
     unavailable?: string;
     onRetry?: () => void;
     onInboxChange: (inbox: Inbox) => void;
     onMarkRead: (scope: Scope, key: string) => void;
+    target: BusinessesTarget | null;
+    targetNonce: number;
+    onTargetDismiss: () => void;
 }) {
     const [scopePref, setScope] = useSessionState<Scope>('services:msgFilter', 'personal');
     const [query, setQuery] = useSessionState('services:inboxSearch', '');
     const [openKey, setOpenKey] = useState<string | null>(null);
 
-    const scope: Scope = inbox.hasJob ? scopePref : 'personal';
+    const targetScope = target?.scope === 'personal' || (target?.scope === 'job' && inbox.hasJob)
+        ? target.scope
+        : null;
+    const scope: Scope = targetScope ?? (inbox.hasJob ? scopePref : 'personal');
     const threads = scope === 'personal' ? inbox.personal : inbox.job;
     const visibleThreads = useMemo(() => filterMessageThreads(threads, query), [query, threads]);
     const inboxError = unavailable ?? inbox.unavailable;
@@ -75,7 +85,26 @@ export function ServiceMessagesTab({ inbox, loaded, unavailable, onRetry, onInbo
     const jobUnread      = inbox.job.some(t => (t.unread ?? 0) > 0);
 
     const scopeRef = useReanimateOnChange<HTMLDivElement>('animate-swipe-in-left', scope);
-    const openThread = openKey ? threads.find(t => t.key === openKey) ?? null : null;
+    const targetedThread = target && target.scope === scope
+        ? threads.find(thread => thread.key === target.thread) ?? null
+        : null;
+    const openThread = targetedThread ?? (openKey ? threads.find(t => t.key === openKey) ?? null : null);
+    const handledTargetNonce = useRef(0);
+
+    useLayoutEffect(() => {
+        if (!target || !loaded || loading || handledTargetNonce.current === targetNonce) return;
+        handledTargetNonce.current = targetNonce;
+
+        const validScope = target.scope === 'personal' || inbox.hasJob;
+        const targetThreads = target.scope === 'job' ? inbox.job : inbox.personal;
+        const threadExists = targetThreads.some(thread => thread.key === target.thread);
+        if (!validScope || inboxError || !threadExists) {
+            onTargetDismiss();
+            return;
+        }
+
+        onMarkRead(target.scope, target.thread);
+    }, [inbox.hasJob, inbox.job, inbox.personal, inboxError, loaded, loading, onMarkRead, onTargetDismiss, target, targetNonce]);
 
     function openThreadByKey(key: string) {
         onMarkRead(scope, key);
@@ -126,10 +155,12 @@ export function ServiceMessagesTab({ inbox, loaded, unavailable, onRetry, onInbo
                                 <button
                                     type="button"
                                     onClick={retryInbox}
-                                    className="inline-flex items-center gap-2 rounded-[12px] bg-ios-blue px-5 py-3 text-[15px] font-semibold text-white active:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue focus-visible:ring-offset-2"
+                                    disabled={loading}
+                                    aria-busy={loading}
+                                    className="inline-flex items-center gap-2 rounded-[12px] bg-ios-blue px-5 py-3 text-[15px] font-semibold text-white active:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue focus-visible:ring-offset-2 disabled:opacity-60"
                                 >
                                     <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                                    {t('services.tryAgain', 'Try Again')}
+                                    {loading ? t('services.retrying', 'Retrying…') : t('services.tryAgain', 'Try Again')}
                                 </button>
                             )}
                         />
@@ -173,7 +204,10 @@ export function ServiceMessagesTab({ inbox, loaded, unavailable, onRetry, onInbo
                     key={openThread.key}
                     scope={scope}
                     thread={openThread}
-                    onBack={() => setOpenKey(null)}
+                    onBack={() => {
+                        setOpenKey(null);
+                        if (targetedThread) onTargetDismiss();
+                    }}
                     onSent={onInboxChange}
                 />
             )}
@@ -211,7 +245,7 @@ function ThreadRow({ thread, scope, onOpen }: { thread: InboxThread; scope: Scop
             aria-label={unread ? `${rowLabel}. ${t('services.unreadCount', '{count} unread', { count: unreadCount })}` : rowLabel}
             className="flex w-full items-center gap-4 px-4 py-4 text-left active:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ios-blue dark:active:bg-white/5"
         >
-            <ServiceAvatar color={thread.color} emoji={thread.emoji} size={58} />
+            <ServiceAvatar emoji={thread.emoji} iconUrl={thread.iconUrl} size={58} />
 
             <div className="min-w-0 flex-1">
                 <div className="truncate text-[20px] font-semibold text-black dark:text-white">{identity.title}</div>
@@ -292,8 +326,13 @@ function Conversation({ scope, thread, onBack, onSent }: {
     const handleImageTap = useCallback((url: string) => { setPreview(url); setSavedPreview(false); }, []);
     const handleLocationTap = useCallback((id: string) => {
         const m = thread.messages.find(x => x.id === id);
-        if (m) setLocSheet(m);
+        if (m?.wpCode && decodeWaypoint(m.wpCode)) setLocSheet(m);
     }, [thread.messages]);
+
+    function openInMaps(message: InboxMessage) {
+        onBack();
+        openMessageInMaps(message);
+    }
 
     async function savePreviewToGallery() {
         if (!preview || savedPreview || savingPreview) return;
@@ -332,7 +371,7 @@ function Conversation({ scope, thread, onBack, onSent }: {
                     </button>
                 </div>
                 <div className="flex min-w-0 flex-col items-center gap-1.5">
-                    <ServiceAvatar color={thread.color} emoji={thread.emoji} size={64} />
+                    <ServiceAvatar emoji={thread.emoji} iconUrl={thread.iconUrl} size={64} />
                     <span className="max-w-[200px] truncate text-[18px] font-semibold leading-none text-black dark:text-white">{identity.title}</span>
                     {identity.secondary && (
                         <span className="max-w-[200px] truncate text-[13px] font-medium leading-none text-black/55 dark:text-white/55">{identity.secondary}</span>
@@ -401,8 +440,8 @@ function Conversation({ scope, thread, onBack, onSent }: {
                 <ActionSheet
                     forceDark={isDark}
                     actions={[
-                        { label: t('services.openInMaps', 'Open in Maps'), onClick: () => openMessageInMaps(locSheet) },
-                        { label: t('services.setWaypoint', 'Set Waypoint'), onClick: () => setMessageWaypoint(locSheet) },
+                        { label: t('services.openInMaps', 'Open in Maps'), onClick: () => openInMaps(locSheet) },
+                        ...(isFiveM ? [{ label: t('services.setWaypoint', 'Set Waypoint'), onClick: () => setMessageWaypoint(locSheet) }] : []),
                     ]}
                     onClose={() => setLocSheet(null)}
                 />

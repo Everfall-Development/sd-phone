@@ -25,6 +25,11 @@ export interface MailTarget {
     message?: { folder: string; msgId: string; accountId?: string };
 }
 
+export interface BusinessesTarget {
+    scope: 'personal' | 'job';
+    thread: string;
+}
+
 interface DeeplinkState {
     mapsNonce:      number;
     mapsTarget:     MapsTarget | null;
@@ -32,12 +37,15 @@ interface DeeplinkState {
     messagesTarget: MessagesTarget | null;
     mailNonce:      number;
     mailTarget:     MailTarget | null;
+    businessesNonce: number;
+    businessesTarget: BusinessesTarget | null;
 }
 
 const useDeeplinkStore = create<DeeplinkState>(() => ({
     mapsNonce: 0,     mapsTarget: null,
     messagesNonce: 0, messagesTarget: null,
     mailNonce: 0,     mailTarget: null,
+    businessesNonce: 0, businessesTarget: null,
 }));
 
 export function requestOpenMaps(target?: MapsTarget | null): void {
@@ -82,4 +90,30 @@ export function takeMailTarget(): MailTarget | null {
 
 export function onOpenMail(handler: () => void): () => void {
     return useDeeplinkStore.subscribe((s, prev) => { if (s.mailNonce !== prev.mailNonce) handler(); });
+}
+
+export function isBusinessesTarget(value: unknown): value is BusinessesTarget {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+    const scope = Reflect.get(value, 'scope');
+    const thread = Reflect.get(value, 'thread');
+    return (scope === 'personal' || scope === 'job')
+        && typeof thread === 'string'
+        && thread.trim() !== '';
+}
+
+export function requestOpenBusinesses(target: BusinessesTarget): void {
+    useDeeplinkStore.setState(s => ({ businessesTarget: target, businessesNonce: s.businessesNonce + 1 }));
+}
+
+export function useBusinessesTarget(): BusinessesTarget | null {
+    useDeeplinkStore(s => s.businessesNonce);
+    return useDeeplinkStore(s => s.businessesTarget);
+}
+
+export function useBusinessesNonce(): number {
+    return useDeeplinkStore(s => s.businessesNonce);
+}
+
+export function clearBusinessesTarget(): void {
+    useDeeplinkStore.setState({ businessesTarget: null });
 }

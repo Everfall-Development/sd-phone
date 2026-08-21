@@ -49,7 +49,7 @@ import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { t } from '@/i18n';
 import { isGameClock, useGameClockStore } from '@/stores/gameClockStore';
 import { clearSessionState, seedSessionState } from '@/hooks/useSessionState';
-import { onOpenMail, onOpenMaps, onOpenMessages, requestOpenMail } from '@/shell/deeplink';
+import { isBusinessesTarget, onOpenMail, onOpenMaps, onOpenMessages, requestOpenBusinesses, requestOpenMail } from '@/shell/deeplink';
 import { fetchNui, isFiveM } from '@/core/nui';
 import { apiData } from '@/core/api';
 import {
@@ -686,6 +686,10 @@ function AppContent() {
 
         const customAppId = targetAppId?.startsWith('custom:') ? targetAppId.slice(7) : targetAppId;
         if (customAppId && isCustomApp(customAppId)) publishCustomAppDeepLink(customAppId, link);
+
+        if (targetAppId === 'services' && isBusinessesTarget(link.services)) {
+            requestOpenBusinesses(link.services);
+        }
 
         const mail = link.mail as { folder?: string; msgId?: string; accountId?: string } | undefined;
         if (mail?.msgId) {

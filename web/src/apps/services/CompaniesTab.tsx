@@ -38,9 +38,10 @@ function openCompanyInMaps(company: Company) {
     });
 }
 
-export function CompaniesTab({ companies, loaded, unavailable, onRetry, onMessaged }: {
+export function CompaniesTab({ companies, loaded, loading, unavailable, onRetry, onMessaged }: {
     companies: Company[];
     loaded: boolean;
+    loading: boolean;
     unavailable?: string;
     onRetry: () => void;
     onMessaged: (inbox: Inbox) => void;
@@ -65,6 +66,7 @@ export function CompaniesTab({ companies, loaded, unavailable, onRetry, onMessag
         [availability, category, companies, query],
     );
     const selected = companies.find(company => company.id === selectedId) ?? null;
+    const hasFilters = query.trim() !== '' || category !== ALL_CATEGORIES || availability !== 'all';
 
     function locate(company: Company) {
         if (!company.coords) {
@@ -86,6 +88,11 @@ export function CompaniesTab({ companies, loaded, unavailable, onRetry, onMessag
         } catch {
             setError(t('services.couldntLocate', "Couldn't set the waypoint."));
         }
+    }
+
+    function openInMaps(company: Company) {
+        setSelectedId(null);
+        openCompanyInMaps(company);
     }
 
     async function call(company: Company) {
@@ -186,19 +193,23 @@ export function CompaniesTab({ companies, loaded, unavailable, onRetry, onMessag
                             <button
                                 type="button"
                                 onClick={onRetry}
+                                disabled={loading}
+                                aria-busy={loading}
                                 className="inline-flex items-center gap-2 rounded-[12px] bg-ios-blue px-5 py-3 text-[15px] font-semibold text-white active:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue focus-visible:ring-offset-2"
                             >
                                 <RotateCcw className="h-4 w-4" />
-                                {t('services.tryAgain', 'Try Again')}
+                                {loading ? t('services.retrying', 'Retrying…') : t('services.tryAgain', 'Try Again')}
                             </button>
                         )}
                     />
                 ) : visibleCompanies.length === 0 ? (
                     <EmptyState
-                        icon={Search}
-                        title={t('services.noMatches', 'No Matches')}
-                        circle={false}
-                        action={(
+                        icon={hasFilters ? Search : Building2}
+                        title={hasFilters
+                            ? t('services.noMatches', 'No Matches')
+                            : t('services.noBusinesses', 'No Businesses')}
+                        circle={!hasFilters}
+                        action={hasFilters ? (
                             <button
                                 type="button"
                                 onClick={resetFilters}
@@ -206,7 +217,7 @@ export function CompaniesTab({ companies, loaded, unavailable, onRetry, onMessag
                             >
                                 {t('services.clearFilters', 'Clear Filters')}
                             </button>
-                        )}
+                        ) : undefined}
                     />
                 ) : (
                     <div className="overflow-hidden rounded-[14px] bg-surface">
@@ -264,7 +275,7 @@ export function CompaniesTab({ companies, loaded, unavailable, onRetry, onMessag
                         }] : []),
                         {
                             label: t('services.openInMaps', 'Open in Maps'),
-                            onClick: () => openCompanyInMaps(locationTarget),
+                            onClick: () => openInMaps(locationTarget),
                         },
                     ]}
                     cancelLabel={t('services.cancel', 'Cancel')}
@@ -292,9 +303,10 @@ function CompanyRow({ company, onOpen }: { company: Company; onOpen: () => void 
         <button
             type="button"
             onClick={onOpen}
+            aria-label={`${company.name}, ${company.status === 'open' ? t('services.open', 'Open') : t('services.closed', 'Closed')}, ${company.category}`}
             className="flex min-h-[88px] w-full items-center gap-3 px-3 py-3 text-left active:bg-black/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ios-blue dark:active:bg-white/[0.06]"
         >
-            <ServiceAvatar color={company.color} emoji={company.emoji} iconUrl={company.iconUrl} size={54} />
+            <ServiceAvatar emoji={company.emoji} iconUrl={company.iconUrl} size={54} />
 
             <div className="min-w-0 flex-1">
                 <div className="truncate text-[18px] font-semibold text-black dark:text-white">{company.name}</div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
     Car, Check, CircleAlert, ClipboardPaste, Copy, Crosshair, DollarSign, Flag, Fuel, Heart,
     Home, Image as ImageIcon, MapPin, Navigation, Plus, Share, ShoppingCart, Skull, Star, Trash2, Wrench,
@@ -25,8 +25,9 @@ import type { IconKey, MapMarker } from './data';
 import { ContactsPanel, FriendDot, PeoplePanel, useFriendsRoster } from './PeoplePanel';
 import type { Friend } from '@/apps/findfriends/data';
 import { decodeWaypoint, encodeWaypoint } from '@/lib/waypointCode';
-import { takeMapsTarget } from '@/shell/deeplink';
+import { onOpenMaps, takeMapsTarget } from '@/shell/deeplink';
 import { fetchDirectory } from '@/apps/services/servicesApi';
+import { ServiceAvatar } from '@/apps/services/ServiceAvatar';
 import { t } from '@/i18n';
 
 interface MapsCompany {
@@ -51,6 +52,10 @@ const ICONS: Record<string, LucideIcon> = {
 };
 function iconFor(key: string): LucideIcon { return ICONS[key] ?? MapPin; }
 
+function waypointIcon(value?: string): IconKey {
+    return ICON_KEYS.find(icon => icon === value) ?? 'MapPin';
+}
+
 function revealRow(container: HTMLDivElement | null, row: HTMLDivElement | null | undefined) {
     if (!container || !row) return;
     const top = row.offsetTop;
@@ -69,61 +74,112 @@ export function Maps({ onClose }: { onClose: () => void }) {
     const [markers, setMarkers] = useState<MapMarker[]>(() => (isFiveM ? getDefaultMarkers() : loadMarkers()));
     const [selected, setSelected] = useSessionState<string | null>('maps:selectedPin', null);
     const [selectedCompany, setSelectedCompany] = useSessionState<string | null>('maps:selectedCompany', null);
+    const [sheetTab, setSheetTab] = useSessionState<'pins' | 'people' | 'companies'>('maps:sheetTab', 'pins');
     const mapRef = useRef<MapViewHandle>(null);
+    const targetRequest = useRef(0);
+    const centerTimer = useRef<number | null>(null);
+    const directoryRequest = useRef(0);
 
     const [companies, setCompanies] = useState<MapsCompany[]>([]);
     useEffect(() => {
-        let alive = true;
-        void fetchDirectory().then(d => { if (alive) setCompanies(d.companies ?? []); });
-        return () => { alive = false; };
+        const request = directoryRequest.current + 1;
+        directoryRequest.current = request;
+        void fetchDirectory().then(directory => {
+            if (directoryRequest.current === request) setCompanies(directory.companies ?? []);
+        });
+        return () => { directoryRequest.current += 1; };
     }, []);
     useNuiEvent('sd-phone:services:directoryChanged', () => {
-        void fetchDirectory().then(directory => setCompanies(directory.companies ?? []));
+        const request = directoryRequest.current + 1;
+        directoryRequest.current = request;
+        void fetchDirectory().then(directory => {
+            if (directoryRequest.current === request) setCompanies(directory.companies ?? []);
+        });
     });
 
-    useEffect(() => {
+    const applyMapsTarget = useCallback(() => {
         const target = takeMapsTarget();
-        let alive = true;
+        const request = targetRequest.current + 1;
+        targetRequest.current = request;
 
         const companyTarget = target?.companyId ? target : null;
         const pinTarget = companyTarget ? null : target;
-        if (companyTarget) {
-            setSheetTab('companies');
-            setSelectedCompany(companyTarget.companyId!);
-            window.setTimeout(() => mapRef.current?.centerOnWorld(companyTarget.x, companyTarget.y), 240);
+        if (centerTimer.current !== null) window.clearTimeout(centerTimer.current);
+
+        function centerOnTarget(x: number, y: number, delay: number) {
+            centerTimer.current = window.setTimeout(() => {
+                if (targetRequest.current === request) mapRef.current?.centerOnWorld(x, y);
+                centerTimer.current = null;
+            }, delay);
         }
 
-        const focus = (id: string, x: number, y: number) => {
+        if (companyTarget?.companyId) {
+            setSheetTab('companies');
+            setSelectedCompany(companyTarget.companyId);
+            centerOnTarget(companyTarget.x, companyTarget.y, 240);
+        }
+
+        function focus(id: string, x: number, y: number) {
             setSelected(id);
-            window.setTimeout(() => mapRef.current?.centerOnWorld(x, y), 220);
-        };
-        const withTarget = (list: MapMarker[]): MapMarker[] => {
+            centerOnTarget(x, y, 220);
+        }
+
+        function resolveTarget(list: MapMarker[]) {
             const target = pinTarget;
-            if (!target) return list;
+            if (!target) return { markers: list, focus: null, created: false };
             const label = target.label || t('maps.sharedLocation', 'Shared location');
             const found = list.find(p => p.label === label && Math.abs(p.x - target.x) < 1 && Math.abs(p.y - target.y) < 1);
-            if (found) { focus(found.id, target.x, target.y); return list; }
+            if (found) {
+                return {
+                    markers: list,
+                    focus: { id: found.id, x: target.x, y: target.y },
+                    created: false,
+                };
+            }
             const m: MapMarker = {
                 id: newId(), label, x: target.x, y: target.y,
-                icon:  (ICON_KEYS as readonly string[]).includes(target.icon ?? '') ? (target.icon as IconKey) : 'MapPin',
+                icon: waypointIcon(target.icon),
                 color: target.color ?? COLOR_SWATCHES[0],
             };
-            const next = [m, ...list];
-            if (isFiveM) void fetchNui('sd-phone:maps:save', { markers: next }); else saveMarkers(next);
-            focus(m.id, target.x, target.y);
-            return next;
-        };
+            return {
+                markers: [m, ...list],
+                focus: { id: m.id, x: target.x, y: target.y },
+                created: true,
+            };
+        }
+
+        function applyResolvedTarget(result: ReturnType<typeof resolveTarget>) {
+            setMarkers(result.markers);
+            if (result.created) {
+                if (isFiveM) void fetchNui('sd-phone:maps:save', { markers: result.markers });
+                else saveMarkers(result.markers);
+            }
+            if (result.focus) focus(result.focus.id, result.focus.x, result.focus.y);
+        }
 
         if (isFiveM) {
             fetchNui<{ data?: MapMarker[] }>('sd-phone:maps:list')
-                .then(r => { if (alive) setMarkers(withTarget(Array.isArray(r?.data) ? r.data : [])); })
+                .then(r => {
+                    if (targetRequest.current !== request) return;
+                    applyResolvedTarget(resolveTarget(Array.isArray(r?.data) ? r.data : []));
+                })
                 .catch(() => {});
         } else if (pinTarget) {
-            setMarkers(prev => withTarget(prev));
+            applyResolvedTarget(resolveTarget(loadMarkers()));
         }
-        return () => { alive = false; };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [setSelected, setSelectedCompany, setSheetTab]);
+
+    // AppDeck retains recently used apps instead of remounting them. Consume a target now and on
+    // every later request so "Open in Maps" still focuses the requested business on repeat opens.
+    useLayoutEffect(() => {
+        applyMapsTarget();
+        const unsubscribe = onOpenMaps(applyMapsTarget);
+        return () => {
+            targetRequest.current += 1;
+            if (centerTimer.current !== null) window.clearTimeout(centerTimer.current);
+            unsubscribe();
+        };
+    }, [applyMapsTarget]);
 
     // Shared with the ryde consumers: useSelfLocation refcounts the native stream and gates it on
     // useDeckActive. Maps used to duplicate this inline without either, so a backgrounded Maps kept
@@ -154,7 +210,6 @@ export function Maps({ onClose }: { onClose: () => void }) {
 
     const [peopleOn, setPeopleOn] = useState(true);
     useEffect(() => { void mapsConfig().then(c => setPeopleOn(c.people)); }, []);
-    const [sheetTab, setSheetTab] = useSessionState<'pins' | 'people' | 'companies'>('maps:sheetTab', 'pins');
     const [friendSel, setFriendSel] = useSessionState<string | null>('maps:friendSel', null);
     const [pickerOpen, setPickerOpen] = useSessionState('maps:friendPicker', false);
     const { friends, visible: visibleFriends, toggleShare, removeFriend, addFriend, respond, addError } = useFriendsRoster(peopleOn);
@@ -168,11 +223,9 @@ export function Maps({ onClose }: { onClose: () => void }) {
         try { return window.localStorage.getItem('sd-phone:friends:avatars') !== '0'; } catch { return true; }
     });
     function toggleAvatars() {
-        setShowAvatars(v => {
-            const next = !v;
-            try { window.localStorage.setItem('sd-phone:friends:avatars', next ? '1' : '0'); } catch { /* ignore */ }
-            return next;
-        });
+        const next = !showAvatars;
+        try { window.localStorage.setItem('sd-phone:friends:avatars', next ? '1' : '0'); } catch { /* ignore */ }
+        setShowAvatars(next);
     }
 
     const [toast, setToast] = useState<{ msg: string; leaving: boolean } | null>(null);
@@ -495,11 +548,12 @@ export function Maps({ onClose }: { onClose: () => void }) {
                                             (selectedCompany === c.id ? 'bg-ios-blue/10' : 'active:bg-black/5 dark:active:bg-white/5')}
                                     >
                                         <button
+                                            type="button"
                                             onClick={() => focusCompany(c)}
-                                            className="flex min-w-0 flex-1 items-center gap-3.5 text-left"
+                                            className="flex min-w-0 flex-1 items-center gap-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ios-blue"
                                         >
                                             <span className="flex h-[56px] w-[56px] shrink-0 items-center justify-center overflow-hidden rounded-full text-[28px] leading-none shadow-sm" style={{ background: c.color }}>
-                                                {c.iconUrl ? <img src={c.iconUrl} alt="" className="h-full w-full object-cover" /> : c.emoji}
+                                                <ServiceAvatar emoji={c.emoji ?? '🏢'} iconUrl={c.iconUrl} size={56} />
                                             </span>
                                             <span className="flex min-w-0 flex-col leading-tight">
                                                 <span className="truncate text-[21px] font-semibold text-black dark:text-white">{c.name}</span>
@@ -507,6 +561,7 @@ export function Maps({ onClose }: { onClose: () => void }) {
                                             </span>
                                         </button>
                                         <button
+                                            type="button"
                                             onClick={() => { if (c.coords) setWaypoint({ id: c.id, label: c.name, x: c.coords.x, y: c.coords.y, color: c.color, icon: 'MapPin' }); }}
                                             aria-label={t('maps.setWaypoint', 'Set waypoint')} title={t('maps.setWaypoint', 'Set waypoint')}
                                             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ios-blue/[0.12] text-ios-blue active:bg-ios-blue/25 dark:bg-ios-blue/[0.18] dark:active:bg-ios-blue/30"
@@ -687,7 +742,7 @@ function MarkerPin({ m, selected, interactive, onSelect, drop = false }: {
                 onPointerDown={e => e.stopPropagation()}
                 onPointerUp={e => e.stopPropagation()}
                 onClick={e => { e.stopPropagation(); onSelect(); }}
-                className="group flex cursor-pointer flex-col items-center"
+                className="group flex cursor-pointer flex-col items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue focus-visible:ring-offset-2"
                 style={{ pointerEvents: interactive ? 'auto' : 'none' }}
             >
                 <div
@@ -744,9 +799,7 @@ function CompanyPin({ x, y, color, emoji, iconUrl, label, interactive, selected,
                         className="flex items-center justify-center overflow-hidden rounded-full"
                         style={{ width: 30, height: 30, background: color, border: '2px solid #fff', position: 'relative', zIndex: 1 }}
                     >
-                        {iconUrl ? <img src={iconUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (
-                            <span style={{ fontSize: 17, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>{emoji}</span>
-                        )}
+                        <ServiceAvatar emoji={emoji ?? '🏢'} iconUrl={iconUrl} size={26} />
                     </div>
                     <div style={{
                         width: 0, height: 0, marginTop: -4,
