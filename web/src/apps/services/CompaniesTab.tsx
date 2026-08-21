@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Building2, ChevronRight, RotateCcw, Search, SlidersHorizontal } from 'lucide-react';
 
 import { fetchNui, isFiveM } from '@/core/nui';
 import { t } from '@/i18n';
-import { requestOpenMaps } from '@/shell/deeplink';
+import { requestOpenMaps, type BusinessesCompanyTarget } from '@/shell/deeplink';
 import { ActionSheet } from '@/ui/ActionSheet';
 import { AlertDialog } from '@/ui/AlertDialog';
 import { EmptyState } from '@/ui/EmptyState';
@@ -14,11 +14,7 @@ import { portalToPhoneScreen } from '@/ui/portal';
 import { BusinessDetail } from './BusinessDetail';
 import { ServiceAvatar } from './ServiceAvatar';
 import { callCompany, messageCompany, type Inbox } from './servicesApi';
-import {
-    filterBusinesses,
-    type BusinessAvailability,
-    type Company,
-} from './data';
+import { filterBusinesses, type BusinessAvailability, type Company } from './data';
 
 const ALL_CATEGORIES = 'All';
 
@@ -38,13 +34,26 @@ function openCompanyInMaps(company: Company) {
     });
 }
 
-export function CompaniesTab({ companies, loaded, loading, unavailable, onRetry, onMessaged }: {
+export function CompaniesTab({
+    companies,
+    loaded,
+    loading,
+    unavailable,
+    onRetry,
+    onMessaged,
+    target,
+    targetNonce,
+    onTargetDismiss,
+}: {
     companies: Company[];
     loaded: boolean;
     loading: boolean;
     unavailable?: string;
     onRetry: () => void;
     onMessaged: (inbox: Inbox) => void;
+    target: BusinessesCompanyTarget | null;
+    targetNonce: number;
+    onTargetDismiss: () => void;
 }) {
     const [query, setQuery] = useState('');
     const [category, setCategory] = useState(ALL_CATEGORIES);
@@ -55,18 +64,32 @@ export function CompaniesTab({ companies, loaded, loading, unavailable, onRetry,
     const [locationTarget, setLocationTarget] = useState<Company | null>(null);
     const [pending, setPending] = useState<PendingAction | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const handledTargetNonce = useRef(0);
 
-    const categories = useMemo(() => [
-        ALL_CATEGORIES,
-        ...Array.from(new Set(companies.map(company => company.category))).sort(),
-    ], [companies]);
+    const categories = useMemo(
+        () => [ALL_CATEGORIES, ...Array.from(new Set(companies.map((company) => company.category))).sort()],
+        [companies],
+    );
 
     const visibleCompanies = useMemo(
         () => filterBusinesses(companies, query, category, availability),
         [availability, category, companies, query],
     );
-    const selected = companies.find(company => company.id === selectedId) ?? null;
+    const selected = companies.find((company) => company.id === selectedId) ?? null;
     const hasFilters = query.trim() !== '' || category !== ALL_CATEGORIES || availability !== 'all';
+
+    useLayoutEffect(() => {
+        if (!target || !loaded || loading || handledTargetNonce.current === targetNonce) return;
+        handledTargetNonce.current = targetNonce;
+
+        const company = companies.find((candidate) => candidate.id === target.entityId);
+        if (!company || unavailable) {
+            onTargetDismiss();
+            return;
+        }
+
+        setSelectedId(company.id);
+    }, [companies, loaded, loading, onTargetDismiss, target, targetNonce, unavailable]);
 
     function locate(company: Company) {
         if (!company.coords) {
@@ -92,6 +115,7 @@ export function CompaniesTab({ companies, loaded, loading, unavailable, onRetry,
 
     function openInMaps(company: Company) {
         setSelectedId(null);
+        onTargetDismiss();
         openCompanyInMaps(company);
     }
 
@@ -136,9 +160,7 @@ export function CompaniesTab({ companies, loaded, loading, unavailable, onRetry,
     }
 
     const selectedPending = selected && pending?.companyId === selected.id ? pending.action : null;
-    const categoryLabel = category === ALL_CATEGORIES
-        ? t('services.categories', 'Categories')
-        : category;
+    const categoryLabel = category === ALL_CATEGORIES ? t('services.categories', 'Categories') : category;
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
@@ -189,7 +211,7 @@ export function CompaniesTab({ companies, loaded, loading, unavailable, onRetry,
                         icon={Building2}
                         title={t('services.unavailableTitle', 'Businesses Unavailable')}
                         subtitle={unavailable}
-                        action={(
+                        action={
                             <button
                                 type="button"
                                 onClick={onRetry}
@@ -200,24 +222,28 @@ export function CompaniesTab({ companies, loaded, loading, unavailable, onRetry,
                                 <RotateCcw className="h-4 w-4" />
                                 {loading ? t('services.retrying', 'Retrying…') : t('services.tryAgain', 'Try Again')}
                             </button>
-                        )}
+                        }
                     />
                 ) : visibleCompanies.length === 0 ? (
                     <EmptyState
                         icon={hasFilters ? Search : Building2}
-                        title={hasFilters
-                            ? t('services.noMatches', 'No Matches')
-                            : t('services.noBusinesses', 'No Businesses')}
+                        title={
+                            hasFilters
+                                ? t('services.noMatches', 'No Matches')
+                                : t('services.noBusinesses', 'No Businesses')
+                        }
                         circle={!hasFilters}
-                        action={hasFilters ? (
-                            <button
-                                type="button"
-                                onClick={resetFilters}
-                                className="text-[16px] font-semibold text-ios-blue active:opacity-65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue focus-visible:ring-offset-2"
-                            >
-                                {t('services.clearFilters', 'Clear Filters')}
-                            </button>
-                        ) : undefined}
+                        action={
+                            hasFilters ? (
+                                <button
+                                    type="button"
+                                    onClick={resetFilters}
+                                    className="text-[16px] font-semibold text-ios-blue active:opacity-65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue focus-visible:ring-offset-2"
+                                >
+                                    {t('services.clearFilters', 'Clear Filters')}
+                                </button>
+                            ) : undefined
+                        }
                     />
                 ) : (
                     <div className="overflow-hidden rounded-[14px] bg-surface">
@@ -235,30 +261,32 @@ export function CompaniesTab({ companies, loaded, loading, unavailable, onRetry,
                 <BusinessDetail
                     company={selected}
                     pending={selectedPending}
-                    onBack={() => setSelectedId(null)}
+                    onBack={() => {
+                        setSelectedId(null);
+                        onTargetDismiss();
+                    }}
                     onCall={() => void call(selected)}
                     onMessage={() => setMessageTarget(selected)}
                     onLocate={() => locate(selected)}
                 />
             )}
 
-            {messageTarget && portalToPhoneScreen(
-                <PromptDialog
-                    title={t('services.messageName', 'Message {name}', { name: messageTarget.name })}
-                    placeholder={t('services.typeAMessage', 'Type a message…')}
-                    confirmLabel={t('services.send', 'Send')}
-                    maxLength={300}
-                    onCancel={() => setMessageTarget(null)}
-                    onConfirm={sendMessage}
-                />
-            )}
+            {messageTarget &&
+                portalToPhoneScreen(
+                    <PromptDialog
+                        title={t('services.messageName', 'Message {name}', { name: messageTarget.name })}
+                        placeholder={t('services.typeAMessage', 'Type a message…')}
+                        confirmLabel={t('services.send', 'Send')}
+                        maxLength={300}
+                        onCancel={() => setMessageTarget(null)}
+                        onConfirm={sendMessage}
+                    />,
+                )}
 
             {categorySheet && (
                 <ActionSheet
-                    actions={categories.map(option => ({
-                        label: option === ALL_CATEGORIES
-                            ? t('services.allCategories', 'All Categories')
-                            : option,
+                    actions={categories.map((option) => ({
+                        label: option === ALL_CATEGORIES ? t('services.allCategories', 'All Categories') : option,
                         onClick: () => setCategory(option),
                     }))}
                     cancelLabel={t('services.cancel', 'Cancel')}
@@ -269,10 +297,14 @@ export function CompaniesTab({ companies, loaded, loading, unavailable, onRetry,
             {locationTarget && (
                 <ActionSheet
                     actions={[
-                        ...(isFiveM ? [{
-                            label: t('services.setWaypoint', 'Set Waypoint'),
-                            onClick: () => void setWaypoint(locationTarget),
-                        }] : []),
+                        ...(isFiveM
+                            ? [
+                                  {
+                                      label: t('services.setWaypoint', 'Set Waypoint'),
+                                      onClick: () => void setWaypoint(locationTarget),
+                                  },
+                              ]
+                            : []),
                         {
                             label: t('services.openInMaps', 'Open in Maps'),
                             onClick: () => openInMaps(locationTarget),
@@ -318,7 +350,9 @@ function CompanyRow({ company, onOpen }: { company: Company; onOpen: () => void 
                     <span className={open ? 'text-[#248A3D] dark:text-[#30D158]' : 'text-ios-gray'}>
                         {open ? t('services.open', 'Open') : t('services.closed', 'Closed')}
                     </span>
-                    <span className="font-medium text-black/35 dark:text-white/35" aria-hidden>·</span>
+                    <span className="font-medium text-black/35 dark:text-white/35" aria-hidden>
+                        ·
+                    </span>
                     <span className="truncate font-medium text-black/45 dark:text-white/45">{company.category}</span>
                 </div>
             </div>
@@ -336,7 +370,7 @@ function DirectoryLoading() {
             aria-busy="true"
             className="overflow-hidden rounded-[14px] bg-surface"
         >
-            {[0, 1, 2, 3].map(index => (
+            {[0, 1, 2, 3].map((index) => (
                 <div key={index}>
                     {index > 0 && <div className="ml-[78px] h-px bg-black/[0.06] dark:bg-white/[0.07]" />}
                     <div className="flex min-h-[88px] items-center gap-3 px-3 py-3">

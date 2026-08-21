@@ -3,7 +3,13 @@ import { useState } from 'react';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { useSessionState } from '@/hooks/useSessionState';
-import { clearBusinessesTarget, useBusinessesNonce, useBusinessesTarget } from '@/shell/deeplink';
+import {
+    clearBusinessesTarget,
+    isBusinessesCompanyTarget,
+    isBusinessesThreadTarget,
+    useBusinessesNonce,
+    useBusinessesTarget,
+} from '@/shell/deeplink';
 import { CompaniesTab } from './CompaniesTab';
 import { ServiceMessagesTab } from './ServiceMessagesTab';
 import { ServicesTabBar, type ServicesTab } from './ServicesTabBar';
@@ -17,7 +23,10 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
     const [tab, setTab] = useSessionState<ServicesTab>('services:tab', 'directory');
     const businessesTarget = useBusinessesTarget();
     const businessesNonce = useBusinessesNonce();
-    const activeTab: ServicesTab = businessesTarget !== null || tab === 'inbox' ? 'inbox' : 'directory';
+    const companyTarget = isBusinessesCompanyTarget(businessesTarget) ? businessesTarget : null;
+    const threadTarget = isBusinessesThreadTarget(businessesTarget) ? businessesTarget : null;
+    const activeTab: ServicesTab =
+        threadTarget !== null || (companyTarget === null && tab === 'inbox') ? 'inbox' : 'directory';
     const {
         data: directory,
         loading: directoryLoading,
@@ -55,17 +64,17 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
 
     function markRead(scope: Scope, key: string) {
         function clearUnread(threads: Inbox['personal']) {
-            return threads.map(thread => (
-                thread.key === key && thread.unread > 0 ? { ...thread, unread: 0 } : thread
-            ));
+            return threads.map((thread) =>
+                thread.key === key && thread.unread > 0 ? { ...thread, unread: 0 } : thread,
+            );
         }
-        setInboxOverride(current => {
+        setInboxOverride((current) => {
             const source = current ?? inbox;
             return scope === 'job'
                 ? { ...source, job: clearUnread(source.job) }
                 : { ...source, personal: clearUnread(source.personal) };
         });
-        void markThreadRead(scope, key).then(result => {
+        void markThreadRead(scope, key).then((result) => {
             if (result.success) return;
             setInboxOverride(null);
             refreshInbox();
@@ -82,6 +91,11 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
         setTab(next);
     }
 
+    function dismissCompanyTarget() {
+        setTab('directory');
+        clearBusinessesTarget();
+    }
+
     return (
         <div className="absolute inset-0 flex flex-col bg-base font-sf">
             <div className="h-[58px] shrink-0" aria-hidden />
@@ -96,6 +110,9 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
                             unavailable={directory?.unavailable}
                             onRetry={refreshDirectory}
                             onMessaged={openInbox}
+                            target={companyTarget}
+                            targetNonce={businessesNonce}
+                            onTargetDismiss={dismissCompanyTarget}
                         />
                     ) : (
                         <ServiceMessagesTab
@@ -106,7 +123,7 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
                             onRetry={retryInbox}
                             onInboxChange={setInboxOverride}
                             onMarkRead={markRead}
-                            target={businessesTarget}
+                            target={threadTarget}
                             targetNonce={businessesNonce}
                             onTargetDismiss={clearBusinessesTarget}
                         />
@@ -118,8 +135,8 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
                 tab={activeTab}
                 onChange={changeTab}
                 inboxBadge={
-                    inbox.personal.reduce((total, thread) => total + thread.unread, 0)
-                    + inbox.job.reduce((total, thread) => total + thread.unread, 0)
+                    inbox.personal.reduce((total, thread) => total + thread.unread, 0) +
+                    inbox.job.reduce((total, thread) => total + thread.unread, 0)
                 }
             />
         </div>
