@@ -407,6 +407,8 @@ activeJobs[8] = 'beanmachine'
 local replied = businesses.reply(8, { citizen = '5550100', body = 'We can help.' })
 assert(replied.success == true, 'matching active staff may reply even while off duty')
 assert(#messages == 3 and messages[3].sender == 'staff')
+local staffReply = replied.data.inbox.job[1].messages[#replied.data.inbox.job[1].messages]
+assert(staffReply.name == 'Staff 8', 'staff inboxes may retain employee attribution')
 local customerNotificationLink
 for _, event in ipairs(clientEvents) do
     if event.name == 'sd-phone:client:notify' and event.source == 9 then
@@ -417,6 +419,9 @@ assert(customerNotificationLink and customerNotificationLink.services.scope == '
 assert(customerNotificationLink.services.thread == 'beanmachine')
 local customerInbox = businesses.inbox(9)
 assert(customerInbox.success == true and customerInbox.data.personal[1].iconUrl == byId.beanmachine.iconUrl)
+local customerReply = customerInbox.data.personal[1].messages[#customerInbox.data.personal[1].messages]
+assert(customerReply.from == 'them' and customerReply.name == 'Bean Machine')
+assert(customerReply.name ~= 'Staff 8', 'customer inboxes must not expose the employee name')
 
 resourceState = 'stopped'
 local unavailable = businesses.directory(9)

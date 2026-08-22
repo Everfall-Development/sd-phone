@@ -334,16 +334,23 @@ end
 
 ---@param rows table[]
 ---@param viewerKind 'citizen'|'staff'
+---@param businessName string|nil
 ---@return table[]
-local function serializeInbox(rows, viewerKind)
+local function serializeInbox(rows, viewerKind, businessName)
     local result = {}
     for _, row in ipairs(rows) do
         local mine = (viewerKind == 'citizen' and row.sender == 'citizen')
             or (viewerKind == 'staff' and row.sender == 'staff')
+        local senderName = row.citizen_name or ''
+        if row.sender == 'staff' then
+            senderName = viewerKind == 'citizen'
+                and (businessName or 'Business')
+                or (row.staff_name or 'Staff')
+        end
         local message = {
             id = row.id,
             from = mine and 'me' or 'them',
-            name = row.sender == 'staff' and (row.staff_name or 'Staff') or (row.citizen_name or ''),
+            name = senderName,
             body = row.body or '',
             kind = row.kind or 'text',
             ts = (tonumber(row.created_at) or 0) * 1000,
@@ -389,9 +396,10 @@ local function buildInbox(source, byJob)
         local batch = msgstore.citizenThreadMessages(phoneNumber, threadKeys(threads, 'job'), THREAD_MESSAGES)
         for _, thread in ipairs(threads) do
             local entry = byJob[thread.job]
+            local businessName = entry and entry.name or job.getLabel(thread.job) or thread.job
             personal[#personal + 1] = {
                 key = thread.job,
-                name = entry and entry.name or job.getLabel(thread.job) or thread.job,
+                name = businessName,
                 color = entry and entry.color or '#64748B',
                 emoji = entry and entry.emoji or '💬',
                 iconUrl = entry and entry.iconUrl or nil,
@@ -399,7 +407,7 @@ local function buildInbox(source, byJob)
                 ts = (tonumber(thread.created_at) or 0) * 1000,
                 unread = unread[thread.job] or 0,
                 messages = serializeInbox(batch[thread.job]
-                    or msgstore.threadMessages(thread.job, phoneNumber, THREAD_MESSAGES), 'citizen'),
+                    or msgstore.threadMessages(thread.job, phoneNumber, THREAD_MESSAGES), 'citizen', businessName),
             }
         end
     end
