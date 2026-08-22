@@ -19,15 +19,38 @@ return {
         realestate = {
             label = 'Dynasty 8 Real Estate',
             iconUrl = './dynasty8-logo.png',
+            canMessage = false,
+        },
+        taxi_tuggers = {
+            category = 'Transportation',
+            color = '#9B7A20',
+            emoji = '🚕',
+        },
+        logistics_irontrail = {
+            category = 'Logistics',
+            color = '#6F675D',
+            emoji = '🚚',
+        },
+        logistics_shaw = {
+            category = 'Logistics',
+            color = '#6F675D',
+            emoji = '🚚',
+        },
+        emcee = {
+            category = 'Logistics',
+            color = '#6F675D',
+            emoji = '🚚',
         },
         -- ['job_name'] = {
         --     visible = true, -- false excludes it; either value overrides the type/blip policy
         --     label = 'Display name',
         --     location = 'Short location',
+        --     category = 'Directory category',
         --     color = '#16B8A6',
         --     emoji = '🏪',
         --     canCall = true,
         --     canMessage = true,
+        --     canLocate = true,
         -- },
     },
 

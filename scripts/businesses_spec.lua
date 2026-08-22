@@ -55,6 +55,16 @@ local liveBusinesses = {
         Type = 'mechanic',
         Blip = { Enable = false, Name = 'Pitstop Garage', Coords = { x = 90, y = 91, z = 92 } },
     },
+    taxi_tuggers = {
+        Enabled = true,
+        Type = 'restaurant',
+        Blip = { Enable = true, Name = "Tugger's Taxis", Coords = { x = 95, y = 96, z = 97 } },
+    },
+    logistics_irontrail = {
+        Enabled = true,
+        Type = 'mechanic',
+        Blip = { Enable = false, Name = 'Irontrail Logistics', Coords = { x = 98, y = 99, z = 100 } },
+    },
     factories_reprocessing_grapeseed = {
         Enabled = true,
         Blip = { Enable = true, Name = 'Grapeseed Factory', Coords = { x = 93, y = 94, z = 95 } },
@@ -107,8 +117,15 @@ package.preload['configs.config'] = function()
             DirectoryOverrides = {
                 police = { visible = false },
                 ambulance = { visible = false },
-                realestate = { label = 'Dynasty 8 Real Estate', iconUrl = './dynasty8-logo.png' },
+                realestate = {
+                    label = 'Dynasty 8 Real Estate',
+                    iconUrl = './dynasty8-logo.png',
+                    canMessage = false,
+                },
                 beanmachine = { label = '', location = '', color = '', iconUrl = '' },
+                mechanic_shop = { canLocate = false },
+                taxi_tuggers = { category = 'Transportation', emoji = '🚕' },
+                logistics_irontrail = { category = 'Logistics', emoji = '🚚' },
             },
             Companies = {
                 { job = 'police', label = 'Police', emergency = true, coords = { x = 10, y = 20, z = 30 } },
@@ -250,7 +267,7 @@ local businesses = require 'server.services.businesses'
 assert(businesses.directory(10).success == false, 'directory callbacks must require a phone item')
 local available = businesses.directory(9)
 assert(available.success == true)
-assert(#available.data.companies == 3, 'Dynasty 8, the public business, and mechanic expected')
+assert(#available.data.companies == 5, 'expected configured customer-facing businesses')
 
 local byId = {}
 for _, company in ipairs(available.data.companies) do byId[company.id] = company end
@@ -258,6 +275,7 @@ assert(byId.police == nil and byId.ambulance == nil, 'emergency services must no
 assert(byId.lspd == nil and byId.hospital == nil, 'live public-service entries must not appear in Businesses')
 assert(byId.realestate.name == 'Dynasty 8 Real Estate')
 assert(byId.realestate.iconUrl == './dynasty8-logo.png')
+assert(byId.realestate.canMessage == false, 'directory overrides must disable messaging')
 assert(byId.beanmachine.name == 'Bean Machine', 'empty override must preserve the source name fallback')
 assert(byId.beanmachine.category == 'Food')
 assert(byId.beanmachine.location == 'Food', 'empty override must preserve the category location fallback')
@@ -267,8 +285,16 @@ assert(byId.hidden == nil)
 assert(byId.no_blip == nil)
 assert(byId.mechanic_shop.name == 'Pitstop Garage')
 assert(byId.mechanic_shop.category == 'Automotive')
-assert(byId.mechanic_shop.coords.x == 90 and byId.mechanic_shop.coords.y == 91)
+assert(byId.mechanic_shop.coords == nil, 'directory overrides must disable location actions')
+assert(byId.taxi_tuggers.category == 'Transportation', 'phone categories must override source business types')
+assert(byId.taxi_tuggers.emoji == '🚕')
+assert(byId.logistics_irontrail.category == 'Logistics', 'logistics must not inherit the mechanic label')
+assert(byId.logistics_irontrail.emoji == '🚚')
 assert(byId.factories_reprocessing_grapeseed == nil, 'factory jobs without a Type must not appear as businesses')
+assert(
+    businesses.message(9, { job = 'realestate', kind = 'text', body = 'Hello' }).success == false,
+    'disabled business messaging must be enforced on the server'
+)
 
 blockedRateKeys['businesses:directory'] = true
 assert(businesses.directory(9).success == false, 'directory reads must be rate limited')
@@ -407,6 +433,6 @@ liveBusinesses.new_shop = {
 }
 local retried = businesses.directory(9)
 assert(retried.success == true)
-assert(#retried.data.companies == 4, 'an unavailable response must not cache an empty directory')
+assert(#retried.data.companies == 6, 'an unavailable response must not cache an empty directory')
 
 print('businesses_spec: ok')

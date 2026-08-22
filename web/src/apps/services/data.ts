@@ -29,9 +29,9 @@ export interface Employee {
 }
 
 export const COMPANIES: Company[] = [
-    { id: 'realestate', name: 'Dynasty 8 Real Estate', location: 'Downtown Los Santos', category: 'Business', color: '#FFCC4D', emoji: '🏠', iconUrl: './dynasty8-logo.png', canCall: true, canMessage: true, emergency: false, status: 'open', onDuty: true, coords: { x: 67.19, y: -260.47, z: 48.37 } },
+    { id: 'realestate', name: 'Dynasty 8 Real Estate', location: 'Downtown Los Santos', category: 'Business', color: '#FFCC4D', emoji: '🏠', iconUrl: './dynasty8-logo.png', canCall: true, canMessage: false, emergency: false, status: 'open', onDuty: true, coords: { x: 67.19, y: -260.47, z: 48.37 } },
     { id: 'mechanic', name: 'Hayes Auto', location: 'Strawberry Avenue', category: 'Automotive', color: '#59636E', emoji: '🔧', canCall: true, canMessage: true, emergency: false, status: 'closed', onDuty: false, coords: { x: -347.3, y: -133.8, z: 39.0 } },
-    { id: 'taxi', name: 'Downtown Cab Co.', location: 'Tangerine Street', category: 'Transport', color: '#27AE60', emoji: '🚕', canCall: true, canMessage: true, emergency: false, status: 'open', onDuty: true, coords: { x: 895.7, y: -179.3, z: 74.7 } },
+    { id: 'taxi', name: 'Downtown Cab Co.', location: 'Tangerine Street', category: 'Transportation', color: '#27AE60', emoji: '🚕', canCall: true, canMessage: true, emergency: false, status: 'open', onDuty: true, coords: { x: 895.7, y: -179.3, z: 74.7 } },
 ];
 
 export const EMPLOYEES: Employee[] = [

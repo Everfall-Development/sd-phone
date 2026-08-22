@@ -157,6 +157,7 @@ local function directoryEntry(businessId, business, duty)
     if not visible then return nil end
 
     local style = categoryStyles[categoryKey] or categoryStyles.general
+    local category = firstNonEmpty(override.category, style.label) or style.label
     local name = firstNonEmpty(override.label, business.Name, blip.Name, job.getLabel(businessId), businessId)
     local storefront = business.Storefront or {}
     local advertisement = storefront.Advertisement or {}
@@ -166,14 +167,18 @@ local function directoryEntry(businessId, business, duty)
         business.Location,
         business.Address,
         blip.Location,
-        style.label
+        category
     )
+    local coords
+    if override.canLocate ~= false then
+        coords = normalizeCoords(override.coords or blip.Coords or business.Coords)
+    end
 
     return {
         id = businessId,
         name = name,
-        category = style.label,
-        location = location or style.label,
+        category = category,
+        location = location or category,
         color = firstNonEmpty(override.color, style.color),
         emoji = firstNonEmpty(override.emoji, style.emoji),
         iconUrl = firstNonEmpty(override.iconUrl, advertisement.Icon, storefront.ImageUrl),
@@ -182,7 +187,7 @@ local function directoryEntry(businessId, business, duty)
         canCall = override.canCall ~= false,
         canMessage = override.canMessage ~= false,
         emergency = false,
-        coords = normalizeCoords(override.coords or blip.Coords or business.Coords),
+        coords = coords,
     }
 end
 
