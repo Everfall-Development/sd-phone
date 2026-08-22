@@ -473,7 +473,8 @@ function businesses.call(source, payload)
     end
     if #targets == 0 then return fail('No one is on duty right now') end
 
-    return calls.callGroup(source, targets, entry.name, 'business:' .. entry.id)
+    -- The customer sees the business they dialled; staff see the customer's caller ID.
+    return calls.callGroup(source, targets, entry.name, 'business:' .. entry.id, false)
 end
 
 ---@param jobName string

@@ -7,6 +7,7 @@ local messages = {}
 local clientEvents = {}
 local serverEvents = {}
 local callTargets
+local callSharesDisplayIdentity
 local directoryCalls = 0
 local blockedRateKeys = {}
 local rateCalls = {}
@@ -193,11 +194,12 @@ end
 package.preload['server.calls.actions'] = function()
     return {
         isBusy = function() return false end,
-        callGroup = function(source, targets, _, identity)
+        callGroup = function(source, targets, _, identity, shareDisplayIdentity)
             if exports['sd-phone'].hasPhone(source) == nil then
                 return { success = false, message = 'You need a phone to make calls' }
             end
             callTargets = targets
+            callSharesDisplayIdentity = shareDisplayIdentity
             return { success = true, data = { number = identity } }
         end,
     }
@@ -289,6 +291,7 @@ local called = businesses.call(9, { job = 'beanmachine' })
 assert(called.success == true)
 assert(called.data.number == 'business:beanmachine')
 assert(#callTargets == 1 and callTargets[1].src == 7, 'only online, on-duty staff should ring')
+assert(callSharesDisplayIdentity == false, 'business staff must see the customer caller ID, not the business identity')
 assert(businesses.call(10, { job = 'beanmachine' }).success == false, 'callGroup must reject callers without a phone')
 
 local invalidImage = businesses.message(9, {

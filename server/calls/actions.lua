@@ -942,8 +942,9 @@ end
 ---@param targets { src: number, cid: string }[] server-built recipient list
 ---@param displayName string what the caller sees they're calling (e.g. 'Police')
 ---@param displayNumber? string
+---@param shareDisplayIdentity? boolean whether recipients see the display identity instead of the caller
 ---@return table
-function actions.callGroup(source, targets, displayName, displayNumber)
+function actions.callGroup(source, targets, displayName, displayNumber, shareDisplayIdentity)
     local cid = player.getIdentifier(source)
     if not cid then return fail('Player not found') end
     if not reachable(source) then return fail('You need a phone to make calls') end
@@ -978,7 +979,9 @@ function actions.callGroup(source, targets, displayName, displayNumber)
     -- A non-empty identity is supplied by the server caller (for example a business number), not
     -- the player's personal SIM. It remains visible as the service identity when personal caller
     -- ID is withheld; an ordinary group ring with no identity is masked like a direct call.
-    local callerDisplay = identity ~= '' and { name = displayName, number = identity } or nil
+    local callerDisplay = identity ~= '' and shareDisplayIdentity ~= false
+        and { name = displayName, number = identity }
+        or nil
     groupRings[channel] = {
         channel = channel,
         caller  = { src = source, cid = cid, name = player.getName(source), number = myNumber },
