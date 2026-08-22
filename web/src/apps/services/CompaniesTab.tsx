@@ -7,13 +7,11 @@ import { requestOpenMaps, type BusinessesCompanyTarget } from '@/shell/deeplink'
 import { ActionSheet } from '@/ui/ActionSheet';
 import { AlertDialog } from '@/ui/AlertDialog';
 import { EmptyState } from '@/ui/EmptyState';
-import { PromptDialog } from '@/ui/PromptDialog';
 import { SearchBar } from '@/ui/SearchBar';
 import { SegmentedControl } from '@/ui/SegmentedControl';
-import { portalToPhoneScreen } from '@/ui/portal';
 import { BusinessDetail } from './BusinessDetail';
 import { ServiceAvatar } from './ServiceAvatar';
-import { callCompany, messageCompany, type Inbox } from './servicesApi';
+import { callCompany } from './servicesApi';
 import { filterBusinesses, type BusinessAvailability, type Company } from './data';
 
 const ALL_CATEGORIES = 'All';
@@ -40,7 +38,7 @@ export function CompaniesTab({
     loading,
     unavailable,
     onRetry,
-    onMessaged,
+    onMessage,
     target,
     targetNonce,
     onTargetDismiss,
@@ -50,7 +48,7 @@ export function CompaniesTab({
     loading: boolean;
     unavailable?: string;
     onRetry: () => void;
-    onMessaged: (inbox: Inbox) => void;
+    onMessage: (company: Company) => void;
     target: BusinessesCompanyTarget | null;
     targetNonce: number;
     onTargetDismiss: () => void;
@@ -60,7 +58,6 @@ export function CompaniesTab({
     const [availability, setAvailability] = useState<BusinessAvailability>('all');
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [categorySheet, setCategorySheet] = useState(false);
-    const [messageTarget, setMessageTarget] = useState<Company | null>(null);
     const [locationTarget, setLocationTarget] = useState<Company | null>(null);
     const [pending, setPending] = useState<PendingAction | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -128,26 +125,6 @@ export function CompaniesTab({
             setError(result.message ?? t('services.couldntCall', "Couldn't place the call."));
         } catch {
             setError(t('services.couldntCall', "Couldn't place the call."));
-        } finally {
-            setPending(null);
-        }
-    }
-
-    async function sendMessage(body: string): Promise<string | void> {
-        if (!messageTarget || pending) return t('services.pleaseWait', 'Please wait a moment.');
-        const company = messageTarget;
-        const text = body.trim();
-        if (!text) return t('services.emptyMessage', 'Enter a message.');
-
-        setPending({ companyId: company.id, action: 'message' });
-        try {
-            const result = await messageCompany(company.id, { kind: 'text', body: text });
-            if (!result.success || !result.data?.inbox) {
-                return result.message ?? t('services.couldntSend', "Couldn't send your message.");
-            }
-            onMessaged(result.data.inbox);
-        } catch {
-            return t('services.couldntSend', "Couldn't send your message.");
         } finally {
             setPending(null);
         }
@@ -266,22 +243,10 @@ export function CompaniesTab({
                         onTargetDismiss();
                     }}
                     onCall={() => void call(selected)}
-                    onMessage={() => setMessageTarget(selected)}
+                    onMessage={() => onMessage(selected)}
                     onLocate={() => locate(selected)}
                 />
             )}
-
-            {messageTarget &&
-                portalToPhoneScreen(
-                    <PromptDialog
-                        title={t('services.messageName', 'Message {name}', { name: messageTarget.name })}
-                        placeholder={t('services.typeAMessage', 'Type a message…')}
-                        confirmLabel={t('services.send', 'Send')}
-                        maxLength={300}
-                        onCancel={() => setMessageTarget(null)}
-                        onConfirm={sendMessage}
-                    />,
-                )}
 
             {categorySheet && (
                 <ActionSheet

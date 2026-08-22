@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import type { InboxMessage, InboxThread } from './servicesApi';
-import { buildServiceDrafts, filterMessageThreads, getThreadIdentity, isNewMessageDay, limitServiceAttachments } from './messageData';
+import type { Company } from './data';
+import {
+    buildServiceDrafts,
+    filterMessageThreads,
+    getCompanyMessageThread,
+    getThreadIdentity,
+    isNewMessageDay,
+    limitServiceAttachments,
+} from './messageData';
 
 const staffThread: InboxThread = {
     key: '5551234',
@@ -14,6 +22,19 @@ const staffThread: InboxThread = {
     messages: [
         { id: 'one', from: 'them', name: 'John Doe', body: 'Can someone get out to me?', ts: 1_700_000_000_000 },
     ],
+};
+
+const company: Company = {
+    id: 'taxi_tuggers',
+    name: "Tugger's Taxis",
+    location: 'Downtown',
+    category: 'Transportation',
+    color: '#3a3a3c',
+    emoji: '🚕',
+    canCall: true,
+    canMessage: true,
+    emergency: false,
+    status: 'open',
 };
 
 describe('Businesses message data', () => {
@@ -33,6 +54,25 @@ describe('Businesses message data', () => {
         expect(filterMessageThreads([staffThread], '5551234')).toHaveLength(1);
         expect(filterMessageThreads([staffThread], 'police')).toHaveLength(0);
         expect(filterMessageThreads([staffThread], 'get out')).toHaveLength(1);
+    });
+
+    it('opens a real empty conversation when a business has no existing thread', () => {
+        expect(getCompanyMessageThread([], company)).toEqual({
+            key: 'taxi_tuggers',
+            name: "Tugger's Taxis",
+            color: '#3a3a3c',
+            emoji: '🚕',
+            iconUrl: undefined,
+            preview: '',
+            ts: 0,
+            unread: 0,
+            messages: [],
+        });
+    });
+
+    it('reuses the existing business conversation instead of creating a duplicate', () => {
+        const existing = { ...staffThread, key: company.id, name: company.name };
+        expect(getCompanyMessageThread([existing], company)).toBe(existing);
     });
 
     it('keeps images and text in one ordered send batch', () => {

@@ -11,6 +11,7 @@ import {
     useBusinessesTarget,
 } from '@/shell/deeplink';
 import { CompaniesTab } from './CompaniesTab';
+import type { Company } from './data';
 import { ServiceMessagesTab } from './ServiceMessagesTab';
 import { ServicesTabBar, type ServicesTab } from './ServicesTabBar';
 import { fetchDirectory, fetchInbox, markThreadRead, type Inbox } from './servicesApi';
@@ -25,8 +26,6 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
     const businessesNonce = useBusinessesNonce();
     const companyTarget = isBusinessesCompanyTarget(businessesTarget) ? businessesTarget : null;
     const threadTarget = isBusinessesThreadTarget(businessesTarget) ? businessesTarget : null;
-    const activeTab: ServicesTab =
-        threadTarget !== null || (companyTarget === null && tab === 'inbox') ? 'inbox' : 'directory';
     const {
         data: directory,
         loading: directoryLoading,
@@ -40,7 +39,12 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
         refetch: refreshInbox,
     } = useAsyncData(fetchInbox, []);
     const [inboxOverride, setInboxOverride] = useState<Inbox | null>(null);
+    const [composeCompany, setComposeCompany] = useState<Company | null>(null);
     const inbox = inboxOverride ?? inboxData ?? EMPTY_INBOX;
+    const activeTab: ServicesTab =
+        composeCompany !== null || threadTarget !== null || (companyTarget === null && tab === 'inbox')
+            ? 'inbox'
+            : 'directory';
 
     useNuiEvent('sd-phone:services:inbox', () => {
         setInboxOverride(null);
@@ -57,8 +61,9 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
         refreshDirectory();
     });
 
-    function openInbox(updatedInbox: Inbox) {
-        setInboxOverride(updatedInbox);
+    function openCompanyMessages(company: Company) {
+        clearBusinessesTarget();
+        setComposeCompany(company);
         setTab('inbox');
     }
 
@@ -87,6 +92,7 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
     }
 
     function changeTab(next: ServicesTab) {
+        setComposeCompany(null);
         clearBusinessesTarget();
         setTab(next);
     }
@@ -109,7 +115,7 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
                             loading={directoryLoading}
                             unavailable={directory?.unavailable}
                             onRetry={refreshDirectory}
-                            onMessaged={openInbox}
+                            onMessage={openCompanyMessages}
                             target={companyTarget}
                             targetNonce={businessesNonce}
                             onTargetDismiss={dismissCompanyTarget}
@@ -126,6 +132,8 @@ export function Services({ onClose: _onClose }: { onClose: () => void }) {
                             target={threadTarget}
                             targetNonce={businessesNonce}
                             onTargetDismiss={clearBusinessesTarget}
+                            composeCompany={composeCompany}
+                            onComposeDismiss={() => setComposeCompany(null)}
                         />
                     )}
                 </div>

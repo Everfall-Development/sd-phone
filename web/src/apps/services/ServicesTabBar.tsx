@@ -18,7 +18,7 @@ export function ServicesTabBar({ tab, onChange, inboxBadge = 0 }: {
         },
         {
             id: 'inbox',
-            label: t('services.inbox', 'Inbox'),
+            label: t('services.messages', 'Messages'),
             icon: active => <MessageSquare className="h-[33px] w-[33px]" strokeWidth={active ? 2.2 : 1.9} />,
             badge: inboxBadge,
         },

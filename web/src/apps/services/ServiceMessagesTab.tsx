@@ -24,6 +24,7 @@ import { decodeWaypoint } from '@/lib/waypointCode';
 import { apiSavePhotoFromUrl } from '@/core/photosApi';
 import { ServiceAvatar } from './ServiceAvatar';
 import { ServiceComposer } from './ServiceComposer';
+import type { Company } from './data';
 import {
     messageCompany,
     replyCompany,
@@ -35,6 +36,7 @@ import {
 } from './servicesApi';
 import {
     filterMessageThreads,
+    getCompanyMessageThread,
     getThreadIdentity,
     isNewMessageDay,
     type MessageScope,
@@ -76,6 +78,8 @@ export function ServiceMessagesTab({
     target,
     targetNonce,
     onTargetDismiss,
+    composeCompany,
+    onComposeDismiss,
 }: {
     inbox: Inbox;
     loaded: boolean;
@@ -87,13 +91,15 @@ export function ServiceMessagesTab({
     target: BusinessesThreadTarget | null;
     targetNonce: number;
     onTargetDismiss: () => void;
+    composeCompany: Company | null;
+    onComposeDismiss: () => void;
 }) {
     const [scopePref, setScope] = useSessionState<Scope>('services:msgFilter', 'personal');
     const [query, setQuery] = useSessionState('services:inboxSearch', '');
     const [openKey, setOpenKey] = useState<string | null>(null);
 
     const targetScope = target?.scope === 'personal' || (target?.scope === 'job' && inbox.hasJob) ? target.scope : null;
-    const scope: Scope = targetScope ?? (inbox.hasJob ? scopePref : 'personal');
+    const scope: Scope = composeCompany ? 'personal' : (targetScope ?? (inbox.hasJob ? scopePref : 'personal'));
     const threads = scope === 'personal' ? inbox.personal : inbox.job;
     const visibleThreads = useMemo(() => filterMessageThreads(threads, query), [query, threads]);
     const inboxError = unavailable ?? inbox.unavailable;
@@ -104,7 +110,9 @@ export function ServiceMessagesTab({
     const scopeRef = useReanimateOnChange<HTMLDivElement>('animate-swipe-in-left', scope);
     const targetedThread =
         target && target.scope === scope ? (threads.find((thread) => thread.key === target.thread) ?? null) : null;
-    const openThread = targetedThread ?? (openKey ? (threads.find((t) => t.key === openKey) ?? null) : null);
+    const composeThread = composeCompany ? getCompanyMessageThread(inbox.personal, composeCompany) : null;
+    const openThread =
+        composeThread ?? targetedThread ?? (openKey ? (threads.find((thread) => thread.key === openKey) ?? null) : null);
     const handledTargetNonce = useRef(0);
 
     useLayoutEffect(() => {
@@ -145,7 +153,7 @@ export function ServiceMessagesTab({
     return (
         <div className="relative flex min-h-0 flex-1 flex-col">
             <h1 className="select-none px-5 pb-2 pt-1 text-[34px] font-bold tracking-tight text-black dark:text-white">
-                {t('services.inbox', 'Inbox')}
+                {t('services.messages', 'Messages')}
             </h1>
 
             <div>
@@ -167,10 +175,18 @@ export function ServiceMessagesTab({
                         value={scope}
                         onChange={setScope}
                         options={[
-                            { value: 'personal', label: t('services.personal', 'Personal'), dot: personalUnread },
-                            { value: 'job', label: t('services.job', 'Job'), dot: jobUnread },
+                            {
+                                value: 'personal',
+                                label: t('services.toBusinesses', 'To Businesses'),
+                                dot: personalUnread,
+                            },
+                            {
+                                value: 'job',
+                                label: t('services.businessInbox', 'Business Inbox'),
+                                dot: jobUnread,
+                            },
                         ]}
-                        className="mx-auto w-[232px]"
+                        className="mx-auto w-full max-w-[330px]"
                     />
                 </div>
             )}
@@ -245,6 +261,7 @@ export function ServiceMessagesTab({
                     thread={openThread}
                     onBack={() => {
                         setOpenKey(null);
+                        if (composeThread) onComposeDismiss();
                         if (targetedThread) onTargetDismiss();
                     }}
                     onSent={onInboxChange}

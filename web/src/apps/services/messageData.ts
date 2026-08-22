@@ -1,4 +1,5 @@
 import { formatPhone } from '@/apps/phone/data';
+import type { Company } from './data';
 import type { InboxMessage, InboxThread, ServiceDraft } from './servicesApi';
 
 export type MessageScope = 'personal' | 'job';
@@ -39,6 +40,23 @@ export function filterMessageThreads(threads: readonly InboxThread[], query: str
         const threadText = `${thread.name} ${thread.key} ${thread.preview}`.toLocaleLowerCase();
         return threadText.includes(search);
     });
+}
+
+export function getCompanyMessageThread(threads: readonly InboxThread[], company: Company): InboxThread {
+    const existing = threads.find((thread) => thread.key === company.id);
+    if (existing) return existing;
+
+    return {
+        key: company.id,
+        name: company.name,
+        color: company.color,
+        emoji: company.emoji,
+        iconUrl: company.iconUrl,
+        preview: '',
+        ts: 0,
+        unread: 0,
+        messages: [],
+    };
 }
 
 export function buildServiceDrafts(body: string, attachments: readonly string[], photoLabel: string): ServiceDraft[] {
