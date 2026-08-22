@@ -169,8 +169,11 @@ html, body, #root {
     outline: none;
 }
 :focus-visible {
-    outline: 2px solid rgba(10, 132, 255, 0.95);
-    outline-offset: 2px;
+    outline: 1px solid rgba(60, 60, 67, 0.72);
+    outline-offset: 1px;
+}
+.dark :focus-visible {
+    outline-color: rgba(235, 235, 245, 0.58);
 }
 input,
 textarea,

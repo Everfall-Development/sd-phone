@@ -448,7 +448,7 @@ function Conversation({
     }
 
     const receivedBg = isDark ? 'rgb(var(--elevated))' : 'rgb(var(--control))';
-    const sentBg = 'rgb(var(--ios-blue))';
+    const sentBg = '#3a3a3c';
 
     const view = (
         <div

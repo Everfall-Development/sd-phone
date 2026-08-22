@@ -1,12 +1,11 @@
 import { useRef, useState } from 'react';
-import { ArrowUp, LoaderCircle, MapPin, X } from 'lucide-react';
+import { ArrowUp, Images, LoaderCircle, MapPin, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 import { isFiveM } from '@/core/nui';
 import { apiData } from '@/core/api';
 import { t } from '@/i18n';
 import { AlertDialog } from '@/ui/AlertDialog';
-import { PhotosIcon } from '@/shell/AppIconSVG';
 import { encodeWaypoint } from '@/lib/waypointCode';
 import { EmojiPanel } from '@/shared/chat/EmojiPanel';
 import { MediaPickerSheet } from '@/shared/MediaPickerSheet';
@@ -24,7 +23,7 @@ type ActionButton = {
 
 const ACTION_BUTTONS: readonly ActionButton[] = [
     { id: 'emoji', emoji: '😊' },
-    { id: 'photos' },
+    { id: 'photos', Icon: Images },
     { id: 'location', Icon: MapPin },
 ];
 
@@ -48,29 +47,45 @@ export function ServiceComposer({ isDark, onSend, sending = false }: {
     function openPhotos()        { warmPhotos(); setPicking(true); setPanel(null); inputRef.current?.blur(); }
     function openShareLocation() { setConfirmLocation(true); setPanel(null); inputRef.current?.blur(); }
 
-    async function deliver(drafts: ServiceDraft[]) {
+    async function deliver(drafts: ServiceDraft[]): Promise<boolean> {
         try {
             const result = await onSend(drafts);
             if (!result.success) {
                 setError(result.message ?? t('services.couldntSend', "Couldn't send your message."));
-                return;
+                return false;
             }
-
-            setDraft('');
-            setAttachments([]);
-            inputRef.current?.focus();
+            return true;
         } catch {
             setError(t('services.couldntSend', "Couldn't send your message."));
+            return false;
         }
     }
 
     async function submit(drafts: ServiceDraft[]) {
         if (isSending || drafts.length === 0) return;
+        const submittedDraft = draft;
+        const submittedAttachments = attachments;
         setSubmitting(true);
         setError(null);
         setPanel(null);
         try {
-            await deliver(drafts);
+            const sent = await deliver(drafts);
+            if (!sent) return;
+
+            setDraft(current => {
+                if (current === submittedDraft) return '';
+                if (submittedDraft && current.startsWith(submittedDraft)) {
+                    return current.slice(submittedDraft.length).trimStart();
+                }
+                return current;
+            });
+            setAttachments(current =>
+                current.length === submittedAttachments.length
+                && current.every((url, index) => url === submittedAttachments[index])
+                    ? []
+                    : current,
+            );
+            window.requestAnimationFrame(() => inputRef.current?.focus());
         } finally {
             setSubmitting(false);
         }
@@ -130,11 +145,10 @@ export function ServiceComposer({ isDark, onSend, sending = false }: {
 
     const hasContent = draft.trim().length > 0 || attachments.length > 0;
 
-    const trayBg  = isDark ? 'rgb(var(--surface))' : 'rgb(var(--base))';
-    const btnBg   = isDark ? 'rgb(var(--elevated))' : '#fff';
-    const pillBg  = isDark ? 'rgb(var(--surface))' : 'rgb(var(--base))';
-    const pillBdr = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)';
-    const controlFocus = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue focus-visible:ring-inset';
+    const trayBg = isDark ? 'rgb(var(--surface))' : 'rgb(var(--base))';
+    const pillBg = isDark ? 'rgb(var(--elevated))' : 'rgb(var(--surface))';
+    const pillBdr = isDark ? 'rgba(255,255,255,0.13)' : 'rgba(0,0,0,0.13)';
+    const controlFocus = 'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-black/35 dark:focus-visible:ring-white/45';
     return (
         <div className="relative shrink-0" aria-busy={isSending}>
             {panel === 'emoji' && (
@@ -164,8 +178,8 @@ export function ServiceComposer({ isDark, onSend, sending = false }: {
 
             <div className="px-3 pb-2 pt-1.5">
                 <div
-                    className={`flex items-center gap-1 rounded-[22px] py-[9px] pl-4 focus-within:ring-2 focus-within:ring-ios-blue/60 ${hasContent ? 'pr-[5px]' : 'pr-4'}`}
-                    style={{ background: pillBg, border: `0.5px solid ${pillBdr}` }}
+                    className={`flex items-center gap-1 rounded-[22px] border border-black/[0.13] py-[9px] pl-4 transition-colors focus-within:border-black/35 dark:border-white/[0.13] dark:focus-within:border-white/35 ${hasContent ? 'pr-[5px]' : 'pr-4'}`}
+                    style={{ background: pillBg }}
                 >
                     <input
                         ref={inputRef}
@@ -178,21 +192,21 @@ export function ServiceComposer({ isDark, onSend, sending = false }: {
                         aria-label={t('services.messagePlaceholder', 'Message')}
                         aria-describedby={error ? 'services-message-error' : undefined}
                         aria-invalid={error ? true : undefined}
-                        disabled={isSending}
                         maxLength={300}
-                        className="min-w-0 flex-1 bg-transparent py-[5px] text-[18px] text-black placeholder-black/35 outline-none disabled:opacity-70 dark:text-white dark:placeholder-white/35"
+                        className="min-w-0 flex-1 bg-transparent py-[5px] text-[18px] text-black placeholder-black/35 outline-none focus-visible:!outline-none dark:text-white dark:placeholder-white/35"
                     />
                     {hasContent && (
                         <button
                             type="button"
                             onClick={sendText}
+                            onMouseDown={(event) => event.preventDefault()}
                             aria-label={t('services.send', 'Send')}
                             disabled={isSending}
-                            className={`flex h-[33px] w-[33px] shrink-0 items-center justify-center rounded-full bg-ios-blue active:opacity-70 disabled:opacity-60 ${controlFocus}`}
+                            className={`flex h-[33px] w-[33px] shrink-0 items-center justify-center rounded-full bg-black text-white active:opacity-70 disabled:opacity-50 dark:bg-white dark:text-black ${controlFocus}`}
                         >
                             {isSending
-                                ? <LoaderCircle className="h-[18px] w-[18px] animate-spin text-white" strokeWidth={2.75} />
-                                : <ArrowUp className="h-[19px] w-[19px] text-white" strokeWidth={2.75} />}
+                                ? <LoaderCircle className="h-[18px] w-[18px] animate-spin" strokeWidth={2.75} />
+                                : <ArrowUp className="h-[19px] w-[19px]" strokeWidth={2.75} />}
                         </button>
                     )}
                 </div>
@@ -222,19 +236,11 @@ export function ServiceComposer({ isDark, onSend, sending = false }: {
                             onClick={() => (btn.id === 'photos' ? openPhotos() : btn.id === 'location' ? openShareLocation() : togglePanel('emoji'))}
                             aria-label={label}
                             disabled={isSending}
-                            className={`flex h-[48px] w-[54px] items-center justify-center rounded-[16px] transition-opacity active:opacity-60 disabled:opacity-50 ${controlFocus}`}
-                            style={{ background: btnBg, boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
+                            className={`flex h-[44px] w-[52px] items-center justify-center rounded-[12px] text-black/65 transition-colors active:bg-black/[0.07] disabled:opacity-40 dark:text-white/70 dark:active:bg-white/[0.09] ${controlFocus}`}
                         >
-                            {btn.id === 'photos' ? (
-                                <span
-                                    className="block overflow-hidden rounded-[7px] [&_svg]:block [&_svg]:h-full [&_svg]:w-full"
-                                    style={{ width: 30, height: 30 }}
-                                >
-                                    <PhotosIcon />
-                                </span>
-                            ) : Icon ? (
+                            {Icon ? (
                                 <Icon
-                                    className={`text-black dark:text-white ${btn.id === 'location' ? 'h-[27px] w-[27px]' : 'h-[25px] w-[25px]'}`}
+                                    className={btn.id === 'location' ? 'h-[26px] w-[26px]' : 'h-[25px] w-[25px]'}
                                     strokeWidth={2}
                                 />
                             ) : (
